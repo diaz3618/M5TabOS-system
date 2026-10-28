@@ -119,12 +119,12 @@ static const pagina_def_t PAGINAS[PAG_N] = {
   { "ESP-NOW",      ic_espnow,  est_espnow  },
   { "Meshtastic",   ic_mesh,    est_mesh    },
   { "LoRa",         ic_lora,    est_lora    },
-  { "Tela",         ic_tela,    est_tela    },
-  { "Aplicativos",  ic_apps,    est_apps    },
-  { "Teclado",      ic_teclado, est_teclado },
+  { "Screen",       ic_tela,    est_tela    },
+  { "Apps",         ic_apps,    est_apps    },
+  { "Keyboard",     ic_teclado, est_teclado },
   { "Grove 5V",     ic_grove,   est_grove   },
   { "USB (pendrive)", ic_usb,   est_usb     },
-  { "Sobre",        ic_sobre,   est_sobre   },
+  { "About",        ic_sobre,   est_sobre   },
 };
 
 // ---------------------------------------------------------------------------
@@ -396,44 +396,44 @@ static void ic_sobre(lgfx::LovyanGFX& d, int x, int y, int l)
 static void est_wifi(char* o, size_t t)
 {
   const tab5_wifi_state_t e = tab5_wifi_state();
-  if (e == TAB5_WIFI_CONNECTED)           { snprintf(o, t, "Conectado a %s", tab5_wifi_ssid()); }
-  else if (e == TAB5_WIFI_NO_CREDENTIALS) { snprintf(o, t, "Nenhuma rede guardada"); }
-  else if (e == TAB5_WIFI_C6_UNRESPONSIVE)        { snprintf(o, t, "O C6 não responde"); }
-  else if (e == TAB5_WIFI_FAILED)         { snprintf(o, t, "Não conectou"); }
-  else if (e == TAB5_WIFI_OFF)      { snprintf(o, t, ajustes_wifi() ? "Solto do roteador" : "Desligado"); }
-  else                                    { snprintf(o, t, "Conectando..."); }
+  if (e == TAB5_WIFI_CONNECTED)           { snprintf(o, t, "Connected to %s", tab5_wifi_ssid()); }
+  else if (e == TAB5_WIFI_NO_CREDENTIALS) { snprintf(o, t, "No saved network"); }
+  else if (e == TAB5_WIFI_C6_UNRESPONSIVE)        { snprintf(o, t, "The C6 is not responding"); }
+  else if (e == TAB5_WIFI_FAILED)         { snprintf(o, t, "Could not connect"); }
+  else if (e == TAB5_WIFI_OFF)      { snprintf(o, t, ajustes_wifi() ? "Not connected to a router" : "Off"); }
+  else                                    { snprintf(o, t, "Connecting..."); }
 }
 
 static void est_bt(char* o, size_t t)
 {
   const tab5_ble_state_t e = tab5_ble_state();
-  if (e == TAB5_BLE_READY)       { snprintf(o, t, "Ligado"); }
-  else if (e == TAB5_BLE_STARTING) { snprintf(o, t, "Ligando..."); }
+  if (e == TAB5_BLE_READY)       { snprintf(o, t, "On"); }
+  else if (e == TAB5_BLE_STARTING) { snprintf(o, t, "Turning on..."); }
   // C6 com o firmware de fabrica (Wi-Fi funciona, Bluetooth nao): nao e
   // defeito, e uma atualizacao opcional - o texto tem que dizer isso.
   else if (e == TAB5_BLE_FAILED && tab5_wifi_c6_link() && !tab5_wifi_c6_is_ours())
-                                  { snprintf(o, t, "Rádio C6 de fábrica: atualização opcional"); }
-  else if (e == TAB5_BLE_FAILED)  { snprintf(o, t, "Falhou - o C6 não deu o Bluetooth"); }
-  else if (e == TAB5_BLE_STOPPING) { snprintf(o, t, "Desligando..."); }
-  else                            { snprintf(o, t, "Desligado"); }
+                                  { snprintf(o, t, "Factory C6 radio: update optional"); }
+  else if (e == TAB5_BLE_FAILED)  { snprintf(o, t, "Failed - the C6 did not bring up Bluetooth"); }
+  else if (e == TAB5_BLE_STOPPING) { snprintf(o, t, "Turning off..."); }
+  else                            { snprintf(o, t, "Off"); }
 }
 
 static void est_espnow(char* o, size_t t)
 {
   if (!tab5_espnow_c6_compativel()) {
     // Sem enlace ainda nao da para saber qual firmware o C6 tem.
-    snprintf(o, t, tab5_wifi_c6_link() ? "Rádio C6 de fábrica: atualização opcional"
-                                         : "Ligue o Wi-Fi");
+    snprintf(o, t, tab5_wifi_c6_link() ? "Factory C6 radio: update optional"
+                                         : "Turn on Wi-Fi");
     return;
   }
   const uint8_t f = tab5_espnow_canal_fixo();
-  if (f) { snprintf(o, t, "Canal fixo %u (sem roteador)", (unsigned)f); }
-  else   { snprintf(o, t, "Canal do roteador (%u)", (unsigned)tab5_espnow_canal()); }
+  if (f) { snprintf(o, t, "Fixed channel %u (no router)", (unsigned)f); }
+  else   { snprintf(o, t, "Router channel (%u)", (unsigned)tab5_espnow_canal()); }
 }
 
 static const char* nome_via_mesh(uint8_t via)
 {
-  return via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth" : via == AJUSTES_MESH_INTERNET ? "Internet" : "Cabo Grove";
+  return via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth" : via == AJUSTES_MESH_INTERNET ? "Internet" : "Grove cable";
 }
 
 static void est_mesh(char* o, size_t t)
@@ -444,15 +444,15 @@ static void est_mesh(char* o, size_t t)
 static void est_lora(char* o, size_t t)
 {
   const tab5_lora_status_t s = tab5_lora_status();
-  if (!s.probed)             { snprintf(o, t, "Ainda não sondado"); }
-  else if (!s.ioe_address)   { snprintf(o, t, "M5IOE1 não encontrado"); }
+  if (!s.probed)             { snprintf(o, t, "Not probed yet"); }
+  else if (!s.ioe_address)   { snprintf(o, t, "M5IOE1 not found"); }
   else if (s.radio_present)  { snprintf(o, t, "SX1262 responde · M5IOE1 0x%02X", s.ioe_address); }
-  else                        { snprintf(o, t, "M5IOE1 0x%02X · SX1262 não respondeu", s.ioe_address); }
+  else                        { snprintf(o, t, "M5IOE1 0x%02X · SX1262 did not respond", s.ioe_address); }
 }
 
 static void est_tela(char* o, size_t t)
 {
-  snprintf(o, t, "Apaga em %u s  ·  painel a %d MHz", (unsigned)ajustes_tela_s(),
+  snprintf(o, t, "Blanks after %u s  ·  panel at %d MHz", (unsigned)ajustes_tela_s(),
            tab5_power_dpi_clock());
 }
 
@@ -474,36 +474,36 @@ static void est_apps(char* o, size_t t)
 {
   int visiveis = 0;
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
-    if (strcasecmp(SISTEMA_APPS[i]->name, "Ajustes") == 0
+    if (strcasecmp(SISTEMA_APPS[i]->name, "Settings") == 0
         || !nome_em_lista(s_apps_ocultos, SISTEMA_APPS[i]->name)) { ++visiveis; }
   }
-  snprintf(o, t, "%d de %d visíveis", visiveis, SISTEMA_NUM_APPS);
+  snprintf(o, t, "%d of %d visible", visiveis, SISTEMA_NUM_APPS);
 }
 
 static void est_teclado(char* o, size_t t)
 {
-  if (!ajustes_teclado())            { snprintf(o, t, "Desativado"); }
-  else if (tab5_keyboard_present())  { snprintf(o, t, "Encaixado"); }
-  else                               { snprintf(o, t, "Procurando no ExtPort1..."); }
+  if (!ajustes_teclado())            { snprintf(o, t, "Disabled"); }
+  else if (tab5_keyboard_present())  { snprintf(o, t, "Docked"); }
+  else                               { snprintf(o, t, "Looking on ExtPort1..."); }
 }
 
 static void est_usb(char* o, size_t t)
 {
   tab5_pendrive_estado_t e;
   tab5_pendrive_estado(&e);
-  if (e.fase == PENDRIVE_ATIVO)           { snprintf(o, t, "Cartão no computador"); }
-  else if (e.fase != PENDRIVE_PARADO)     { snprintf(o, t, "Pendrive: aguarde..."); }
-  else if (e.oferta)                      { snprintf(o, t, "Computador conectado"); }
-  else if (ajustes_pendrive())            { snprintf(o, t, "Liga sozinho no computador"); }
-  else                                    { snprintf(o, t, "Pendrive desligado"); }
+  if (e.fase == PENDRIVE_ATIVO)           { snprintf(o, t, "Card on the computer"); }
+  else if (e.fase != PENDRIVE_PARADO)     { snprintf(o, t, "Flash drive: please wait..."); }
+  else if (e.oferta)                      { snprintf(o, t, "Computer connected"); }
+  else if (ajustes_pendrive())            { snprintf(o, t, "Turns on by itself on the computer"); }
+  else                                    { snprintf(o, t, "Flash drive off"); }
 }
 
 static void est_grove(char* o, size_t t)
 {
   const int dono = (int)tab5_grove_owner();
-  if (sistema_grove_sondando())                 { snprintf(o, t, "Sondando o cabo..."); }
-  else if (dono != (int)GROVE_OWNER_NONE)     { snprintf(o, t, "Em uso: %s", grove_owner_name((grove_owner_t)dono)); }
-  else if (ajustes_grove())                     { snprintf(o, t, "Ligado - %s", grove_name(tab5_grove_type())); }
+  if (sistema_grove_sondando())                 { snprintf(o, t, "Probing the cable..."); }
+  else if (dono != (int)GROVE_OWNER_NONE)     { snprintf(o, t, "In use: %s", grove_owner_name((grove_owner_t)dono)); }
+  else if (ajustes_grove())                     { snprintf(o, t, "On - %s", grove_name(tab5_grove_type())); }
   else                                          { snprintf(o, t, "Desligado"); }
 }
 
@@ -601,7 +601,7 @@ static void desenhar_inicio(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   const int b = ajustes_brilho(), v = ajustes_volume();
   const int b_ant = s_ub, v_ant = s_uv;
   if (pintura_mudou_i(&s_p, &s_ub, b) || tudo) {
-    desenhar_rapido(d, a, RAPIDO_Y0, "Brilho", brilho_para_pos(b), 0, BRILHO_POS_MAX, tudo,
+    desenhar_rapido(d, a, RAPIDO_Y0, "Brightness", brilho_para_pos(b), 0, BRILHO_POS_MAX, tudo,
                     b_ant < 0 ? -1 : brilho_para_pos(b_ant));
   }
   if (pintura_mudou_i(&s_p, &s_uv, v) || tudo) {
@@ -761,7 +761,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       snprintf(rot, sizeof(rot), "Senha de \"%s\"", s_wf_alvo);
       texto(d, a.x + MARGEM, a.y + CONTEUDO_Y, 24, false, cor_sub(d), rot);
       paragrafo(d, a.x + MARGEM, a.y + y_campo + 92, a.largura - 2 * MARGEM,
-                "Toque ENVIAR para guardar e conectar. A senha fica cifrada no cartão. X cancela.");
+                "Tap SEND to save and connect. The password stays encrypted on the card. X cancels.");
     }
     char campo[70];
     snprintf(campo, sizeof(campo), "%s_", s_wf_txt);
@@ -781,7 +781,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (mudou) {
     conteudo_limpo(d, a);
     int y = CONTEUDO_Y;
-    texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Estado");
+    texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Status");
     texto(d, a.x + MARGEM, a.y + y + 28, 32, false, con ? TFT_GREENYELLOW : TFT_WHITE, sub);
     texto(d, a.x + a.largura - MARGEM, a.y + y + 34, 22, false, cor_sub(d), det, top_right);
     y += 84;
@@ -790,7 +790,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     y = botao_largo(d, a, y, tab5_wifi_searching() ? "PROCURANDO..." : "PROCURAR REDES",
                     tab5_wifi_searching() ? TFT_DARKGREY : TFT_SKYBLUE);
     texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d),
-          s_aviso[0] ? s_aviso : (s_wf_n ? "Toque numa rede para conectar" : "Toque PROCURAR REDES"));
+          s_aviso[0] ? s_aviso : (s_wf_n ? "Tap a network to connect" : "Tap SCAN FOR NETWORKS"));
   }
   const area_t janela = { a.x, a.y + wf_y_lista(), a.largura, a.altura - wf_y_lista() };
   lista_desenhar(&s_l_wifi, d, janela, TFT_BLACK, mudou);
@@ -895,7 +895,7 @@ static void toque_wifi(int tx, int ty)
     } else {
       snprintf(s_wf_esquecer, sizeof(s_wf_esquecer), "%s", v.ssid);
       s_wf_esquecer_ms = agora;
-      snprintf(s_aviso, sizeof(s_aviso), "Conectada. Toque de novo para esquecer");
+      snprintf(s_aviso, sizeof(s_aviso), "Connected. Tap again to forget");
     }
   } else if (v.known || v.open) {
     wf_ligar_se_preciso();
@@ -990,14 +990,14 @@ static void pag_bt(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (ver != s_bt_ver) { s_bt_ver = ver; bt_recarregar(); }
   const bool via_bt = ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH;
   const char* enlace = via_bt ? mesh_ble_descricao()
-                     : ajustes_mesh_via() == AJUSTES_MESH_INTERNET ? "Mesh pela internet" : "Mesh pelo cabo Grove";
+                     : ajustes_mesh_via() == AJUSTES_MESH_INTERNET ? "Mesh over the internet" : "Mesh over the Grove cable";
   snprintf(assin, sizeof(assin), "%s|%d|%d|%d|%s|%s", sub, (int)ajustes_bluetooth(), (int)varrendo, s_bt_n, s_aviso, enlace);
   const bool mudou = pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) || tudo;
   if (mudou) {
     conteudo_limpo(d, a);
     int y = CONTEUDO_Y;
-    y = info(d, a, y, "Estado", sub, pronto ? TFT_GREENYELLOW : TFT_WHITE);
-    y = info(d, a, y, "Conexão do Mesh", enlace, mesh_ble_conectado() ? TFT_GREENYELLOW : TFT_WHITE);
+    y = info(d, a, y, "Status", sub, pronto ? TFT_GREENYELLOW : TFT_WHITE);
+    y = info(d, a, y, "Mesh connection", enlace, mesh_ble_conectado() ? TFT_GREENYELLOW : TFT_WHITE);
     const bool ligado = tab5_ble_state() != TAB5_BLE_OFF;
     const bool descendo = tab5_ble_state() == TAB5_BLE_STOPPING;
     y = botao_largo(d, a, y, descendo ? "DESLIGANDO..." : ligado ? "DESLIGAR O BLUETOOTH" : "LIGAR O BLUETOOTH",
@@ -1005,7 +1005,7 @@ static void pag_bt(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     y = botao_largo(d, a, y, varrendo ? "PROCURANDO..." : "PROCURAR APARELHOS",
                     pronto && !varrendo ? TFT_SKYBLUE : TFT_DARKGREY);
     texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d),
-          s_aviso[0] ? s_aviso : (s_bt_n ? "Toque num Meshtastic (verde) para conectar o Mesh" : "Nenhum aparelho visto ainda"));
+          s_aviso[0] ? s_aviso : (s_bt_n ? "Tap a Meshtastic device (green) to connect Mesh" : "No device seen yet"));
   }
   const area_t janela = { a.x, a.y + bt_lista_y0(), a.largura, a.altura - bt_lista_y0() };
   lista_desenhar(&s_l_bt, d, janela, TFT_BLACK, mudou);
@@ -1051,11 +1051,11 @@ static void toque_bt(int tx, int ty)
     char dist[12];
     tab5_signal_distance_text(s_bt[i].rssi, s_bt[i].p1m ? s_bt[i].p1m : TAB5_SIGNAL_P1M_BLE, dist, sizeof(dist));
     if (s_bt[i].brand[0]) {
-      snprintf(s_aviso, sizeof(s_aviso), "%s (%s) a %s - só leitura", nome, s_bt[i].brand, dist);
+      snprintf(s_aviso, sizeof(s_aviso), "%s (%s) at %s - read-only", nome, s_bt[i].brand, dist);
     } else {
-      snprintf(s_aviso, sizeof(s_aviso), "%s a %s: sem uso ainda (só nós Meshtastic)", nome, dist);
+      snprintf(s_aviso, sizeof(s_aviso), "%s at %s: not usable yet (Meshtastic nodes only)", nome, dist);
     }
-    ESP_LOGI("ajustes", "bluetooth: %s (%s) nao e Meshtastic - nada a fazer", nome, end);
+    ESP_LOGI("settings", "bluetooth: %s (%s) is not Meshtastic - nothing to do", nome, end);
     sistema_pedir_redesenho();
     return;
   }
@@ -1082,17 +1082,17 @@ static void pag_espnow(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = CONTEUDO_Y;
-  y = info(d, a, y, "Canal agora", sub);
-  y = botao_largo(d, a, y, "USAR O CANAL DO ROTEADOR", f ? TFT_SKYBLUE : TFT_DARKGREY);
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Canal fixo");
+  y = info(d, a, y, "Current channel", sub);
+  y = botao_largo(d, a, y, "USE THE ROUTER CHANNEL", f ? TFT_SKYBLUE : TFT_DARKGREY);
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Fixed channel");
   y += 34;
   if (f) { snprintf(val, sizeof(val), "%u", (unsigned)f); } else { snprintf(val, sizeof(val), "-"); }
   menos_mais(d, a, y, val);
   y += BTN_A + 24;
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "O rádio fica em um canal por vez. No canal do roteador o Wi-Fi e o ESP-NOW "
-            "funcionam juntos, mas os outros aparelhos precisam estar nesse canal. "
-            "Canal fixo solta o roteador. A escolha fica salva.");
+            "The radio stays on one channel at a time. On the router's channel, Wi-Fi and "
+            "ESP-NOW work together, but other devices need to be on that same channel. "
+            "A fixed channel drops the router. The choice is saved.");
 }
 static void toque_espnow(int tx, int ty)
 {
@@ -1168,7 +1168,7 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 
   // TRES VIAS. O Grove ganha sozinho quando o C6L e achado no cabo; depois
   // disso a escolha aqui vale ate o proximo achado (ver settings.h).
-  texto(d, a.x + MARGEM, a.y + CONTEUDO_Y, 22, false, cor_sub(d), "Falar com a malha por (o Grove tem prioridade)");
+  texto(d, a.x + MARGEM, a.y + CONTEUDO_Y, 22, false, cor_sub(d), "Talk to the mesh over (Grove takes priority)");
   int y = mesh_y_via();
   static const char* const ROTULO[3] = { "CABO GROVE", "BLUETOOTH", "INTERNET" };
   for (int k = 0; k < 3; ++k) {
@@ -1177,9 +1177,9 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
                sel ? TFT_GREENYELLOW : d.color565(50, 55, 65), sel ? TFT_BLACK : TFT_LIGHTGREY);
   }
   y += BTN_A + 24;
-  y = info(d, a, y, "Enlace", tab5_mesh_enlace_descricao(),
+  y = info(d, a, y, "Link", tab5_mesh_enlace_descricao(),
            tab5_mesh_no_ar() ? TFT_GREENYELLOW : TFT_WHITE);
-  y = info(d, a, y, "Nó Bluetooth", salvo[0] ? salvo : "o primeiro que aparecer");
+  y = info(d, a, y, "Bluetooth node", salvo[0] ? salvo : "the first one that shows up");
 
   // PIN
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "PIN do pareamento Bluetooth");
@@ -1191,27 +1191,27 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 
   if (s_pin_editando) {
     paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-              s_pin_para_no ? "O nó está pedindo o PIN agora: digite o que ele mostra e toque ENVIAR (30 s)."
-                            : "Digite o PIN fixo do nó (123456 nos sem tela) e toque ENVIAR.");
+              s_pin_para_no ? "The node is asking for the PIN right now: type what it shows and tap SEND (30 s)."
+                            : "Enter the node's fixed PIN (123456 on nodes with no screen) and tap SEND.");
     tecvirt_pintar(&s_kb, d, true);
     return;
   }
 
   // Internet (MQTT pelo Wi-Fi): so roda sem o no; o Grove tem prioridade.
   const bool net = ajustes_mesh_internet();
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Internet também quando faltar o nó (MQTT pelo Wi-Fi)");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Internet too when the node is unreachable (MQTT over Wi-Fi)");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, net ? TFT_GREENYELLOW : TFT_WHITE,
-        net ? "Ligada" : "Desligada", middle_left);
+        net ? "On" : "Off", middle_left);
   tab5_botao(d, a.x + a.largura - MARGEM - 260, a.y + y, 260, BTN_A, net ? "DESLIGAR" : "LIGAR",
              net ? TFT_ORANGE : TFT_SKYBLUE);
   y += BTN_A + 12;
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM, tab5_mesh_internet_estado());
   y += 100;
-  if (salvo[0]) { y = botao_largo(d, a, y, "ESQUECER O NÓ BLUETOOTH", d.color565(50, 55, 65)); }
+  if (salvo[0]) { y = botao_largo(d, a, y, "FORGET THE BLUETOOTH NODE", d.color565(50, 55, 65)); }
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "Com o nó no Bluetooth o cabo Grove fica livre para o GPS. O que o nó faz "
-            "(localização, internet do Tab5 para ele, rádio): app Mesh, página Nó.");
+            "With the node on Bluetooth, the Grove cable is free for the GPS. What the node does "
+            "(location, the Tab5's internet for it, radio): the Mesh app, Node page.");
 }
 
 static void aplicar_pin(void)
@@ -1348,18 +1348,18 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   int y = CONTEUDO_Y;
   char valor[96];
   if (!s.ioe_address) {
-    snprintf(valor, sizeof(valor), "M5IOE1 não encontrado · SX1262 não testado");
+    snprintf(valor, sizeof(valor), "M5IOE1 not found · SX1262 not tested");
   } else if (s.radio_present) {
     snprintf(valor, sizeof(valor), "SX1262 respondeu · M5IOE1 0x%02X rev %02X",
              s.ioe_address, s.ioe_revision);
   } else {
-    snprintf(valor, sizeof(valor), "M5IOE1 0x%02X · SX1262 não respondeu (%d)",
+    snprintf(valor, sizeof(valor), "M5IOE1 0x%02X · SX1262 did not respond (%d)",
              s.ioe_address, s.radio_error);
   }
-  y = info(d, a, y, "Estado ao vivo", valor,
+  y = info(d, a, y, "Live status", valor,
            s.radio_present ? TFT_GREENYELLOW : (s.ioe_address ? TFT_ORANGE : TFT_WHITE));
 
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW2 · endereço do M5IOE1 (verde = respondeu)");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW2 · M5IOE1 address (green = responded)");
   y += 32;
   static const uint8_t END[] = { 0x74, 0x73, 0x72, 0x71 };
   static const char* const AB[] = { "A0 B0", "A1 B0", "A0 B1", "A1 B1" };
@@ -1389,7 +1389,7 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   snprintf(linha, sizeof(linha), "BUSY  %s", valor);
   texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE, linha);
   y += 30;
-  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "switch 1 do SW1 é interno do módulo - sem pino aqui");
+  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "SW1 switch 1 is internal to the module - no pin here");
   y += 38;
 
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW3 · switches 9-11 = IRQ");
@@ -1398,10 +1398,10 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   snprintf(linha, sizeof(linha), "IRQ   %s", valor);
   texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE, linha);
   y += 30;
-  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "* é a rota tentada agora - confira contra os seus switches");
+  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "* is the route being tried now - check it against your switches");
   y += 46;
 
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Sonda elétrica · pino M5-Bus / GPIO");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Electrical probe · M5-Bus pin / GPIO");
   y += 30;
   const int col_l = (a.largura - 2 * MARGEM) / 2;
   for (size_t i = 0; i < n; ++i) {
@@ -1416,7 +1416,7 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   tab5_botao(d, a.x + MARGEM, a.y + LORA_BOTAO_Y,
              a.largura - 2 * MARGEM, BTN_A, "SONDAR E TENTAR O SX1262", TFT_SKYBLUE);
   texto(d, a.x + MARGEM, a.y + LORA_BOTAO_Y + BTN_A + 12, 20, false, cor_sub(d),
-        "SDA/SCL são lidos sem mudar os pulls, para preservar o I2C interno.");
+        "SDA/SCL are read without changing the pulls, to preserve the internal I2C.");
 }
 
 static void toque_lora(int tx, int ty)
@@ -1439,34 +1439,34 @@ static void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = CONTEUDO_Y;
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Apagar a tela depois de, sem toque");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Blank the screen after, without touch");
   y += 34; menos_mais(d, a, y, v1); y += BTN_A + 12;
   char ajuda[64];
-  snprintf(ajuda, sizeof(ajuda), "De %d a %d segundos.", AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S);
+  snprintf(ajuda, sizeof(ajuda), "From %d to %d seconds.", AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S);
   y = paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM, ajuda) - a.y + 24;
   // Bloqueio: alturas fixas, o toque (toque_tela) repete esta conta.
   const bool bq = ajustes_bloqueio();
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Tela de bloqueio ao ligar e ao acordar");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Lock screen when turning on and waking up");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, bq ? TFT_GREENYELLOW : TFT_WHITE,
-        bq ? "Ligada" : "Desligada", middle_left);
+        bq ? "On" : "Off", middle_left);
   tab5_botao(d, a.x + a.largura - MARGEM - 260, a.y + y, 260, BTN_A, bq ? "DESLIGAR" : "LIGAR",
              bq ? TFT_ORANGE : TFT_SKYBLUE);
   y += BTN_A + 24;
   // Papel de parede do inicio: TROCAR passa pelas opcoes em roda.
-  static const char* const PAREDE[] = { "Sorteio", "Fios", "Ondas", "Teia", "Raios", "Círculos", "Nenhum" };
+  static const char* const PAREDE[] = { "Random", "Wires", "Waves", "Web", "Rays", "Circles", "None" };
   const uint8_t pp = ajustes_parede();
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Papel de parede do início");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Home screen wallpaper");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true,
         pp == AJUSTES_PAREDE_NENHUM ? TFT_WHITE : TFT_GREENYELLOW, PAREDE[pp], middle_left);
   tab5_botao(d, a.x + a.largura - MARGEM - 260, a.y + y, 260, BTN_A, "TROCAR", TFT_SKYBLUE);
   y += BTN_A + 24;
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Relógio do painel");
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Panel clock");
   y += 34; menos_mais(d, a, y, v2); y += BTN_A + 12;
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "Menor economiza bateria (menos leitura da memória pelo painel), mas reduz "
-            "os quadros por segundo. 60 MHz é o padrão.");
+            "Lower saves battery (less memory reading by the panel), but reduces "
+            "frames per second. 60 MHz is the default.");
 }
 static void toque_tela(int tx, int ty)
 {
@@ -1511,14 +1511,14 @@ static void apps_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int lar
 {
   if (i < 0 || i >= SISTEMA_NUM_APPS) { return; }
   const char* nome = SISTEMA_APPS[i]->name;
-  const bool ajustes = strcasecmp(nome, "Ajustes") == 0;
+  const bool ajustes = strcasecmp(nome, "Settings") == 0;
   const bool oculto = !ajustes && nome_em_lista(s_apps_ocultos, nome);
   d.fillRect(x0, y, largura, APPS_ITEM_A, TFT_BLACK);
   texto(d, x0 + MARGEM, y + APPS_ITEM_A / 2, 30, true,
         oculto ? cor_sub(d) : TFT_WHITE, nome, middle_left);
   const int bl = 230, ba = 60;
   tab5_botao(d, x0 + largura - MARGEM - bl, y + (APPS_ITEM_A - ba) / 2, bl, ba,
-             ajustes ? "SEMPRE VISÍVEL" : oculto ? "MOSTRAR" : "OCULTAR",
+             ajustes ? "ALWAYS VISIBLE" : oculto ? "SHOW" : "HIDE",
              ajustes ? TFT_DARKGREY : oculto ? TFT_SKYBLUE : TFT_ORANGE);
   d.drawFastHLine(x0 + MARGEM, y + APPS_ITEM_A - 1, largura - 2 * MARGEM, cor_linha(d));
 }
@@ -1528,14 +1528,14 @@ static void apps_alternar(int alvo)
   if (alvo < 0 || alvo >= SISTEMA_NUM_APPS) { return; }
   // Ajustes fica sempre visivel para a pessoa nao perder o caminho de volta
   // ate esta pagina.
-  if (strcasecmp(SISTEMA_APPS[alvo]->name, "Ajustes") == 0) { return; }
+  if (strcasecmp(SISTEMA_APPS[alvo]->name, "Settings") == 0) { return; }
 
   char novos[sizeof(s_apps_ocultos)];
   size_t k = 0;
   novos[0] = 0;
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
     const char* nome = SISTEMA_APPS[i]->name;
-    if (strcasecmp(nome, "Ajustes") == 0) { continue; }
+    if (strcasecmp(nome, "Settings") == 0) { continue; }
     bool oculto = nome_em_lista(s_apps_ocultos, nome);
     if (i == alvo) { oculto = !oculto; }
     if (!oculto) { continue; }
@@ -1557,7 +1557,7 @@ static void pag_apps(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   if (tudo) {
     conteudo_limpo(d, a);
     texto(d, a.x + MARGEM, a.y + CONTEUDO_Y + 10, 22, false, cor_sub(d),
-          "Escolha quais aplicativos aparecem na tela inicial.");
+          "Choose which apps show up on the home screen.");
   }
   const area_t janela = { a.x, a.y + APPS_LISTA_Y, a.largura, a.altura - APPS_LISTA_Y };
   lista_desenhar(&s_l_apps, d, janela, TFT_BLACK, tudo);
@@ -1576,17 +1576,17 @@ static void pag_teclado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   char sub[48], assin[64];
   est_teclado(sub, sizeof(sub));
   if (ajustes_teclado() && tab5_keyboard_present()) {
-    snprintf(sub, sizeof(sub), "Encaixado (firmware %u)", (unsigned)tab5_keyboard_version());
+    snprintf(sub, sizeof(sub), "Docked (firmware %u)", (unsigned)tab5_keyboard_version());
   }
   snprintf(assin, sizeof(assin), "%s|%d", sub, (int)ajustes_teclado());
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
-  int y = info(d, a, CONTEUDO_Y, "Estado", sub, tab5_keyboard_present() ? TFT_GREENYELLOW : TFT_WHITE);
-  y = botao_largo(d, a, y, ajustes_teclado() ? "DESATIVAR" : "ATIVAR",
+  int y = info(d, a, CONTEUDO_Y, "Status", sub, tab5_keyboard_present() ? TFT_GREENYELLOW : TFT_WHITE);
+  y = botao_largo(d, a, y, ajustes_teclado() ? "DISABLE" : "ENABLE",
                   ajustes_teclado() ? TFT_ORANGE : TFT_GREENYELLOW);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "O teclado encaixa no ExtPort1. Desativado, o sistema não procura por ele "
-            "e o teclado da tela é usado nas conversas.");
+            "The keyboard docks on ExtPort1. Disabled, the system does not look for it "
+            "and the on-screen keyboard is used in conversations.");
 }
 static void toque_teclado(int tx, int ty)
 {
@@ -1606,12 +1606,12 @@ static void pag_grove(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   snprintf(assin, sizeof(assin), "%s|%d", sub, (int)ajustes_grove());
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
-  int y = info(d, a, CONTEUDO_Y, "Estado", sub);
-  y = botao_largo(d, a, y, ajustes_grove() ? "DESLIGAR O 5V" : "LIGAR O 5V",
+  int y = info(d, a, CONTEUDO_Y, "Status", sub);
+  y = botao_largo(d, a, y, ajustes_grove() ? "TURN OFF THE 5V" : "TURN ON THE 5V",
                   ajustes_grove() ? TFT_ORANGE : TFT_GREENYELLOW);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "Ligado, o módulo do cabo (C6L, GPS) fica sempre alimentado e não reinicia "
-            "a cada uso. Desligado economiza bateria sem nada plugado.");
+            "On, the cable module (C6L, GPS) stays powered at all times and does not reset "
+            "on every use. Off saves battery when nothing is plugged in.");
 }
 static void toque_grove(int tx, int ty)
 {
@@ -1639,12 +1639,12 @@ static void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   int y = CONTEUDO_Y;
   char sistema[48];
   snprintf(sistema, sizeof(sistema), "M5tabOS %s", esp_app_get_description()->version);
-  y = info(d, a, y, "Sistema", sistema);
-  y = info(d, a, y, "Compilado em", m5tabos_compilado);
+  y = info(d, a, y, "System", sistema);
+  y = info(d, a, y, "Built on", m5tabos_compilado);
   y = info(d, a, y, "ESP-IDF", esp_get_idf_version());
-  y = info(d, a, y, "Memória interna", mem);
+  y = info(d, a, y, "Internal memory", mem);
   y = info(d, a, y, "PSRAM", ps);
-  y = info(d, a, y, "Ligado há", ativo);
+  y = info(d, a, y, "Uptime", ativo);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
             "M5Stack Tab5: ESP32-P4 (sistema) e ESP32-C6 (Wi-Fi, Bluetooth e ESP-NOW).");
 }
@@ -1687,13 +1687,13 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   char estado[64], l2[96] = "", l3[80] = "", fim[96] = "";
   uint16_t cor = TFT_WHITE;
   switch (e.fase) {
-    case PENDRIVE_PREPARANDO: snprintf(estado, sizeof(estado), "Preparando o cartão..."); break;
-    case PENDRIVE_DEVOLVENDO: snprintf(estado, sizeof(estado), "Devolvendo o cartão..."); break;
+    case PENDRIVE_PREPARANDO: snprintf(estado, sizeof(estado), "Preparing the card..."); break;
+    case PENDRIVE_DEVOLVENDO: snprintf(estado, sizeof(estado), "Returning the card..."); break;
     case PENDRIVE_ATIVO:
-      if (!e.usb.montado)       { snprintf(estado, sizeof(estado), "Esperando o computador"); cor = TFT_YELLOW; }
-      else if (e.usb.suspenso)  { snprintf(estado, sizeof(estado), "Computador parado ou cabo solto"); cor = TFT_ORANGE; }
-      else if (e.usb.ativo)     { snprintf(estado, sizeof(estado), "Copiando..."); cor = TFT_SKYBLUE; }
-      else                      { snprintf(estado, sizeof(estado), "Cartão no computador"); cor = TFT_GREENYELLOW; }
+      if (!e.usb.montado)       { snprintf(estado, sizeof(estado), "Waiting for the computer"); cor = TFT_YELLOW; }
+      else if (e.usb.suspenso)  { snprintf(estado, sizeof(estado), "Computer stalled or cable unplugged"); cor = TFT_ORANGE; }
+      else if (e.usb.ativo)     { snprintf(estado, sizeof(estado), "Copying..."); cor = TFT_SKYBLUE; }
+      else                      { snprintf(estado, sizeof(estado), "Card on the computer"); cor = TFT_GREENYELLOW; }
       break;
     default:
       snprintf(estado, sizeof(estado), "%s", e.oferta ? "Computador conectado" : "Desligado");
@@ -1704,10 +1704,10 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     char li[24], gr[24];
     kb_txt(li, sizeof(li), e.usb.lidos);
     kb_txt(gr, sizeof(gr), e.usb.gravados);
-    snprintf(l2, sizeof(l2), "Lidos %s  ·  gravados %s%s", li, gr, e.usb.erros ? "  ·  ERROS" : "");
+    snprintf(l2, sizeof(l2), "Read %s  ·  written %s%s", li, gr, e.usb.erros ? "  ·  ERRORS" : "");
   }
   if (e.fase != PENDRIVE_PARADO || r.in_journal) {
-    snprintf(l3, sizeof(l3), "%u gravação(ões) guardadas (%u de %u KB)",
+    snprintf(l3, sizeof(l3), "%u write(s) held (%u of %u KB)",
              (unsigned)r.in_journal, (unsigned)(r.journal_used / 1024), (unsigned)(r.journal_total / 1024));
   }
   // DIAGNOSTICO: ate onde o computador chegou, na ordem em que ele faz. E o
@@ -1716,14 +1716,14 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   char diag[96] = "";
   if (e.fase == PENDRIVE_ATIVO) {
     const tab5_pendrive_usb_t& u = e.usb;
-    if (!u.n_config)            { snprintf(diag, sizeof(diag), "USB: o computador não reconheceu o aparelho"); }
-    else if (!u.n_inquiry)      { snprintf(diag, sizeof(diag), "USB: reconheceu, mas não pediu o disco"); }
-    else if (!u.n_respostas)    { snprintf(diag, sizeof(diag), "USB: pediu o disco %ux, a resposta não chegou",
+    if (!u.n_config)            { snprintf(diag, sizeof(diag), "USB: the computer did not recognize the device"); }
+    else if (!u.n_inquiry)      { snprintf(diag, sizeof(diag), "USB: recognized it, but never asked for the disk"); }
+    else if (!u.n_respostas)    { snprintf(diag, sizeof(diag), "USB: asked for the disk %ux, the response never arrived",
                                            (unsigned)u.n_inquiry); }
-    else if (!u.n_capacidade)   { snprintf(diag, sizeof(diag), "USB: pediu o disco, não o tamanho (resp. %u, últ. 0x%02X)",
+    else if (!u.n_capacidade)   { snprintf(diag, sizeof(diag), "USB: asked for the disk, not the size (resp. %u, last 0x%02X)",
                                            (unsigned)u.n_respostas, (unsigned)u.op_respondido); }
-    else if (!u.n_leituras)     { snprintf(diag, sizeof(diag), "USB: viu o disco, ainda não leu"); }
-    else                        { snprintf(diag, sizeof(diag), "USB: %u leitura(s), %u entregue(s), a mais lenta %u ms",
+    else if (!u.n_leituras)     { snprintf(diag, sizeof(diag), "USB: saw the disk, hasn't read yet"); }
+    else                        { snprintf(diag, sizeof(diag), "USB: %u read(s), %u delivered, slowest %u ms",
                                            (unsigned)u.n_cmd_leitura, (unsigned)u.n_leituras_ok,
                                            (unsigned)u.leitura_max_ms); }
     // Parou ha mais de 3 s: diz ONDE - e o que separa um travamento do USB
@@ -1731,13 +1731,13 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     if (u.n_config && u.parado_ms >= 3000) {
       switch (u.onde) {
         case PENDRIVE_ESPERA_CARTAO:
-          snprintf(diag, sizeof(diag), "USB: PARADO no cartão (setor %u)", (unsigned)u.ultimo_setor); break;
+          snprintf(diag, sizeof(diag), "USB: STALLED on the card (sector %u)", (unsigned)u.ultimo_setor); break;
         case PENDRIVE_ESPERA_USB:
-          snprintf(diag, sizeof(diag), "USB: PARADO no USB, entregando o setor %u (%u/%u)",
+          snprintf(diag, sizeof(diag), "USB: STALLED on USB, delivering sector %u (%u/%u)",
                    (unsigned)u.ultimo_setor, (unsigned)u.n_leituras_ok, (unsigned)u.n_cmd_leitura); break;
         default:
           if (u.n_cmd_leitura) {
-            snprintf(diag, sizeof(diag), "USB: o computador parou de pedir (%u/%u leituras)",
+            snprintf(diag, sizeof(diag), "USB: the computer stopped asking (%u/%u reads)",
                      (unsigned)u.n_leituras_ok, (unsigned)u.n_cmd_leitura);
           }
           break;
@@ -1750,24 +1750,24 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   }
   char perdas[64] = "";
   if (r.lost) {
-    snprintf(perdas, sizeof(perdas), "%u gravação(ões) perdidas: memória cheia", (unsigned)r.lost);
+    snprintf(perdas, sizeof(perdas), "%u write(s) lost: memory full", (unsigned)r.lost);
   }
   if (e.fase == PENDRIVE_PARADO) {
     switch (e.motivo) {
-      case PENDRIVE_RECUSA_APP:        snprintf(fim, sizeof(fim), "Feche o app que usa o cartão (Arquivos, Câmera)."); break;
-      case PENDRIVE_RECUSA_EM_USO:     snprintf(fim, sizeof(fim), "O cartão estava em uso. Tente de novo."); break;
-      case PENDRIVE_RECUSA_SEM_CARTAO: snprintf(fim, sizeof(fim), "Sem cartão SD, ou ele não respondeu."); break;
-      case PENDRIVE_RECUSA_SEM_DIARIO: snprintf(fim, sizeof(fim), "Falta a memória interna do pendrive: grave o firmware de novo."); break;
-      case PENDRIVE_RECUSA_USB:        snprintf(fim, sizeof(fim), "O USB não iniciou. O cartão continua no Tab5."); break;
+      case PENDRIVE_RECUSA_APP:        snprintf(fim, sizeof(fim), "Close the app that's using the card (Files, Camera)."); break;
+      case PENDRIVE_RECUSA_EM_USO:     snprintf(fim, sizeof(fim), "The card was in use. Try again."); break;
+      case PENDRIVE_RECUSA_SEM_CARTAO: snprintf(fim, sizeof(fim), "No SD card, or it did not respond."); break;
+      case PENDRIVE_RECUSA_SEM_DIARIO: snprintf(fim, sizeof(fim), "Missing the flash-drive journal: reflash the firmware."); break;
+      case PENDRIVE_RECUSA_USB:        snprintf(fim, sizeof(fim), "USB did not start. The card stays on the Tab5."); break;
       default:
         if (e.sem_ejetar) {
           // Ver tab5_flashdrive.cpp (s_saiu_sem_ejetar): o disco nao aparecer
           // logo da proxima vez e o computador verificando o cartao.
-          snprintf(fim, sizeof(fim), "Saiu sem ejetar: o computador verifica o cartão antes de abrir.");
+          snprintf(fim, sizeof(fim), "Removed without ejecting: the computer checks the card before opening it.");
         } else if (r.complete) {
-          snprintf(fim, sizeof(fim), "Última vez: %u gravação(ões) aplicada(s)%s%s",
-                   (unsigned)r.applied, r.conflicts ? ", conflito em " : "",
-                   r.conflicts ? "arquivo(s) .tab5" : "");
+          snprintf(fim, sizeof(fim), "Last time: %u write(s) applied%s%s",
+                   (unsigned)r.applied, r.conflicts ? ", conflict in " : "",
+                   r.conflicts ? ".tab5 file(s)" : "");
         }
         break;
     }
@@ -1780,7 +1780,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   conteudo_limpo(d, a);
   memset(s_usb_bt, 0, sizeof(s_usb_bt));
 
-  int y = info(d, a, CONTEUDO_Y, "Cartão SD como pendrive (USB-C)", estado, cor);
+  int y = info(d, a, CONTEUDO_Y, "SD card as a flash drive (USB-C)", estado, cor);
   if (l2[0])  { texto(d, a.x + MARGEM, a.y + y, 26, false, TFT_WHITE, l2); y += 44; }
   if (l3[0])  { texto(d, a.x + MARGEM, a.y + y, 24, false, cor_sub(d), l3); y += 44; }
   if (diag[0])   { texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), diag); y += 40; }
@@ -1790,31 +1790,31 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 
   switch (e.fase) {
     case PENDRIVE_PARADO:
-      y = usb_botao(d, a, 0, y, "USAR COMO PENDRIVE", TFT_SKYBLUE);
+      y = usb_botao(d, a, 0, y, "USE AS A FLASH DRIVE", TFT_SKYBLUE);
       break;
     case PENDRIVE_ATIVO:
       if (s_usb_confirmar) {
         y = paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-                      "O computador não avisou que ejetou. Se ele tiver algo em cache, arquivos "
-                      "podem ficar incompletos. Ejete no computador e o cartão volta sozinho. Já "
-                      "usou \"Remover com segurança\" no Windows? Pode devolver.") - a.y + 16;
-        y = usb_botao(d, a, 0, y, "VOLTAR", TFT_SKYBLUE);
-        y = usb_botao(d, a, 1, y, "DEVOLVER MESMO ASSIM", TFT_RED);
+                      "The computer did not report an eject. If it had anything cached, files "
+                      "may be incomplete. Eject on the computer and the card returns by itself. Already "
+                      "used \"Safely Remove\" on Windows? You can return it.") - a.y + 16;
+        y = usb_botao(d, a, 0, y, "GO BACK", TFT_SKYBLUE);
+        y = usb_botao(d, a, 1, y, "RETURN ANYWAY", TFT_RED);
       } else {
-        y = usb_botao(d, a, 0, y, "DEVOLVER O CARTÃO AO TAB5", TFT_ORANGE);
+        y = usb_botao(d, a, 0, y, "RETURN THE CARD TO THE TAB5", TFT_ORANGE);
       }
       break;
     default:
-      y = usb_botao(d, a, 0, y, "AGUARDE...", TFT_DARKGREY);
+      y = usb_botao(d, a, 0, y, "PLEASE WAIT...", TFT_DARKGREY);
       s_usb_bt[0] = { };   // nao responde
       break;
   }
-  y = usb_botao(d, a, 2, y, ajustes_pendrive() ? "LIGAR SOZINHO NO COMPUTADOR: SIM" : "LIGAR SOZINHO NO COMPUTADOR: NÃO",
+  y = usb_botao(d, a, 2, y, ajustes_pendrive() ? "TURN ON BY ITSELF ON THE COMPUTER: YES" : "TURN ON BY ITSELF ON THE COMPUTER: NO",
                 ajustes_pendrive() ? TFT_GREENYELLOW : TFT_LIGHTGREY);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
-            "O Tab5 segue usável enquanto isso. O que ele gravar fica na memória interna e "
-            "vai para o cartão na volta. Arquivos e Câmera esperam o cartão. Para terminar, "
-            "ejete o disco no computador.");
+            "The Tab5 stays usable in the meantime. Whatever it writes stays in internal memory and "
+            "goes to the card when it returns. Files and Camera wait for the card. To finish, "
+            "eject the disk on the computer.");
 }
 
 static bool usb_em(int i, int tx, int ty)
@@ -1844,7 +1844,7 @@ static void toque_usb(int tx, int ty)
     } else if (s_usb_confirmar && usb_em(0, tx, ty)) {
       s_usb_confirmar = false;
     } else if (s_usb_confirmar && usb_em(1, tx, ty)) {
-      ESP_LOGW("ajustes", "cartao devolvido sem ejecao do computador");
+      ESP_LOGW("settings", "card returned without the computer ejecting it");
       s_usb_confirmar = false;
       tab5_pendrive_devolver();
     }
@@ -2090,7 +2090,7 @@ static uint32_t periodo_agora(void)
 }
 
 extern const app_t APP_CONFIG = {
-  .name  = "Ajustes",
+  .name  = "Settings",
   .cor   = TFT_YELLOW,
   .perfil = { .speaker = true },
   .usa_sd = false,

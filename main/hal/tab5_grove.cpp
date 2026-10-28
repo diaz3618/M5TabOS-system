@@ -76,8 +76,8 @@ const char* grove_name(grove_type_t t)
   switch (t) {
     case GROVE_GPS:          return "GPS (NMEA)";
     case GROVE_MESHTASTIC:   return "Meshtastic (C6L)";
-    case GROVE_UNKNOWN: return "desconhecido";
-    default:                 return "nada";
+    case GROVE_UNKNOWN: return "unknown";
+    default:                 return "none";
   }
 }
 

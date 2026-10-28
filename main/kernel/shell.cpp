@@ -504,7 +504,7 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   tab5_titulo(d, 28);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, SIS_FUNDO);
-  snprintf(buf, sizeof(buf), "%.14s", s_app ? s_app->name : "Início");
+  snprintf(buf, sizeof(buf), "%.14s", s_app ? s_app->name : "Home");
   d.drawString(buf, APP_X, ALTURA_BARRA / 2);
   tab5_fonte_corpo(d);
 
@@ -833,12 +833,12 @@ static void desenhar_temp_nav_app(lgfx::LovyanGFX& d)
 static void montar_servicos(char* esq, size_t te, char* dir, size_t td)
 {
   if (!ajustes_grove()) {
-    snprintf(esq, te, "desligado");
+    snprintf(esq, te, "off");
   } else if (tab5_mesh_servico_ativo()) {
     // Com o servico de pe, o que interessa nao e "tem um C6L ali" e sim se ele
     // esta respondendo e quantos nos alcanca.
-    snprintf(esq, te, "Meshtastic - %d nós, %s",
-             tab5_mesh_num_nos(), tab5_mesh_no_ar() ? "no ar" : "mudo");
+    snprintf(esq, te, "Meshtastic - %d nodes, %s",
+             tab5_mesh_num_nos(), tab5_mesh_no_ar() ? "online" : "silent");
   } else if (tab5_gps_service_active()) {
     // Mesma ideia do Mesh acima: o que importa e se ha FIX de verdade, nao so
     // "tem um GPS ali". qualidade==0 e "recebo o modulo mas ainda sem fix" -
@@ -847,7 +847,7 @@ static void montar_servicos(char* esq, size_t te, char* dir, size_t td)
     if (p.valid && p.qualidade > 0) {
       snprintf(esq, te, "GPS - fix (%u sats)", (unsigned)p.sats_usados);
     } else {
-      snprintf(esq, te, "GPS - sem fix");
+      snprintf(esq, te, "GPS - no fix");
     }
   } else {
     snprintf(esq, te, "%s", grove_name(tab5_grove_type()));
@@ -890,7 +890,7 @@ static void desenhar_servicos(lgfx::LovyanGFX& d, const char* esq, const char* d
 
   struct { const char* rot; const char* val; int cx; } col[2] = {
     { "GROVE",  esq, lado_l / 2 },
-    { "CARTÃO", dir, L - lado_l / 2 },
+    { "CARD",   dir, L - lado_l / 2 },
   };
 
   for (int i = 0; i < 2; ++i) {
@@ -1147,7 +1147,7 @@ static void ordem_de_nomes(const char* nomes, const char* ocultos)
     const size_t len = fim ? (size_t)(fim - p) : strlen(p);
     for (int i = 0; i < total; ++i) {
       const char* nome = SISTEMA_APPS[i]->name;
-      const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
+      const bool oculto = strcasecmp(nome, "Settings") != 0 && nome_na_lista(ocultos, nome);
       if (!oculto && !usado[i] && strlen(nome) == len && strncasecmp(nome, p, len) == 0) {
         usado[i] = true; nova[n++] = (uint8_t)i; break;
       }
@@ -1157,7 +1157,7 @@ static void ordem_de_nomes(const char* nomes, const char* ocultos)
   }
   for (int i = 0; i < total; ++i) {
     const char* nome = SISTEMA_APPS[i]->name;
-    const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
+    const bool oculto = strcasecmp(nome, "Settings") != 0 && nome_na_lista(ocultos, nome);
     if (!usado[i] && !oculto) { nova[n++] = (uint8_t)i; }
   }
 
@@ -1452,15 +1452,15 @@ static uint32_t s_bq_dia       = 0;
 
 static void data_por_extenso(char* out, size_t n)
 {
-  static const char* const DIAS[]  = { "domingo", "segunda-feira", "terça-feira", "quarta-feira",
-                                       "quinta-feira", "sexta-feira", "sábado" };
-  static const char* const MESES[] = { "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-                                       "julho", "agosto", "setembro", "outubro", "novembro", "dezembro" };
+  static const char* const DIAS[]  = { "Sunday", "Monday", "Tuesday", "Wednesday",
+                                       "Thursday", "Friday", "Saturday" };
+  static const char* const MESES[] = { "January", "February", "March", "April", "May", "June",
+                                       "July", "August", "September", "October", "November", "December" };
   const uint32_t t = tab5_hora_epoch();
   if (!t) { snprintf(out, n, " "); return; }
   struct tm lt;
   tab5_hora_local(t, &lt);
-  snprintf(out, n, "%s, %d de %s", DIAS[lt.tm_wday % 7], lt.tm_mday, MESES[lt.tm_mon % 12]);
+  snprintf(out, n, "%s, %s %d", DIAS[lt.tm_wday % 7], MESES[lt.tm_mon % 12], lt.tm_mday);
 }
 
 // Os textos da tela de bloqueio ficam NA FRENTE da animacao.
@@ -1550,7 +1550,7 @@ static void bq_texto(lgfx::LovyanGFX& t, const area_t& a, int i, const char* hor
       tab5_fonte_corpo(t);
       tab5_texto(t, 3.0f);
       t.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-      t.drawString("Deslize para cima", cx, y_dica);
+      t.drawString("Swipe up", cx, y_dica);
     } break;
   }
 }
@@ -1735,19 +1735,19 @@ void desenhar_painel_avisos(lgfx::LovyanGFX& d, const area_t& a, bool completo)
   tab5_titulo(d, 28);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
-  d.drawString("Avisos", x0 + 8, a.y + PA_TOPO / 2);
+  d.drawString("Notifications", x0 + 8, a.y + PA_TOPO / 2);
   tab5_fonte_corpo(d);
   tab5_texto(d, 2.6f);
   d.setTextDatum(middle_right);
   d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  d.drawString("toque fora para fechar", x0 + w - 8, a.y + PA_TOPO / 2);
+  d.drawString("tap outside to close", x0 + w - 8, a.y + PA_TOPO / 2);
 
   const int h = pa_linha(a);
   s_pa_desenhadas = 0;
   if (s_pa_n == 0) {
     tab5_texto(d, 3.4f);
     d.setTextDatum(middle_center);
-    d.drawString("Nenhum aviso", a.x + a.largura / 2, a.y + a.altura / 2);
+    d.drawString("No notifications", a.x + a.largura / 2, a.y + a.altura / 2);
   }
   for (int i = 0; i < s_pa_n; ++i) {
     const int y = pa_y(a, i);
