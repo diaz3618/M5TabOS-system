@@ -1,136 +1,136 @@
-# Gera as fontes SUAVIZADAS do M5tabOS.
+# Generate the SMOOTH fonts used by M5tabOS.
 #
-# Por que: o sistema desenhava todo texto com UMA fonte bitmap (FreeSans 12pt,
-# 29 px, 1 bit por pixel) esticada ou encolhida por fracoes (0,88x, 0,63x...).
-# Escala fracionaria de bitmap duplica umas linhas de pixel e some com outras:
-# a letra sai serrilhada e desigual - a barra de escrita (0,88x) era o pior
-# caso. Aqui cada tamanho nasce NATIVO, desenhado pelo FreeType (via Pillow)
-# com antialiasing de 8 bits, no formato VLW que o LovyanGFX desenha misturando
-# a borda da letra com o fundo.
+# Why: the system drew all text with a SINGLE bitmap font (FreeSans 12pt,
+# 29 px, 1 bit per pixel) stretched or shrunk by fractions (0.88x, 0.63x...).
+# Fractionally scaling a bitmap duplicates some pixel rows and loses others:
+# letters become jagged and uneven—the writing bar at 0.88x was the worst case.
+# Each size is now created NATIVE, rendered by FreeType (through Pillow) with
+# 8-bit antialiasing, in the VLW format that LovyanGFX draws by blending the
+# letter edge with the background.
 #
-# Fonte: Roboto (licenca Apache 2.0). Regular para o corpo, Medium para o
-# negrito. Com os acentos do portugues (a fonte bitmap antiga nao tinha).
+# Font: Roboto (Apache 2.0 license). Regular for body text, Medium for bold.
+# It includes Portuguese accents, which the old bitmap font lacked.
 #
-# Rodar: python3 tools/generate_fonts.py   (gera main/fonts/soft_fonts.cpp)
+# Run: python3 tools/generate_fonts.py   (generates main/fonts/soft_fonts.cpp)
 import os
 from PIL import ImageFont
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-AQUI = os.path.dirname(AQUI)   # a RAIZ do projeto - o script mora em tools/
-SAIDA = os.path.join(AQUI, "main", "fonts", "soft_fonts.cpp")
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(PROJECT_ROOT)   # the project root; this script lives in tools/
+OUTPUT_PATH = os.path.join(PROJECT_ROOT, "main", "fonts", "soft_fonts.cpp")
 
-FAMILIAS = [
-    ("corpo",   os.path.join(AQUI, "tools", "Roboto-Regular.ttf")),
-    ("negrito", os.path.join(AQUI, "tools", "Roboto-Medium.ttf")),
+FONT_FAMILIES = [
+    ("corpo",   os.path.join(PROJECT_ROOT, "tools", "Roboto-Regular.ttf")),
+    ("negrito", os.path.join(PROJECT_ROOT, "tools", "Roboto-Medium.ttf")),
 ]
 
-# ALTURAS DE LINHA em pixels (o que d.fontHeight() devolve). O sistema pede
-# tamanho no "estilo antigo" N (altura = N*8 px, herdado da Font0); a tabela
-# cobre de 12 a 40 px de 2 em 2 e os grandes de 4 em 4 - o pedido cai no mais
-# proximo, a no maximo 1 px (2 px nos grandes) do que foi pedido.
-ALTURAS = list(range(12, 42, 2)) + [44, 48, 52, 56]
+# LINE HEIGHTS in pixels (what d.fontHeight() returns). The system requests a
+# size in the old N style (height = N*8 px, inherited from Font0); the table
+# covers 12 to 40 px in steps of 2 and larger sizes in steps of 4. A request
+# therefore lands within 1 px (2 px for large sizes) of the requested value.
+LINE_HEIGHTS = list(range(12, 42, 2)) + [44, 48, 52, 56]
 
-# ASCII imprimivel + o que o portugues usa + alguns simbolos uteis.
-CARACTERES = [chr(c) for c in range(0x20, 0x7F)]
-CARACTERES += list("¡ª«°±²³µ·º»¿ÀÁÂÃÄÇÈÉÊËÍÎÏÑÒÓÔÕÖÚÛÜàáâãäçèéêëíîïñòóôõöùúûü×÷")
-CARACTERES += list("–—‘’“”•…←↑→↓")
+# Printable ASCII + characters used by Portuguese + a few useful symbols.
+CHARACTERS = [chr(c) for c in range(0x20, 0x7F)]
+CHARACTERS += list("¡ª«°±²³µ·º»¿ÀÁÂÃÄÇÈÉÊËÍÎÏÑÒÓÔÕÖÚÛÜàáâãäçèéêëíîïñòóôõöùúûü×÷")
+CHARACTERS += list("–—‘’“”•…←↑→↓")
 
 
-def metricas_ascii(fonte):
-    # Como o LovyanGFX calcula a altura da linha: maior subida e maior descida
-    # entre os glifos ASCII (fora o espaco) - os acentos maiusculos ficam fora
-    # da conta dele, e aqui tambem.
-    sobe = desce = 0
+def ascii_metrics(font):
+    # How LovyanGFX calculates line height: the greatest ascent and descent
+    # among ASCII glyphs (excluding the space); uppercase accents are excluded
+    # from its calculation, and from ours as well.
+    ascent = descent = 0
     for c in range(0x21, 0x7F):
-        esq, topo, dir_, base = fonte.getbbox(chr(c), anchor="ls")
-        sobe = max(sobe, -topo)
-        desce = max(desce, base)
-    return sobe, desce
+        _left, top, _right, bottom = font.getbbox(chr(c), anchor="ls")
+        ascent = max(ascent, -top)
+        descent = max(descent, bottom)
+    return ascent, descent
 
 
-def fonte_para_altura(caminho, alvo):
-    # Procura o tamanho em pixels cuja linha (subida+descida) da o alvo.
-    melhor = None
-    for dezimos in range(60, 800):
-        tam = dezimos / 10.0
-        f = ImageFont.truetype(caminho, tam)
-        s, d = metricas_ascii(f)
-        if s + d >= alvo:
-            melhor = f
+def font_for_height(font_path, target_height):
+    # Find the pixel size whose line height (ascent + descent) reaches the target.
+    best = None
+    for tenths in range(60, 800):
+        size = tenths / 10.0
+        font = ImageFont.truetype(font_path, size)
+        ascent, descent = ascii_metrics(font)
+        if ascent + descent >= target_height:
+            best = font
             break
-    return melhor
+    return best
 
 
-def vlw(fonte):
-    glifos = []
-    for ch in sorted(set(CARACTERES), key=ord):
-        if ch != " " and fonte.getbbox(ch, anchor="ls")[2] == 0 and ord(ch) > 0x7E:
+def build_vlw(font):
+    glyphs = []
+    for ch in sorted(set(CHARACTERS), key=ord):
+        if ch != " " and font.getbbox(ch, anchor="ls")[2] == 0 and ord(ch) > 0x7E:
             continue
-        avanco = int(round(fonte.getlength(ch)))
+        advance = int(round(font.getlength(ch)))
         if ch == " ":
-            glifos.append((ord(ch), 0, 0, avanco, 0, 0, b""))
+            glyphs.append((ord(ch), 0, 0, advance, 0, 0, b""))
             continue
-        mascara, (ox, oy) = fonte.getmask2(ch, mode="L", anchor="ls")
-        w, h = mascara.size
-        if w == 0 or h == 0:
-            glifos.append((ord(ch), 0, 0, avanco, 0, 0, b""))
+        mask, (offset_x, offset_y) = font.getmask2(ch, mode="L", anchor="ls")
+        width, height = mask.size
+        if width == 0 or height == 0:
+            glyphs.append((ord(ch), 0, 0, advance, 0, 0, b""))
             continue
-        dados = bytes(mascara)
-        # topo do bitmap acima da linha de base (positivo) e recuo a esquerda
-        glifos.append((ord(ch), h, w, avanco, -oy, ox, dados))
+        bitmap = bytes(mask)
+        # Bitmap top above the baseline (positive) and left bearing.
+        glyphs.append((ord(ch), height, width, advance, -offset_y, offset_x, bitmap))
 
-    sobe, desce = metricas_ascii(fonte)
+    ascent, descent = ascii_metrics(font)
     out = bytearray()
 
     def i32(v):
         out.extend((v & 0xFFFFFFFF).to_bytes(4, "big"))
 
-    i32(len(glifos))       # quantidade de glifos
-    i32(11)                # versao do codificador (o LovyanGFX ignora)
-    i32(sobe + desce)      # "tamanho" - vira yAdvance, recalculado pelos glifos
+    i32(len(glyphs))       # glyph count
+    i32(11)                # encoder version (ignored by LovyanGFX)
+    i32(ascent + descent)  # "size" - becomes yAdvance, recalculated from glyphs
     i32(0)
-    i32(sobe)              # subida
-    i32(desce)             # descida
-    for (u, h, w, av, dy, dx, _) in glifos:
-        for v in (u, h, w, av, dy, dx, 0):
-            i32(v)
-    for g in glifos:
-        out.extend(g[6])
-    return bytes(out), len(glifos), sobe + desce
+    i32(ascent)            # ascent
+    i32(descent)           # descent
+    for (unicode_codepoint, height, width, advance, offset_y, offset_x, _) in glyphs:
+        for value in (unicode_codepoint, height, width, advance, offset_y, offset_x, 0):
+            i32(value)
+    for glyph in glyphs:
+        out.extend(glyph[6])
+    return bytes(out), len(glyphs), ascent + descent
 
 
 def main():
-    os.makedirs(os.path.dirname(SAIDA), exist_ok=True)
-    linhas = [
-        "// GERADO por generate_fonts.py - nao edite a mao.",
-        "// Roboto (Apache 2.0), antialiasing de 8 bits, formato VLW (LovyanGFX).",
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    lines = [
+        "// GENERATED by generate_fonts.py - do not edit by hand.",
+        "// Roboto (Apache 2.0), 8-bit antialiasing, VLW format (LovyanGFX).",
         "#include \"soft_fonts.hpp\"",
         "",
     ]
-    tabela = {nome: [] for nome, _ in FAMILIAS}
+    table = {family_name: [] for family_name, _ in FONT_FAMILIES}
     total = 0
-    for nome, caminho in FAMILIAS:
-        for alvo in ALTURAS:
-            f = fonte_para_altura(caminho, alvo)
-            dados, n, altura = vlw(f)
-            total += len(dados)
-            simbolo = f"s_{nome}_{alvo}"
-            linhas.append(f"static const uint8_t {simbolo}[{len(dados)}] = {{")
-            for k in range(0, len(dados), 32):
-                linhas.append("  " + ",".join(str(b) for b in dados[k:k + 32]) + ",")
-            linhas.append("};")
-            tabela[nome].append((alvo, simbolo, len(dados), altura))
-            print(f"{nome:8s} alvo {alvo:3d}px -> linha {altura:3d}px, {n} glifos, {len(dados)/1024:6.1f} KB")
+    for family_name, font_path in FONT_FAMILIES:
+        for target_height in LINE_HEIGHTS:
+            font = font_for_height(font_path, target_height)
+            data, glyph_count, line_height = build_vlw(font)
+            total += len(data)
+            symbol = f"s_{family_name}_{target_height}"
+            lines.append(f"static const uint8_t {symbol}[{len(data)}] = {{")
+            for k in range(0, len(data), 32):
+                lines.append("  " + ",".join(str(byte) for byte in data[k:k + 32]) + ",")
+            lines.append("};")
+            table[family_name].append((target_height, symbol, len(data), line_height))
+            print(f"{family_name:8s} target {target_height:3d}px -> line {line_height:3d}px, {glyph_count} glyphs, {len(data)/1024:6.1f} KB")
 
-    for nome, itens in tabela.items():
-        linhas.append(f"const fonte_suave_t FONTES_{nome.upper()}[] = {{")
-        for alvo, simbolo, tam, altura in itens:
-            linhas.append(f"  {{ {altura}, {simbolo}, {tam} }},")
-        linhas.append("};")
-        linhas.append(f"const int FONTES_{nome.upper()}_N = {len(itens)};")
-    with open(SAIDA, "w") as arq:
-        arq.write("\n".join(linhas) + "\n")
-    print(f"total {total/1024:.0f} KB -> {SAIDA}")
+    for family_name, entries in table.items():
+        lines.append(f"const fonte_suave_t FONTES_{family_name.upper()}[] = {{")
+        for _target_height, symbol, data_size, line_height in entries:
+            lines.append(f"  {{ {line_height}, {symbol}, {data_size} }},")
+        lines.append("};")
+        lines.append(f"const int FONTES_{family_name.upper()}_N = {len(entries)};")
+    with open(OUTPUT_PATH, "w") as output_file:
+        output_file.write("\n".join(lines) + "\n")
+    print(f"total {total/1024:.0f} KB -> {OUTPUT_PATH}")
 
 
 main()

@@ -1,117 +1,116 @@
 #!/usr/bin/env python3
-# Copia um arquivo do cartao do Tab5 para o computador, pela mesma serial do monitor.
+# Copy a file from the Tab5 card to the computer over the same serial connection used by the monitor.
 #
 #   ./download.py /sdcard/apps/Sistema/energia.csv
-#   ./download.py                  <- sem argumento, baixa o energia.csv
+#   ./download.py                  <- without an argument, downloads energia.csv
 #
-# Do outro lado quem responde e o comando "despejar" do console (console.cpp).
-# Ele cala o ESP_LOG enquanto despeja e cerca o conteudo com >>>INICIO e >>>FIM,
-# que e o que permite saber onde comeca, onde termina e se chegou tudo.
+# The console command "despejar" in console.cpp responds on the other end.
+# It silences ESP_LOG while dumping the file and surrounds the contents with >>>INICIO and >>>FIM,
+# which tells us where the transfer starts, where it ends, and whether it arrived intact.
 #
-# FECHE O MONITOR ANTES. A porta e de um processo so: com o idf.py monitor
-# aberto, este script nao consegue abrir a porta - ou pior, os dois leem
-# metade cada um.
+# CLOSE THE MONITOR FIRST. Only one process can own the port: with `idf.py monitor`
+# open, this script cannot open the port—or worse, both programs may read half of the data.
 
 import sys, glob, time, os
 
-# O pyserial nao esta no python do sistema - ele mora no venv do IDF. Em vez de
-# exigir "source environment.sh" antes (passo facil de esquecer), o proprio arquivo se reexecuta com o interpretador
-# certo na primeira falha de import. Roda direto, clicando ou pelo terminal.
+# PySerial is not installed in the system Python; it lives in the IDF virtual environment. Instead of
+# requiring `source environment.sh` first (an easy step to forget), this file re-executes itself with
+# the correct interpreter after the first failed import. It works directly from a click or the terminal.
 try:
     import serial
 except ImportError:
-    # O python do ambiente do ESP-IDF (IDF_PYTHON_ENV_PATH, definido pelo
+    # The ESP-IDF environment's Python (IDF_PYTHON_ENV_PATH, set by
     # export.sh / environment.sh).
     IDF_PY = os.path.join(os.environ.get("IDF_PYTHON_ENV_PATH", ""), "bin", "python")
     if os.path.exists(IDF_PY) and os.environ.get("_BAIXAR_REEXEC") != "1":
         os.environ["_BAIXAR_REEXEC"] = "1"
         os.execv(IDF_PY, [IDF_PY, os.path.abspath(__file__)] + sys.argv[1:])
-    sys.exit("Falta o pyserial. Rode:  source environment.sh && ./download.py")
+    sys.exit("PySerial is missing. Run:  source environment.sh && ./download.py")
 
-ORIGEM  = sys.argv[1] if len(sys.argv) > 1 else "/sdcard/apps/Sistema/energia.csv"
-DESTINO = ORIGEM.split("/")[-1]
+SOURCE_PATH = sys.argv[1] if len(sys.argv) > 1 else "/sdcard/apps/Sistema/energia.csv"
+DESTINATION = SOURCE_PATH.split("/")[-1]
 
-# DOIS PRAZOS, e a diferenca importa.
+# TWO TIMEOUTS, and the distinction matters.
 #
-# Antes de o despejo comecar, o unico motivo de silencio e alguma coisa errada -
-# porta ocupada pelo monitor, firmware sem o comando, cartao fora. Esperar dois
-# minutos por isso e so demorar a dar a ma noticia.
+# Before the dump starts, silence means something is wrong—the monitor owns the port,
+# the firmware lacks the command, or the card is missing. Waiting two minutes only
+# delays delivering the bad news.
 #
-# Depois que ele comecou, um silencio longo e normal: o Tab5 pausa a cada 64
-# linhas para nao segurar a CPU, e o cartao as vezes trava um instante.
-ESPERA_INICIO = 8       # ate a primeira resposta
-ESPERA_FLUXO  = 60      # entre uma linha e a proxima, ja despejando
+# After it starts, a long pause is normal: the Tab5 pauses every 64 lines so it
+# does not monopolize the CPU, and the card sometimes stalls briefly.
+START_TIMEOUT = 8       # until the first response
+STREAM_TIMEOUT = 60     # between lines while dumping
 
-portas = sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
-if not portas:
-    sys.exit("Nenhuma porta USB do Tab5. Ele esta ligado e conectado?")
-porta = portas[0]
+ports = sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
+if not ports:
+    sys.exit("No Tab5 USB port found. Is it powered on and connected?")
+port = ports[0]
 
-print(f">>> {porta}: pedindo {ORIGEM}")
-s = serial.Serial(porta, 115200, timeout=1)
+print(f">>> {port}: requesting {SOURCE_PATH}")
+s = serial.Serial(port, 115200, timeout=1)
 time.sleep(0.3)
 s.reset_input_buffer()
-s.write(f"despejar {ORIGEM}\n".encode())
+s.write(f"despejar {SOURCE_PATH}\n".encode())
 
-linhas   = []
-dentro   = False
-esperado = None
-contadas = None
-mudo_ate = time.time() + ESPERA_INICIO
+lines = []
+inside = False
+expected_bytes = None
+counted_lines = None
+timeout_deadline = time.time() + START_TIMEOUT
 
-while time.time() < mudo_ate:
-    bruto = s.readline()
-    if not bruto:
+while time.time() < timeout_deadline:
+    raw_line = s.readline()
+    if not raw_line:
         continue
-    mudo_ate = time.time() + (ESPERA_FLUXO if dentro else ESPERA_INICIO)
-    linha = bruto.decode("utf-8", "replace").rstrip("\r\n")
+    timeout_deadline = time.time() + (STREAM_TIMEOUT if inside else START_TIMEOUT)
+    line = raw_line.decode("utf-8", "replace").rstrip("\r\n")
 
-    # Firmware sem o comando. Sem este teste o script ficava esperando o
-    # >>>INICIO que nunca vem, e o sintoma era "travou" em vez de "grave o
-    # firmware novo" - a mesma informacao, entregue tarde demais para servir.
-    if "comando desconhecido" in linha:
-        sys.exit("Este Tab5 ainda nao tem o comando 'despejar'.\n"
-                 "Grave o firmware novo:  ./flash.sh")
+    # The firmware lacks the command. Without this test, the script would wait for
+    # the >>>INICIO that never arrives, reporting "stalled" instead of "flash the
+    # new firmware"—the same information delivered too late to be useful.
+    if "comando desconhecido" in line:
+        sys.exit("This Tab5 does not have the 'despejar' command yet.\n"
+                 "Flash the new firmware:  ./flash.sh")
 
-    if linha.startswith(">>>INICIO"):
-        dentro = True
-        partes = linha.split()
-        if len(partes) >= 3:
-            esperado = int(partes[2])
-            print(f"    {esperado} bytes a caminho...")
+    if line.startswith(">>>INICIO"):
+        inside = True
+        fields = line.split()
+        if len(fields) >= 3:
+            expected_bytes = int(fields[2])
+            print(f"    {expected_bytes} bytes incoming...")
         continue
 
-    if linha.startswith(">>>FIM"):
-        contadas = linha.split()[1]
+    if line.startswith(">>>FIM"):
+        counted_lines = line.split()[1]
         break
 
-    if linha.startswith("erro:"):
-        sys.exit(f"O Tab5 respondeu: {linha}")
+    if line.startswith("erro:"):
+        sys.exit(f"The Tab5 replied: {line}")
 
-    if dentro:
-        linhas.append(linha)
-        if len(linhas) % 200 == 0:
-            print(f"    {len(linhas)} linhas", end="\r", flush=True)
+    if inside:
+        lines.append(line)
+        if len(lines) % 200 == 0:
+            print(f"    {len(lines)} lines", end="\r", flush=True)
 
 s.close()
 
-if contadas is None:
-    if not dentro:
-        sys.exit("O Tab5 nao respondeu.\n"
-                 "  - o monitor serial esta aberto em outra janela? "
-                 "a porta e de um processo so\n"
-                 "  - o cartao esta no aparelho?")
-    sys.exit(f"\nO despejo parou no meio ({len(linhas)} linhas). "
-             "Rode de novo - arquivo pela metade nao serve para ajustar curva.")
+if counted_lines is None:
+    if not inside:
+        sys.exit("The Tab5 did not respond.\n"
+                 "  - is the serial monitor open in another window? "
+                 "only one process can own the port\n"
+                 "  - is the card in the device?")
+    sys.exit(f"\nThe dump stopped partway through ({len(lines)} lines). "
+             "Run it again—a partial file is not suitable for fitting the curve.")
 
-corpo = "\n".join(linhas) + "\n"
-open(DESTINO, "w").write(corpo)
+body = "\n".join(lines) + "\n"
+open(DESTINATION, "w").write(body)
 
-# CONFERE O TAMANHO, e nao so a contagem de linhas. Byte perdido na serial nao
-# apaga uma linha inteira - ele corrompe um numero no meio, e uma curva ajustada
-# em cima de numero corrompido mente sem dar sinal.
-recebido = len(corpo.encode())
-print(f"\n>>> {DESTINO}: {len(linhas)} linhas, {recebido} bytes")
-if esperado is not None and recebido != esperado:
-    print(f"!!! o Tab5 disse {esperado} bytes e chegaram {recebido}.")
-    print("    Provavel byte perdido - rode de novo antes de usar este arquivo.")
+# CHECK THE SIZE, not just the line count. A byte lost over serial does not
+# remove an entire line; it corrupts a number in the middle, and a curve fitted
+# to a corrupt number can lie without giving any warning.
+received_bytes = len(body.encode())
+print(f"\n>>> {DESTINATION}: {len(lines)} lines, {received_bytes} bytes")
+if expected_bytes is not None and received_bytes != expected_bytes:
+    print(f"!!! The Tab5 reported {expected_bytes} bytes, but {received_bytes} arrived.")
+    print("    A byte was probably lost—run it again before using this file.")
