@@ -17,6 +17,10 @@ dependencies:
   ## O m5gfx vem pela M5Unified (que pede ">=0.2.28"); travado aqui.
   m5stack/m5gfx:
     version: "==0.2.32"
+  ## Radio LoRa SX1262 no M5-Bus. Traz o HAL nativo do ESP-IDF; nao depende
+  ## do Arduino e nao tem relacao com o cliente Meshtastic por UART/Bluetooth.
+  jgromes/radiolib:
+    version: "==7.8.1"
   ## WiFi. No P4 nao ha radio no chip: o esp_wifi do IDF so entrega os
   ## cabecalhos, e a implementacao real vem daqui - que por sua vez puxa o
   ## esp_hosted, o transporte SDIO ate o ESP32-C6 ao lado.

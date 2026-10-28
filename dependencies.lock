@@ -237,6 +237,16 @@ dependencies:
     source:
       type: idf
     version: 5.5.5
+  jgromes/radiolib:
+    component_hash: 67051f3def406f40329e1fd94ee94f1eb1f2dc2962235c8f2e900cabc366dbfa
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 7.8.1
   m5stack/m5gfx:
     component_hash: ebd725c94610759ccfc1227f60a395932f591e17b95bebec80164d853535c8c5
     dependencies: []
@@ -270,8 +280,9 @@ direct_dependencies:
 - espressif/usb_host_uvc
 - espressif/wifi_remote_over_eppp
 - idf
+- jgromes/radiolib
 - m5stack/m5gfx
 - m5stack/m5unified
-manifest_hash: 9c103dc4a0a419f6467475633def30a79539f16d5d9e5d2afc1f4fa362ebf1cc
+manifest_hash: f950a743ada24c75fdcfbbb42b1f718d02817b0ad60e48e7627a307a4862e844
 target: esp32p4
 version: 2.0.0
