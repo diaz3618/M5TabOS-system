@@ -3268,6 +3268,12 @@ static void tocar_config(int x, int y)
 
 static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
+  // O teclado fisico tambem edita estes campos. Se ele foi encaixado com o
+  // virtual aberto, libera a metade de baixo e a navegacao sem abandonar a
+  // edicao nem apagar o texto ja digitado.
+  if (tab5_teclado_presente() && s_editando && tecvirt_aberto(&s_kb_cfg)) {
+    tecvirt_fechar(&s_kb_cfg);
+  }
 
   // O pintura_iniciar() ja consulta sozinho se o sistema limpou a area - era o
   // passo que, esquecido, deixava a tela em branco ao acordar.

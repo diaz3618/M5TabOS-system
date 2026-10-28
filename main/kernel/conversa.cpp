@@ -598,6 +598,12 @@ static void botao_enviar(lgfx::LovyanGFX& d, int x, int y, int l, int a, uint16_
 void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
                        bool completo, bool pode_escrever, const char* motivo)
 {
+  // O teclado fisico pode ser encaixado com este ja aberto. Deixar os dois
+  // conserva uma janela pequena sem necessidade e, pior, mantem a faixa de
+  // navegacao presa ao teclado virtual. O rascunho e o cursor continuam.
+  if (tab5_teclado_presente() && tecvirt_aberto(&c->kb)) {
+    tecvirt_fechar(&c->kb);
+  }
   c->ret = r;
   c->pode_escrever = pode_escrever;
   if (!pode_escrever) { fechar_teclado(c); }

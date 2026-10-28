@@ -2043,6 +2043,7 @@ static void vTaskInterface(void *pvParameters)
     if (!tab5_power_em_repouso() && (t - s_ultimo_teclado) >= teclado_ms()) {
       s_ultimo_teclado = t;
       ETAPA("teclado (I2C)");
+      const bool teclado_antes = tab5_teclado_presente();
       tab5_tecla_t ev;
       for (int k = 0; k < 4 && tab5_teclado_ler(&ev); ++k) {
         s_ultimo_toque = t;          // digitar conta como uso: nao apague a tela
@@ -2075,6 +2076,11 @@ static void vTaskInterface(void *pvParameters)
                    (ev.mod & TAB5_TECLA_ALT)   ? " +ALT"   : "");
         }
       }
+      // ENCAIXAR/TIRAR MUDA O LAYOUT mesmo sem tecla: o teclado virtual
+      // aberto precisa sair quando aparece o fisico, e a dica da barra de
+      // escrita muda nos dois sentidos. Se a tela ja estava deitada nao ha
+      // giro para provocar esta passada por acaso.
+      if (teclado_antes != tab5_teclado_presente()) { s_sujo_layout = true; }
     }
 
     // Em repouso, detecta o toque por NIVEL (ha dedo na tela?) e nao por borda.
