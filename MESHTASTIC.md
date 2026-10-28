@@ -10,15 +10,16 @@ diante do nó) e do que o M5tabOS usa ou pode usar. Conferido contra os
 O número de nós que um rádio guarda é **constante de compilação do firmware**
 (`MAX_NUM_NODES`, `src/mesh/mesh-pb-constants.h`), não configuração:
 
-| Firmware | ESP32-S3 (Heltec V3, T-Beam S3) | ESP32 genérico, C3, **C6 (Unit C6L)**, nRF52840 |
-|---|---|---|
-| até 2.7.x | 100 / 200 / 250 conforme a flash (4 / 8 / 16 MB) | **100** |
-| 2.8.0+ | igual | **120** + "warm tier" (identidade e chave dos despejados) |
+| Firmware | ESP32-S3 (Heltec V3, T-Beam S3) | ESP32 genérico, C3, **C6 (Unit C6L)** | nRF52840 |
+|---|---|---|---|
+| até 2.7.x | 100 / 200 / 250 conforme a flash (4 / 8 / 16 MB) | **100** | **80** |
+| 2.8.0+ | igual | **120** + "warm tier" | **120** + "warm tier" |
 
 Um Heltec V3 com 8 MB de flash guarda 200, e o Unit C6L guarda 100: os mesmos
 nós ouvidos e listas de tamanho diferente. O "nós online/total" do `LocalStats`
 é a visão do rádio e para no teto dele. Atualizar o C6L para a 2.8 sobe o teto
-para 120; mais do que isso, só fora do rádio.
+para 120; no nRF52840, a mesma atualização sobe de 80 para 120. A "warm tier"
+preserva identidade e chave dos despejados; mais do que isso, só fora do rádio.
 
 **Fora do rádio é onde o Tab5 ganha.** A tabela do serviço (256 vagas, PSRAM)
 aprende também pelos pacotes ao vivo (NODEINFO, POSITION, TELEMETRY, texto), não
@@ -139,6 +140,88 @@ guardado por um roteador), `66 RANGE_TEST`, `73 MAP_REPORT`,
 - Conferido nas versões 2.5, 2.7 e atual do firmware: números de campo,
   dispensa de chave no admin local e reinício no `commit_edit_settings`.
 - `ferramentas/teste_mesh_admin.py` prova a montagem com os protobufs oficiais.
+
+## Funcionalidades do Meshtastic que não existem aqui
+
+Ter o número da porta ou guardar os bytes crus da configuração não equivale a
+implementar a função. Os blocos abaixo existem no protocolo e nos clientes
+oficiais, mas não estão no parser, na interface nem nas cinco fases deste roteiro.
+
+### Segurança e mensagens
+
+- **Mensagens diretas com PKI**: em vez da PSK compartilhada do canal, uma DM pode
+  usar a chave anunciada em `User.public_key` (8). O pacote recebido identifica a
+  chave em `MeshPacket.public_key` (16) e marca `pki_encrypted` (17).
+  `Config.security` (8) carrega o `SecurityConfig`: `public_key` (1),
+  `private_key` (2), até três `admin_key` (3), `is_managed` (4),
+  `debug_log_api_enabled` (6) e `admin_channel_enabled` (8). Isso é outra
+  camada de segurança, não substitui a criptografia PSK dos canais.
+- **Verificação interativa da chave (SAS)**: porta `KEY_VERIFICATION_APP` (12)
+  e `AdminMessage.key_verification` (67), cujo `KeyVerificationAdmin` leva
+  `message_type` (1), `remote_nodenum` (2), `nonce` (3) e
+  `security_number` (4). O firmware conduz a interface por
+  `ClientNotification.key_verification_number_inform` (11),
+  `key_verification_number_request` (12) e `key_verification_final` (13); ao
+  aceitar, a NodeDB registra `NodeInfo.is_key_manually_verified` (12).
+- **Respostas e reações**: `Data.reply_id` (7) liga a mensagem nova ao ID da
+  anterior; `Data.emoji` (8) transforma o payload em reação. Hoje ambos se
+  perdem e a conversa fica linear.
+- **Texto comprimido e alertas**: `TEXT_MESSAGE_COMPRESSED_APP` (7) usa
+  Unishox2 e o firmware oficial converte entre ela e `TEXT_MESSAGE_APP`;
+  `ALERT_APP` (11) leva texto crítico para tratamento prioritário.
+
+### Histórico, mapa e módulos
+
+- **Store-and-forward**: porta `STORE_FORWARD_APP` (65), configurada por
+  `ModuleConfig.store_forward` (4). O cliente pede histórico com
+  `StoreAndForward.rr = CLIENT_HISTORY` (65) e `history` (3), cujo
+  `History.window` (2) limita a janela; o roteador devolve mensagens como
+  `ROUTER_TEXT_DIRECT` (8) ou `ROUTER_TEXT_BROADCAST` (9). Falta modelar o
+  pedido, a paginação e a incorporação dos replays à conversa.
+- **MapReport**: `MAP_REPORT_APP` (73) publica por MQTT um resumo não
+  criptografado do nó. O opt-in fica em
+  `ModuleConfig.mqtt.map_reporting_enabled` (10) e os parâmetros em
+  `map_report_settings` (11); o Tab5 não configura nem consome esse relato.
+- **Detection Sensor**: `DETECTION_SENSOR_APP` (10) e
+  `ModuleConfig.detection_sensor` (12), para transformar um disparo de GPIO em
+  alerta da malha.
+- **Canned Message**: `ModuleConfig.canned_message` (7); a lista de frases tem
+  `get_canned_message_module_messages_request/response` (10/11) e
+  `set_canned_message_module_messages` (36), operações admin separadas do
+  `set_module_config`.
+- **Paxcounter**: `PAXCOUNTER_APP` (34) e `ModuleConfig.paxcounter` (13), para
+  contagens de dispositivos Wi-Fi/BLE vistas pelo nó.
+- **Remote Hardware**: `REMOTE_HARDWARE_APP` (2) e
+  `ModuleConfig.remote_hardware` (9), para ler, observar e escrever GPIOs de um
+  nó remoto.
+- **Ambient Lighting**: `ModuleConfig.ambient_lighting` (11), para controlar o
+  LED RGB do hardware que oferece o módulo.
+- **Traffic Management** (2.8+): `ModuleConfig.traffic_management` (15), sem
+  porta própria; faz inspeção e contenção do tráfego da malha.
+- **Mesh Beacon** (2.8+): `MESH_BEACON_APP` (37) e
+  `ModuleConfig.mesh_beacon` (17), para anunciar descoberta e ofertas de
+  canal/preset a clientes próximos.
+
+### Manutenção, interface e compartilhamento
+
+- **OTA/DFU**: `AdminMessage.ota_request` (102) recebe um `OTAEvent`, com
+  `reboot_ota_mode` (1) para BLE/Wi-Fi e `ota_hash` (2) para verificar a
+  imagem. `enter_dfu_mode_request` (21) entra no DFU UF2 (hoje implementado no
+  nRF52). O antigo `reboot_ota_seconds` (95) está depreciado em favor do
+  `reboot_ota_mode` dentro do evento.
+- **Configuração da UI do rádio**: além do dump espontâneo em
+  `FromRadio.deviceuiConfig` (17), há `get_ui_config_request` (44), resposta
+  (45) e `store_ui_config` (46). O cliente hoje não busca, edita nem persiste
+  esse bloco.
+- **Importação de contato por QR/URL**: `AdminMessage.add_contact` (66) recebe
+  `SharedContact`, com `node_num` (1), `user` (2), `should_ignore` (3) e
+  `manually_verified` (4). Os clientes compartilham um conjunto de canais por
+  `https://meshtastic.org/e/#...` e um contato por
+  `https://meshtastic.org/v/#...`; falta decodificar, revisar e inserir esses
+  dados na NodeDB do rádio.
+- **Toque e notificação externa**: `get_ringtone_request/response` (14/15) e
+  `set_ringtone_message` (37) leem/gravam a melodia RTTTL; a saída física,
+  vibração e buzzer ficam em `ModuleConfig.external_notification` (3).
 
 ## Roteiro proposto
 
