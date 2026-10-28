@@ -511,6 +511,7 @@ const app_t* sistema_home_app(int pos);
 int          sistema_home_posicao(const app_t* app);   // -1 = nao registrado
 bool         sistema_home_mover(const app_t* app, int pos);
 void         sistema_home_ordem_padrao(void);
+void         sistema_home_apps_recarregar(void);   // ordem e ocultos da NVS
 
 // ONDE A INTERFACE ESTA - para diagnosticar "travou sem log".
 // O monitor vigia (loop parado > 3 s vira evento) e o console mostra ('ui').

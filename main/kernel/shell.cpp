@@ -1054,7 +1054,7 @@ static void celula_do_icone(int i, const area_t& a, int* px, int* py)
 // A pagina p mostra os apps [p*por_pagina, (p+1)*por_pagina). celula_do_icone()
 // continua recebendo o indice DENTRO da pagina, entao desenho e toque (que
 // usam a mesma funcao) seguem sempre de acordo. Nada de apps.cpp muda: o
-// numero de paginas sai de SISTEMA_NUM_APPS.
+// numero de paginas sai apenas dos aplicativos visiveis.
 static int s_pagina_home = 0;
 
 static int home_por_pagina(const area_t& a)
@@ -1069,10 +1069,12 @@ static int home_por_pagina(const area_t& a)
   return (linhas < 1 ? 1 : linhas) * ICONE_COLS;
 }
 
+static int home_n(void);
+
 static int home_paginas(const area_t& a)
 {
   const int pp = home_por_pagina(a);
-  return (SISTEMA_NUM_APPS + pp - 1) / pp;
+  return (home_n() + pp - 1) / pp;
 }
 
 static bool home_mudar_pagina(int delta)
@@ -1111,9 +1113,26 @@ int sistema_home_posicao(const app_t* app)
   return -1;
 }
 
-// Monta a ordem a partir dos nomes: os conhecidos na ordem dada (repetido
-// vale uma vez), e depois os que faltaram na ordem de apps.cpp.
-static void ordem_de_nomes(const char* nomes)
+// Um nome inteiro numa lista separada por virgulas. A comparacao sem distinguir
+// maiusculas segue a da ordem dos icones.
+static bool nome_na_lista(const char* lista, const char* nome)
+{
+  const size_t nome_n = strlen(nome);
+  const char* p = lista ? lista : "";
+  while (*p) {
+    const char* fim = strchr(p, ',');
+    const size_t n = fim ? (size_t)(fim - p) : strlen(p);
+    if (n == nome_n && strncasecmp(p, nome, n) == 0) { return true; }
+    if (!fim) { break; }
+    p = fim + 1;
+  }
+  return false;
+}
+
+// Monta a ordem a partir dos nomes: os conhecidos e visiveis na ordem dada
+// (repetido vale uma vez), e depois os visiveis que faltaram na ordem de
+// apps.cpp. Ajustes nunca some, mesmo se uma NVS antiga ou editada o listar.
+static void ordem_de_nomes(const char* nomes, const char* ocultos)
 {
   uint8_t nova[HOME_APPS_MAX];
   bool usado[HOME_APPS_MAX] = {};
@@ -1128,14 +1147,19 @@ static void ordem_de_nomes(const char* nomes)
     const size_t len = fim ? (size_t)(fim - p) : strlen(p);
     for (int i = 0; i < total; ++i) {
       const char* nome = SISTEMA_APPS[i]->nome;
-      if (!usado[i] && strlen(nome) == len && strncasecmp(nome, p, len) == 0) {
+      const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
+      if (!oculto && !usado[i] && strlen(nome) == len && strncasecmp(nome, p, len) == 0) {
         usado[i] = true; nova[n++] = (uint8_t)i; break;
       }
     }
     if (!fim) { break; }
     p = fim + 1;
   }
-  for (int i = 0; i < total; ++i) { if (!usado[i]) { nova[n++] = (uint8_t)i; } }
+  for (int i = 0; i < total; ++i) {
+    const char* nome = SISTEMA_APPS[i]->nome;
+    const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
+    if (!usado[i] && !oculto) { nova[n++] = (uint8_t)i; }
+  }
 
   taskENTER_CRITICAL(&s_ordem_mux);
   memcpy(s_ordem, nova, n);
@@ -1143,9 +1167,10 @@ static void ordem_de_nomes(const char* nomes)
   taskEXIT_CRITICAL(&s_ordem_mux);
 }
 
-// UM buffer para gravar e para carregar a ordem (os dois so rodam na
-// interface, nunca ao mesmo tempo): eram dois de 1 KB na RAM interna.
+// A ordem usa o mesmo buffer para gravar e carregar; a lista de ocultos fica
+// ao lado porque tambem e usada ao restaurar a ordem de fabrica.
 static char s_ordem_nomes[1024];
+static char s_ocultos_nomes[1024];
 
 static void ordem_gravar(void)
 {
@@ -1168,7 +1193,9 @@ static void ordem_gravar(void)
 void home_ordem_carregar(void)
 {
   ajustes_ordem_apps(s_ordem_nomes, sizeof(s_ordem_nomes));
-  ordem_de_nomes(s_ordem_nomes);
+  ajustes_apps_ocultos(s_ocultos_nomes, sizeof(s_ocultos_nomes));
+  ordem_de_nomes(s_ordem_nomes, s_ocultos_nomes);
+  s_pagina_home = 0;
 }
 
 // Tira o app de 'de' e encaixa em 'para'; os do meio andam uma casa.
@@ -1196,8 +1223,14 @@ bool sistema_home_mover(const app_t* app, int pos)
 
 void sistema_home_ordem_padrao(void)
 {
-  ordem_de_nomes("");
+  ordem_de_nomes("", s_ocultos_nomes);
   ajustes_definir_ordem_apps("");
+  sistema_pedir_redesenho_completo();
+}
+
+void sistema_home_apps_recarregar(void)
+{
+  home_ordem_carregar();
   sistema_pedir_redesenho_completo();
 }
 

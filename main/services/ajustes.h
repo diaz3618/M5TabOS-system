@@ -233,6 +233,12 @@ void  ajustes_definir_giro_escala(int eixo, float escala);
 void ajustes_ordem_apps(char* out, size_t n);
 void ajustes_definir_ordem_apps(const char* nomes);   // "" ou nullptr = padrao
 
+// APLICATIVOS ESCONDIDOS DA TELA INICIAL, como os NOMES separados por
+// virgula. Nome que nao existe mais e ignorado. Vazio = todos visiveis.
+// Quem interpreta e o shell, junto da ordem dos icones.
+void ajustes_apps_ocultos(char* out, size_t n);
+void ajustes_definir_apps_ocultos(const char* nomes);   // "" ou nullptr = nenhum
+
 // PAPEL DE PAREDE DO INICIO (home): linhas abstratas finas sobre preto, os
 // mesmos desenhos do fundo da tela de bloqueio. SORTEIO (o de fabrica) tira
 // um desenho a cada boot e o mantem ate o proximo; 1..5 fixa um; NENHUM e o

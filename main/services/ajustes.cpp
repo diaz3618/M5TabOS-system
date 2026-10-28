@@ -445,3 +445,29 @@ void ajustes_definir_ordem_apps(const char* nomes)
   nvs_close(h);
   ESP_LOGI(TAG, "ordem dos apps: %s", (nomes && nomes[0]) ? nomes : "(padrao)");
 }
+
+// APLICATIVOS ESCONDIDOS - ver ajustes.h. Lidos da NVS junto da ordem; quem
+// guarda e aplica a lista em uso e o shell.
+void ajustes_apps_ocultos(char* out, size_t n)
+{
+  if (!out || n == 0) { return; }
+  out[0] = 0;
+  if (!s_pronto) { return; }
+  nvs_handle_t h;
+  if (nvs_open(NAMESPACE, NVS_READONLY, &h) != ESP_OK) { return; }
+  size_t tam = n;
+  if (nvs_get_str(h, "apps_ocultos", out, &tam) != ESP_OK) { out[0] = 0; }
+  nvs_close(h);
+}
+
+void ajustes_definir_apps_ocultos(const char* nomes)
+{
+  if (!s_pronto) { return; }
+  nvs_handle_t h;
+  if (nvs_open(NAMESPACE, NVS_READWRITE, &h) != ESP_OK) { return; }
+  if (nomes && nomes[0]) { nvs_set_str(h, "apps_ocultos", nomes); }
+  else                   { nvs_erase_key(h, "apps_ocultos"); }
+  nvs_commit(h);
+  nvs_close(h);
+  ESP_LOGI(TAG, "apps ocultos: %s", (nomes && nomes[0]) ? nomes : "(nenhum)");
+}
