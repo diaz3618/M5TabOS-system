@@ -52,7 +52,7 @@ void bq_anim_quadro(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
                     const bq_ret_t* caixas, int n_caixas, bq_ret_t* clips);
 
 // PAPEL DE PAREDE DA HOME: um dos desenhos abstratos do fundo (estilo 0..4:
-// fios, ondas, teia, raios, circulos - a ordem de AJUSTES_PAREDE_*), pintado
+// fios, ondas, teia, raios, circulos - a ordem de SETTINGS_WALLPAPER_*), pintado
 // na area 'a'. A mesma semente da sempre o mesmo desenho. false = sem memoria
 // ou estilo invalido (a area fica como estava - preta).
 bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t semente);

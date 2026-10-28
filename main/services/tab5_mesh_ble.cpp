@@ -120,7 +120,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
       io.action = ev->passkey.params.action;
       if (io.action == BLE_SM_IOACT_INPUT) {
         s_pin_pedido = true;
-        if (s_pin_interativo || ajustes_mesh_pin_na_tela()) {
+        if (s_pin_interativo || settings_mesh_pin_on_screen()) {
           s_pin_interativo = true;
           // Espera quem digitar (mesh_ble_digitar_pin): nada e injetado aqui.
           s_pin_conn = ev->passkey.conn_handle;
@@ -130,7 +130,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
           ESP_LOGI(TAG, "o no pediu o PIN - esperando o usuario (Ajustes > Meshtastic)");
           break;
         }
-        io.passkey = ajustes_mesh_pin();
+        io.passkey = settings_mesh_pin();
         ESP_LOGI(TAG, "o no pediu o PIN - usando o de Ajustes");
       } else if (io.action == BLE_SM_IOACT_NUMCMP) {
         io.numcmp_accept = 1;
@@ -269,7 +269,7 @@ static bool ler_ate_vazio(void)
 static bool achar_no(ble_addr_t* alvo)
 {
   char salvo[18];
-  ajustes_mesh_ble_endereco(salvo);
+  settings_mesh_ble_address(salvo);
   uint8_t quer[6];
   const bool tem_salvo = tab5_ble_parse_address(salvo, quer);
 
@@ -365,8 +365,8 @@ static int conectar(const ble_addr_t* alvo)
     // Lembra disso (NVS) e tenta de novo ja - agora perguntando o PIN.
     if (s_pin_pedido && !s_pin_interativo) {
       ESP_LOGW(TAG, "PIN salvo recusado (%d) - o no usa PIN na tela; pergunto a partir de agora", rc);
-      ajustes_definir_mesh_pin_na_tela(true);
-      ajustes_definir_mesh_pin(123456);   // o salvo estava errado: volta ao padrao
+      settings_set_mesh_pin_on_screen(true);
+      settings_set_mesh_pin(123456);   // o salvo estava errado: volta ao padrao
       s_pin_interativo = true;
       estado("o nó mostra o PIN na tela - tentando de novo");
       return -1;
@@ -420,7 +420,7 @@ static int conectar(const ble_addr_t* alvo)
   if (s_notif >= 0) { notif_limpar(s_notif); }
 
   // Deste no em diante e este no: guarda para reconectar direto.
-  ajustes_definir_mesh_ble_endereco(s_end);
+  settings_set_mesh_ble_address(s_end);
   ESP_LOGI(TAG, "conectado a %s (%s)", s_nome, s_end);
   estado("conectado a %s", s_nome);
   s_conectado = true;

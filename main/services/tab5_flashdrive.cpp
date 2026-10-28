@@ -984,14 +984,14 @@ static void vigiar(void*)
   const bool pc = tab5_pendrive_pc_presente();
   if (!s_viu) { s_viu = true; s_antes = pc; s_carencia_ate_us = agora + CARENCIA_BOOT_US; return; }
 
-  if (s_oferta && !ajustes_pendrive()) {   // o ajuste saiu: a oferta tambem
+  if (s_oferta && !settings_flash_drive()) {   // o ajuste saiu: a oferta tambem
     s_oferta = false;
     avisar(0, NOTIF_INFO, nullptr);
   }
   if (pc) {
     s_ausente_desde_us = 0;
-    if (!s_antes && agora >= s_carencia_ate_us && ajustes_pendrive()) {
-      const bool trancado = sistema_bloqueado() || (tab5_power_is_sleeping() && ajustes_bloqueio());
+    if (!s_antes && agora >= s_carencia_ate_us && settings_flash_drive()) {
+      const bool trancado = sistema_bloqueado() || (tab5_power_is_sleeping() && settings_lock_screen());
       if (!trancado && !sistema_app_atual()) {
         ESP_LOGI(TAG, "computador no USB-C: ligando o pendrive");
         tab5_pendrive_iniciar();
@@ -1011,7 +1011,7 @@ static void vigiar(void*)
   // borda nao liga nada - a vigia so acompanha o cabo para nao confundir um
   // computador que JA estava ligado com um que acabou de chegar quando o
   // ajuste for ligado. Para isso 1 s basta; 250 ms so quando a borda vale.
-  const uint64_t periodo = (ajustes_pendrive() || s_oferta) ? VIGIA_US : VIGIA_LENTA_US;
+  const uint64_t periodo = (settings_flash_drive() || s_oferta) ? VIGIA_US : VIGIA_LENTA_US;
   if (periodo != s_vigia_periodo) {
     s_vigia_periodo = periodo;
     esp_timer_restart(s_vigia, periodo);

@@ -144,5 +144,5 @@ void tab5_pendrive_resultado_visto(void);
 bool tab5_pendrive_pc_presente(void);
 
 // Boot, depois do sistema: registra o aviso e liga a vigia do cabo (que liga
-// o pendrive sozinho quando o ajuste pede - ajustes_pendrive()).
+// o pendrive sozinho quando o ajuste pede - settings_flash_drive()).
 void tab5_pendrive_servico_iniciar(void);

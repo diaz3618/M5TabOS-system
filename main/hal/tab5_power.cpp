@@ -1028,7 +1028,7 @@ double tab5_power_frames_per_second(void)
 bool tab5_power_dpi_clock(int mhz)
 {
   // Fora da faixa, LIMITA em vez de recusar: who pede 84 quer
-  // "o maximo", nao um erro. Mesma faixa de AJUSTES_RELOGIO_MIN/MAX.
+  // "o maximo", nao um erro. Mesma faixa de SETTINGS_PANEL_CLOCK_MIN_MHZ/MAX.
   if (mhz > 80) { mhz = 80; }
   if (mhz < 24) { mhz = 24; }
 

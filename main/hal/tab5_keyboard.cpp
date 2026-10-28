@@ -54,7 +54,7 @@ static uint32_t s_proxima_busca = 0;  // ms; quando tentar achar o keyboard de n
 
 // SE O TECLADO ESTA HABILITADO - vontade do usuario, empurrada de fora (o
 // kernel no boot, o app Ajustes quando muda), nunca lida daqui.
-// este file chamava ajustes_teclado() direto, o que e HAL (a camada mais
+// este file chamava settings_keyboard() direto, o que e HAL (a camada mais
 // low) perguntando a um service - o sentido errado da dependencia. Nasce
 // FALSO, igual ao padrao de settings.cpp: o sistema nega por padrao, e who
 // liga primeiro e who chama tab5_keyboard_enable() com o value real.

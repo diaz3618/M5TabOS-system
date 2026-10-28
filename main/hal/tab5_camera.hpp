@@ -77,7 +77,7 @@
 // fora de um app (o comando 'foto', por exemplo) so porque o app QUE ABRIU
 // NAQUELE INSTANTE nao pede camera. tab5_camera_active() (abaixo) existe
 // exatamente para tapar esse buraco: sistema_impor_preferencias() faz OR com
-// ela, do mesmo jeito que ja faz com ajustes_grove() para o Grove.
+// ela, do mesmo jeito que ja faz com settings_grove() para o Grove.
 //
 // SO DA TAREFA DE INTERFACE, DIRETO - achado ao vivo com o
 // comando 'foto': estas duas funcoes tocam SCCB (o I2C interno, o MESMO

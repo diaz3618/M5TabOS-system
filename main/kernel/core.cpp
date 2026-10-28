@@ -324,14 +324,14 @@ static uint32_t s_ultimo_teclado  = 0;
 // portanto a margem que sobra para todo o resto desenhar sem piscar.
 //
 // NAO E MAIS CONSTANTE: virou preferencia do usuario, gravada em
-// ajustes_relogio_painel() - o console ('tela relogio') e o app Ajustes gravam ali,
+// settings_panel_clock_mhz() - o console ('tela relogio') e o app Ajustes gravam ali,
 // e o boot aplica o que estiver guardado, em vez de sempre voltar para 60.
 
 // ---- comportamento ---------------------------------------------------------
 // Tempo sem toque ate o repouso. Vem do AJUSTE do usuario, nao de constante:
 // e preferencia de quem segura o aparelho, igual ao brilho. Ver settings.h para
 // o porque dos limites de 15 e 60 s.
-static inline uint32_t ocioso_ms(void) { return (uint32_t)ajustes_tela_s() * 1000u; }
+static inline uint32_t ocioso_ms(void) { return (uint32_t)settings_screen_timeout_s() * 1000u; }
 static const uint32_t PERIODO_UI  = 20;
 
 // (PERIODO_OCIOSO/OCIOSO_APOS_MS sairam. O loop acordado era
@@ -489,11 +489,11 @@ int sistema_toques(sistema_toque_t* out, int max)
 // ---------------------------------------------------------------------------
 // O boot ligava o Bluetooth se o botao estivesse ligado OU se o Mesh estivesse
 // configurado para o Bluetooth - desligar o BT em Ajustes durava ate o
-// proximo reinicio. Agora a escolha gravada (ajustes_bluetooth) e a unica
+// proximo reinicio. Agora a escolha gravada (settings_bluetooth) e a unica
 // que liga o radio, e o Mesh pelo Bluetooth sobe e desce junto com ela.
 static void bt_mesh_subir(void*)
 {
-  if (!tab5_mesh_servico_ativo() || tab5_mesh_via() != AJUSTES_MESH_BLUETOOTH) { tab5_mesh_iniciar(); }
+  if (!tab5_mesh_servico_ativo() || tab5_mesh_via() != SETTINGS_MESH_TRANSPORT_BLUETOOTH) { tab5_mesh_iniciar(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +508,7 @@ static void bt_mesh_subir(void*)
 static void mesh_internet_subir(void*) { tab5_mesh_iniciar_internet(); }
 static void mesh_internet_descer(void*)
 {
-  if (tab5_mesh_servico_ativo() && tab5_mesh_via() == AJUSTES_MESH_INTERNET) { tab5_mesh_parar(); }
+  if (tab5_mesh_servico_ativo() && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_INTERNET) { tab5_mesh_parar(); }
 }
 
 static void vigiar_mesh_internet(uint32_t t)
@@ -516,11 +516,11 @@ static void vigiar_mesh_internet(uint32_t t)
   static uint32_t s_ultima = 0;
   if (t - s_ultima < 15000) { return; }
   s_ultima = t;
-  const bool ativo_net = tab5_mesh_servico_ativo() && tab5_mesh_via() == AJUSTES_MESH_INTERNET;
+  const bool ativo_net = tab5_mesh_servico_ativo() && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_INTERNET;
   // INTERNET ESCOLHIDA em Ajustes: e a via, nao o tapa-buraco - roda mesmo com
   // o C6L no cabo (a prioridade do Grove ja foi exercida no achado; ver
   // vTaskSondagemGrove). So precisa do Wi-Fi.
-  if (ajustes_mesh_via() == AJUSTES_MESH_INTERNET) {
+  if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_INTERNET) {
     if (!tab5_mesh_servico_ativo() && !s_sondando_em_fundo
      && tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
       sistema_trabalho_solto(mesh_internet_subir, nullptr);
@@ -528,7 +528,7 @@ static void vigiar_mesh_internet(uint32_t t)
     return;
   }
   // Internet como tapa-buraco: o Grove com o no a faz ceder, o cabo e o principal.
-  if (!ajustes_mesh_internet() || tab5_grove_type() == GROVE_MESHTASTIC) {
+  if (!settings_mesh_internet() || tab5_grove_type() == GROVE_MESHTASTIC) {
     if (ativo_net) { sistema_trabalho_solto(mesh_internet_descer, nullptr); }
     return;
   }
@@ -538,7 +538,7 @@ static void vigiar_mesh_internet(uint32_t t)
   if (ativo_net && tab5_wifi_state() != TAB5_WIFI_CONNECTED) {
     if (++s_sem_wifi >= 2) { s_sem_wifi = 0; sistema_trabalho_solto(mesh_internet_descer, nullptr); return; }
   } else { s_sem_wifi = 0; }
-  const bool no_pelo_bt = ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH && ajustes_bluetooth();
+  const bool no_pelo_bt = settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_BLUETOOTH && settings_bluetooth();
   if (!tab5_mesh_servico_ativo() && !no_pelo_bt && !s_sondando_em_fundo
    && tab5_grove_type() != GROVE_MESHTASTIC
    && tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
@@ -583,7 +583,7 @@ bool sistema_app_exige_sd(void)
 static void bt_desligar(void*)
 {
   // O Mesh sai primeiro: a stack nao pode sumir debaixo de uma conexao aberta.
-  if (tab5_mesh_servico_ativo() && tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH) { tab5_mesh_parar(); }
+  if (tab5_mesh_servico_ativo() && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { tab5_mesh_parar(); }
   // E confere: se o enlace ainda esta de pe (parar falhou, ou subiu fora do
   // servico), insiste - derrubar a pilha com ele dentro de um ble_gap_* e o
   // reinicio do aparelho que se via ao desligar o Bluetooth.
@@ -600,7 +600,7 @@ static void bt_aplicar(bool ligar)
   if (ligar) {
     tab5_ble_turn_on();   // trilho do C6 (I2C): tarefa de interface
     // O iniciar do Mesh le o historico do cartao: no worker.
-    if (ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH) { sistema_trabalho_solto(bt_mesh_subir, nullptr); }
+    if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { sistema_trabalho_solto(bt_mesh_subir, nullptr); }
   } else {
     sistema_trabalho_solto(bt_desligar, nullptr);
   }
@@ -608,7 +608,7 @@ static void bt_aplicar(bool ligar)
 
 void sistema_bluetooth(bool ligar)
 {
-  if (ligar != ajustes_bluetooth()) { ajustes_definir_bluetooth(ligar); }
+  if (ligar != settings_bluetooth()) { settings_set_bluetooth(ligar); }
   bt_aplicar(ligar);
 }
 
@@ -1075,14 +1075,14 @@ tab5_profile_t sistema_perfil_de_boot(void)
 // USUARIO pediu. O app so pode SOMAR - por isso tudo aqui e "||", nunca "=".
 void sistema_impor_preferencias(tab5_profile_t& p)
 {
-  p.brightness   = ajustes_brilho();                          // preferencia vence sempre
+  p.brightness   = settings_brightness();                          // preferencia vence sempre
   // "necessario" = a stack ja subiu neste boot (tab5_wifi_stack_ready, HAL)
-  // OU o usuario quer WiFi ligado (ajustes_wifi, servico) - a conta mora
+  // OU o usuario quer WiFi ligado (settings_wifi, servico) - a conta mora
   // AQUI, porque so o kernel pode ler as duas sem inverter
   // a dependencia (ver WRITING_APPS.md secao 8).
-  p.radio    = p.radio    || tab5_wifi_stack_ready() || ajustes_wifi()
-             || ajustes_bluetooth();   // o C6 e o radio do Bluetooth
-  p.grove_5v = p.grove_5v || ajustes_grove();
+  p.radio    = p.radio    || tab5_wifi_stack_ready() || settings_wifi()
+             || settings_bluetooth();   // o C6 e o radio do Bluetooth
+  p.grove_5v = p.grove_5v || settings_grove();
 
   // CAMERA VIROU SERVICO (contagem de referencia, ver o aviso
   // grande em tab5_camera.hpp) - MESMA RAZAO do Grove acima: um app aberto
@@ -1685,7 +1685,7 @@ static void vTaskSondagemGrove(void*)
       s_sondas_extra = 0;          // reabre as tentativas automaticas
       s_grove_desde  = tab5_now_ms(); // ... a partir de AGORA, nao do boot
     }
-    if (ajustes_grove()) {
+    if (settings_grove()) {
       const grove_type_t achado = tab5_grove_detect();
       if (achado == GROVE_MESHTASTIC) {
         // O GROVE TEM PRIORIDADE. Achar o C6L no cabo leva o Mesh para ele,
@@ -1693,9 +1693,9 @@ static void vTaskSondagemGrove(void*)
         // no achado - boot, cabo plugado, re-sondagem -, e nao a cada volta:
         // depois dela a escolha manual em Ajustes vale ate o proximo achado.
         // tab5_mesh_iniciar() para a via anterior antes de subir a serial.
-        if (ajustes_mesh_via() != AJUSTES_MESH_SERIAL) {
+        if (settings_mesh_transport() != SETTINGS_MESH_TRANSPORT_SERIAL) {
           ESP_LOGI(TAG, "Meshtastic no Grove: o cabo tem prioridade - Mesh vai para ele");
-          ajustes_definir_mesh_via(AJUSTES_MESH_SERIAL);
+          settings_set_mesh_transport(SETTINGS_MESH_TRANSPORT_SERIAL);
         }
         tab5_mesh_iniciar();
       }
@@ -1757,20 +1757,20 @@ static void vTaskInterface(void *pvParameters)
   // trilho do C6 e uma escrita no expansor I2C, e esta tarefa e a dona do I2C.
   // Alem disso, subindo depois da interface, a tela ja esta desenhada quando o
   // radio comeca a negociar - o usuario ve "conectando" em vez de esperar.
-  if (ajustes_wifi()) { tab5_wifi_turn_on(); }
+  if (settings_wifi()) { tab5_wifi_turn_on(); }
 
   // BLUETOOTH. Mesma razao do WiFi para morar aqui: ligar pede o
   // trilho do C6 (I2C). So o botao do usuario liga (ver sistema_bluetooth);
   // com o Mesh no Bluetooth o servico dele sobe junto - ele nao depende do
   // Grove, entao nao espera sondagem nenhuma.
-  if (ajustes_bluetooth()) { bt_aplicar(true); }
+  if (settings_bluetooth()) { bt_aplicar(true); }
 
   // Teclado do ExtPort1. Aqui, e nao no app_main, porque e I2C - e esta tarefa
   // e a dona do barramento. Sem teclado encaixado ele so avisa e segue.
   //
   // A VONTADE DO USUARIO E EMPURRADA, nunca lida por dentro do HAL - por isso
   // o habilitar() vem ANTES do iniciar(). Ver o aviso em tab5_keyboard.cpp.
-  tab5_keyboard_enable(ajustes_teclado());
+  tab5_keyboard_enable(settings_keyboard());
   tab5_keyboard_init();
 
   // Sensor de temperatura do P4. Nao e I2C (e um ADC interno), mas nasce aqui
@@ -1799,7 +1799,7 @@ static void vTaskInterface(void *pvParameters)
   //
   // Aqui, antes do primeiro desenho: a troca desmonta e remonta o painel, e
   // fazer isso com a tela ja em uso apagaria o conteudo por um instante.
-  if (tab5_panel_touch_gt911()) { tab5_power_dpi_clock((int)ajustes_relogio_painel()); }   // TDDI: fica o de fabrica
+  if (tab5_panel_touch_gt911()) { tab5_power_dpi_clock((int)settings_panel_clock_mhz()); }   // TDDI: fica o de fabrica
 
 #ifdef TAB5_MOSTRAR_SPLASH
   // SO AGORA: o painel ja tem o relogio final e nao vai mais ser desmontado
@@ -1823,7 +1823,7 @@ static void vTaskInterface(void *pvParameters)
   //
   // Reaproveita exatamente o caminho da troca de modulo: um lugar so que sabe
   // parar servico, sondar e subir o que couber.
-  if (ajustes_grove()) {
+  if (settings_grove()) {
     s_grove_resondar = true;
   } else {
     ESP_LOGI(TAG, "Grove sem energia (ajuste desligado) - nao vou sondar");
@@ -1883,7 +1883,7 @@ static void vTaskInterface(void *pvParameters)
     // Com a porta OCUPADA nao da para ler o pino - ele e do driver da UART. Aí
     // o informante e outro: o proprio servico, que sabe ha quanto tempo o radio
     // nao fala. Cada estado tem quem o observe.
-    if (ajustes_grove() && !s_grove_resondar && (t - s_grove_olhado) >= VIGIA_MS) {
+    if (settings_grove() && !s_grove_resondar && (t - s_grove_olhado) >= VIGIA_MS) {
       s_grove_olhado = t;
       const grove_owner_t dono = tab5_grove_owner();
 
@@ -1993,7 +1993,7 @@ static void vTaskInterface(void *pvParameters)
     // Nunca sonda com a porta ocupada: o dono (Mesh ou GPS, os dois servicos
     // que hoje disputam o Grove) esta usando a UART, e uma sondagem por cima
     // dela quebraria a leitura.
-    if (s_sondas_extra < 2 && ajustes_grove()
+    if (s_sondas_extra < 2 && settings_grove()
      && (tab5_grove_type() == GROVE_NOTHING || tab5_grove_type() == GROVE_UNKNOWN)
      && tab5_grove_owner() == GROVE_OWNER_NONE
      && t > s_grove_desde + (uint32_t)(20000 + s_sondas_extra * 30000)) {
@@ -2375,7 +2375,7 @@ static void vTaskInterface(void *pvParameters)
         // Diz o tempo CONFIGURADO junto: e a unica prova, no log, de que o
         // ajuste de Ajustes esta mesmo chegando aqui.
         ESP_LOGI(TAG, "repouso apos %u s sem toque (ajuste de Ajustes)",
-                 (unsigned)ajustes_tela_s());
+                 (unsigned)settings_screen_timeout_s());
         // TESTADO: 20MHz quebrou a UART do Mesh (o servico voltou
         // a mostrar "sem modulo" mesmo com o C6L plugado e respondendo antes).
         // De volta a 40. A ideia seguinte - piso baixo SO quando tab5_grove_owner()
@@ -2557,7 +2557,7 @@ static void vTaskInterface(void *pvParameters)
     // s_ultima_medida acima), a barra/beep (BARRA_MS) e a vigia do Grove
     // (VIGIA_MS). Nao inventa nenhum prazo novo, so para de acordar entre eles
     // a toa. O prazo do Grove SO entra na conta quando ele de fato avanca
-    // sozinho (ajustes_grove() ligado e nenhuma re-sondagem em andamento) -
+    // sozinho (settings_grove() ligado e nenhuma re-sondagem em andamento) -
     // achado na revisao deste desenho: sem essa guarda, com o Grove desligado
     // (configuracao normal) ou uma re-sondagem em curso, s_grove_olhado para
     // de andar, a conta "quanto falta" ficaria presa em ZERO para sempre, e o
@@ -2572,7 +2572,7 @@ static void vTaskInterface(void *pvParameters)
         const uint32_t prazo_barra = (decorrido_barra < BARRA_MS) ? (BARRA_MS - decorrido_barra) : 0;
         if (prazo_barra < prazo) { prazo = prazo_barra; }
 
-        if (ajustes_grove() && !s_grove_resondar) {
+        if (settings_grove() && !s_grove_resondar) {
           const uint32_t decorrido_grove = t - s_grove_olhado;
           const uint32_t prazo_grove = (decorrido_grove < VIGIA_MS) ? (VIGIA_MS - decorrido_grove) : 0;
           if (prazo_grove < prazo) { prazo = prazo_grove; }
@@ -2609,7 +2609,7 @@ static void vTaskInterface(void *pvParameters)
         };
         menor(1000, s_ultima_medida);                    // sensores, 1Hz
         menor(BARRA_MS, s_ultima_barra);                 // barra de status
-        if (ajustes_grove() && !s_grove_resondar) { menor(VIGIA_MS, s_grove_olhado); }
+        if (settings_grove() && !s_grove_resondar) { menor(VIGIA_MS, s_grove_olhado); }
         menor(ocioso_ms(), s_ultimo_toque);              // hora de apagar a tela
         // (o relogio do app entra abaixo, depois do piso de PERIODO_UI)
         if (s_speaker_ocioso_desde) { menor(SPEAKER_OCIOSO_MS, s_speaker_ocioso_desde); }
@@ -2683,7 +2683,7 @@ static void vTaskInterface(void *pvParameters)
 void sistema_iniciar(void)
 {
   //                      corpo           nome  stack param prio handle kernel
-  // ajustes_iniciar() ja foi chamado no app_main, ANTES do M5.begin(), para a
+  // settings_init() ja foi chamado no app_main, ANTES do M5.begin(), para a
   // tela nascer no brilho certo em vez de piscar no padrao e corrigir depois.
   pool_iniciar();         // tarefas fixas dos servicos que ligam/desligam e dos apps - ANTES de todos
   tab5_mem_marco("pool de vagas");

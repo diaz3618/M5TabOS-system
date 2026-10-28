@@ -12,7 +12,7 @@
 #include "app.h"          // sistema_avisar
 #include "tab5_gps.hpp"
 #include "tab5_time.hpp"   // tab5_now_ms
-#include "settings.h"       // AJUSTES_MESH_BLUETOOTH
+#include "settings.h"       // SETTINGS_MESH_TRANSPORT_BLUETOOTH
 
 static const char* TAG = "mesh_admin";
 
@@ -459,7 +459,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
   // em seguida nao atrapalha mais nada. Por isso pelo Bluetooth a secao MQTT
   // precisa ser a UNICA mudanca: qualquer outra, depois dela, nao chegaria.
   // Pelo cabo nao ha Bluetooth a cair, e vale a transacao normal.
-  if (msg_mqtt >= 0 && tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH) {
+  if (msg_mqtt >= 0 && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     if (n_msgs > 1) {
       ESP_LOGW(TAG, "pelo Bluetooth a secao MQTT grava sozinha - outras mudancas pendentes junto");
       snprintf(s_motivo, sizeof(s_motivo), "pelo Bluetooth, MQTT/proxy grava sozinho: grave o resto antes");

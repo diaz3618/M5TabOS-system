@@ -832,7 +832,7 @@ static void desenhar_temp_nav_app(lgfx::LovyanGFX& d)
 // de desenho nao e lugar de ir ao hardware.
 static void montar_servicos(char* esq, size_t te, char* dir, size_t td)
 {
-  if (!ajustes_grove()) {
+  if (!settings_grove()) {
     snprintf(esq, te, "off");
   } else if (tab5_mesh_servico_ativo()) {
     // Com o servico de pe, o que interessa nao e "tem um C6L ali" e sim se ele
@@ -1187,13 +1187,13 @@ static void ordem_gravar(void)
     k += len;
     nomes[k] = 0;
   }
-  ajustes_definir_ordem_apps(nomes);
+  settings_set_apps_order(nomes);
 }
 
 void home_ordem_carregar(void)
 {
-  ajustes_ordem_apps(s_ordem_nomes, sizeof(s_ordem_nomes));
-  ajustes_apps_ocultos(s_ocultos_nomes, sizeof(s_ocultos_nomes));
+  settings_apps_order(s_ordem_nomes, sizeof(s_ordem_nomes));
+  settings_apps_hidden(s_ocultos_nomes, sizeof(s_ocultos_nomes));
   ordem_de_nomes(s_ordem_nomes, s_ocultos_nomes);
   s_pagina_home = 0;
 }
@@ -1224,7 +1224,7 @@ bool sistema_home_mover(const app_t* app, int pos)
 void sistema_home_ordem_padrao(void)
 {
   ordem_de_nomes("", s_ocultos_nomes);
-  ajustes_definir_ordem_apps("");
+  settings_set_apps_order("");
   sistema_pedir_redesenho_completo();
 }
 
@@ -1351,13 +1351,13 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
   // entao o desenho nao muda a cada volta para a home.
   static uint32_t s_semente_parede = 0;
   static uint8_t  s_parede_ant = 0xFF;
-  const uint8_t parede = ajustes_parede();
-  if (parede == AJUSTES_PAREDE_SORTEIO && s_parede_ant != AJUSTES_PAREDE_SORTEIO) { s_semente_parede = 0; }
+  const uint8_t parede = settings_wallpaper();
+  if (parede == SETTINGS_WALLPAPER_RANDOM && s_parede_ant != SETTINGS_WALLPAPER_RANDOM) { s_semente_parede = 0; }
   s_parede_ant = parede;
   while (!s_semente_parede) { s_semente_parede = esp_random(); }
-  if (parede != AJUSTES_PAREDE_NENHUM) {
-    const int estilo = (parede == AJUSTES_PAREDE_SORTEIO)
-                     ? (int)(s_semente_parede % AJUSTES_PAREDE_ESTILOS) : parede - 1;
+  if (parede != SETTINGS_WALLPAPER_NONE) {
+    const int estilo = (parede == SETTINGS_WALLPAPER_RANDOM)
+                     ? (int)(s_semente_parede % SETTINGS_WALLPAPER_STYLE_COUNT) : parede - 1;
     bq_fundo_parede(d, a, estilo, s_semente_parede);
   }
 
@@ -1595,7 +1595,7 @@ void bloquear_tela(void)
 void bloqueio_ao_ligar_tela(void)
 {
   if (s_bloqueado)            { bq_anim_sortear(); }   // acordou ainda bloqueada: outra animacao
-  else if (ajustes_bloqueio()) { bloquear_tela(); }
+  else if (settings_lock_screen()) { bloquear_tela(); }
 }
 
 void desbloquear_tela(void)

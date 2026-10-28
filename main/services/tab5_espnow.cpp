@@ -381,7 +381,7 @@ static void tratar(const evento_t* ev)
     case EV_CANAL: {
       const uint8_t c = ev->dados[0];
       s_canal_fixo = c;
-      ajustes_definir_espnow_canal(c);   // sobrevive ao reinicio (so grava se mudou)
+      settings_set_espnow_channel(c);   // sobrevive ao reinicio (so grava se mudou)
       if (c == 0) {
         // De volta ao roteador: o canal passa a ser o dele (o loop confere).
         tab5_wifi_radio_only_mode(false);
@@ -555,7 +555,7 @@ void tab5_espnow_iniciar(void)
   // O canal escolhido da ultima vez. Nao aplica aqui: quem aplica e o PRONTO
   // do C6 (ele reaplica o canal fixo toda vez que o radio volta), entao basta
   // a vontade estar em s_canal_fixo antes disso.
-  s_canal_fixo = ajustes_espnow_canal();
+  s_canal_fixo = settings_espnow_channel();
   tab5_time_on_jump(ao_saltar_relogio);
   tab5_wifi_on_stack_ready(espnow_cutucar);   // sem enlace a tarefa dorme 30 s; o Wi-Fi acorda ela
   // 6 KB, e nao 4: esta tarefa MONTA O CARTAO (gravar/carregar o historico),

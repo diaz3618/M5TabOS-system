@@ -1,260 +1,258 @@
-// Ajustes do sistema - as PREFERENCIAS DO USUARIO, guardadas na NVS.
+// System settings: USER PREFERENCES stored in NVS.
 //
-// A distincao que motivou este modulo: o tab5_profile_t de cada app diz "que
-// hardware EU preciso ligado" - Grove, radio, IMU. Isso e requisito do
-// aplicativo. Ja o brilho e outra coisa: e preferencia de quem esta segurando
-// o aparelho, e nenhum app tem autoridade sobre ela. Estavam misturados no
-// mesmo struct, e o app vencia - errado.
+// This module keeps two concepts separate. Each app's tab5_profile_t says
+// which hardware the app needs enabled: Grove, radio, or IMU. Those are app
+// requirements. Brightness is different: it is a preference of the person
+// holding the device, and no app has authority to override it. These values
+// used to share one structure, so the app won.
 //
-// Agora o sistema sobrescreve o brilho do perfil na hora de abrir o app. O
-// campo continua existindo no tab5_profile_t (que precisa seguir autocontido e
-// copiavel para outros projetos), mas quem manda aqui e este modulo.
+// The system now overrides the profile's brightness when opening an app. The
+// field remains in tab5_profile_t so the profile stays self-contained and
+// portable, but this module owns the effective value here.
 //
-// NVS e nao cartao: ajuste tem de funcionar sem cartao nenhum, e ser lido no
-// boot antes de qualquer montagem.
+// Settings live in NVS rather than on the SD card so they work without a card
+// and can be read during boot before any filesystem is mounted.
 
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 
-// Faixa do brilho, no valor do M5GFX (0-255 vira o duty de um PWM de 9 bits
-// a 44,1 kHz no GPIO22). O minimo NAO e zero de proposito: com a tela apagada
-// voce nao conseguiria enxergar o controle para desfazer. O olho percebe o
-// brilho em escala logaritmica (ver a barra de Ajustes, que segue essa curva),
-// entao o piso tem de ser baixo - mas nao tanto: com 2 (0,9% de duty) a tela
-// ficava acesa ao arrastar a barra e VOLTAVA APAGADA depois do repouso, porque
-// o driver do backlight nao parte do zero com um pulso tao curto (ver
-// tab5_power_wake_screen). 6 = 1,8% de duty: ainda escuro, mas sempre visivel.
-#define AJUSTES_BRILHO_MIN  6
-#define AJUSTES_BRILHO_MAX  255
+// Brightness range in M5GFX units. A value from 0 to 255 becomes the duty
+// cycle of a 9-bit, 44.1 kHz PWM signal on GPIO22. The minimum is deliberately
+// nonzero: with the display completely dark, the user could not see the
+// control needed to restore it. Perceived brightness is logarithmic (the
+// Settings slider follows that curve), so the floor should be low but not too
+// low. At 2 (0.9% duty), the display lit while dragging the slider but went
+// dark again after sleep because the backlight driver could not start from
+// zero with such a short pulse (see tab5_power_wake_screen). A value of 6 is
+// 1.8% duty: still dark, but reliably visible.
+#define SETTINGS_BRIGHTNESS_MIN  6
+#define SETTINGS_BRIGHTNESS_MAX  255
 
-// Carrega da NVS (e inicializa a NVS, se preciso). Chamar antes das tarefas.
-void ajustes_iniciar(void);
+// Load settings from NVS, initializing NVS if necessary. Call before tasks.
+void settings_init(void);
 
-uint8_t ajustes_brilho(void);
+uint8_t settings_brightness(void);
 
-// Aplica na tela AGORA e grava. Valor fora da faixa e limitado, nao recusado.
-void ajustes_definir_brilho(uint8_t brilho);
+// Apply to the display immediately and save. Out-of-range values are clamped.
+void settings_set_brightness(uint8_t brightness);
 
-// Se o usuario quer o WiFi ligado. Quem age sobre isso e o servico de WiFi;
-// aqui so mora a vontade.
-bool ajustes_wifi(void);
-void ajustes_definir_wifi(bool ligado);
+// Whether the user wants Wi-Fi enabled. The Wi-Fi service acts on this value;
+// this module only stores the preference.
+bool settings_wifi(void);
+void settings_set_wifi(bool enabled);
 
-// Se o usuario quer o teclado do ExtPort1 ativo. Desligado, o sistema nao
-// procura o teclado nem gasta transacao I2C com ele.
-bool ajustes_teclado(void);
-void ajustes_definir_teclado(bool ligado);
+// Whether the user wants the ExtPort1 keyboard enabled. When disabled, the
+// system neither probes for the keyboard nor spends I2C transactions on it.
+bool settings_keyboard(void);
+void settings_set_keyboard(bool enabled);
 
-// Manter o 5V do Grove SEMPRE ligado.
+// Keep Grove 5V enabled at all times.
 //
-// Sem isto, um modulo que precisa bootar (o Unit C6L roda o Meshtastic inteiro
-// num ESP32-C6) reinicia toda vez que o trilho e cortado, e nunca chega a
-// conversar. Com isto ligado ele fica de pe como qualquer periferico.
+// Without this, a module that must boot (the Unit C6L runs the full Meshtastic
+// stack on an ESP32-C6) restarts whenever the rail is cut and never becomes
+// ready to communicate. With this enabled, it remains powered like any other
+// peripheral.
 //
-// Custo: o trilho consome mesmo sem ninguem plugado, por isso nasce desligado.
-bool ajustes_grove(void);
-void ajustes_definir_grove(bool ligado);
+// The rail consumes power even with nothing connected, so this defaults off.
+bool settings_grove(void);
+void settings_set_grove(bool enabled);
 
-// Tempo sem toque ate a tela apagar, em SEGUNDOS.
+// Time without a touch before the display turns off, in SECONDS.
 //
-// Guardado em segundos e nao em milissegundos porque cabe num uint8_t da NVS e
-// porque e assim que a pessoa pensa no ajuste. O sistema converte.
+// This is stored in seconds rather than milliseconds because it fits in an
+// NVS uint8_t and matches how people think about the setting. The system does
+// the conversion.
 //
-// O minimo de 15 s nao e capricho: abaixo disso a tela apaga no meio de uma
-// leitura, e o toque para acordar vira parte do uso normal. O maximo de 60 s
-// vem do outro lado - a tela e o maior consumidor do aparelho, e cada segundo
-// aceso custa mais que qualquer economia que a gente arrancou do resto.
-#define AJUSTES_TELA_MIN_S  15
-#define AJUSTES_TELA_MAX_S  60
+// The 15-second minimum is intentional: below that, the display turns off in
+// the middle of reading and waking it becomes part of normal use. The
+// 60-second maximum comes from the other direction: the display is the
+// device's largest power consumer, so every extra second costs more than the
+// savings available elsewhere.
+#define SETTINGS_SCREEN_TIMEOUT_MIN_S  15
+#define SETTINGS_SCREEN_TIMEOUT_MAX_S  60
 
-uint8_t ajustes_tela_s(void);
-void    ajustes_definir_tela_s(uint8_t segundos);
+uint8_t settings_screen_timeout_s(void);
+void    settings_set_screen_timeout_s(uint8_t seconds);
 
-// RELOGIO DO PAINEL (DPI/pixel clock), em MHz.
+// PANEL CLOCK (DPI/pixel clock), in MHz.
 //
-// Nasceu: ate aqui so dava pra mudar por 'tela relogio <mhz>'
-// no console, e o valor morria no proximo boot (o sistema sempre reaplicava
-// 60 fixo). Baixar o relogio corta a leitura continua da PSRAM que o painel
-// exige (ver tab5_power.cpp) - a mesma familia de economia do brilho, so que
-// mexendo no OUTRO lado da conta (quanto o painel PEDE, nao quanto o sistema
-// gasta atendendo). Guardado e nao so em RAM para sobreviver ao reinicio, e
-// exposto em Ajustes para quem nao estiver com o cabo serial na mao.
+// Previously this could only be changed with `tela relogio <mhz>` in the
+// console, and the value disappeared at the next boot because the system
+// always restored 60 MHz. Lowering the clock reduces the continuous PSRAM
+// reads required by the panel (see tab5_power.cpp). This saves power from the
+// demand side rather than by reducing supplied brightness. The value is
+// persisted and exposed in Settings for users without a serial cable.
 //
-// A faixa e a MESMA que tab5_power_dpi_clock() aceita (24..80) - limitada
-// aqui tambem, e nao so la, pelo mesmo motivo do tela_s: um valor gravado por
-// engano nao pode virar um painel que nunca mais sobe.
-// Teto de 80 (era 100). Acima de 80 o
-// painel so gasta banda de PSRAM sem ganho visivel, e o passo de 5 de Ajustes
-// (24, 29 ... 79) nunca parava em 80: pulava para 84. Com o teto em 80, a
-// limitacao faz o resto - 79+5 vira 80, 25-5 vira 24.
-#define AJUSTES_RELOGIO_MIN  24
-#define AJUSTES_RELOGIO_MAX  80
+// This is the same range accepted by tab5_power_dpi_clock() (24..80), clamped
+// here as well so an invalid persisted value cannot prevent the panel from
+// starting. The ceiling was reduced from 100 to 80 because higher values use
+// PSRAM bandwidth without a visible benefit. It also makes the Settings
+// screen's 5-MHz steps clamp cleanly at both ends.
+#define SETTINGS_PANEL_CLOCK_MIN_MHZ  24
+#define SETTINGS_PANEL_CLOCK_MAX_MHZ  80
 
-uint8_t ajustes_relogio_painel(void);
+uint8_t settings_panel_clock_mhz(void);
 
-// SO GRAVA - nao aplica no painel. Quem muda o relogio de verdade e
-// tab5_power_dpi_clock(); o chamador (console, Ajustes) e quem decide a
-// ORDEM entre aplicar e gravar, porque so ele sabe se a troca deu certo.
-void    ajustes_definir_relogio_painel(uint8_t mhz);
+// SAVE ONLY; do not apply to the panel. tab5_power_dpi_clock() changes the
+// hardware clock. The caller (console or Settings app) controls the order of
+// applying and saving because only it knows whether the change succeeded.
+void    settings_set_panel_clock_mhz(uint8_t mhz);
 
-// VOLUME do alto-falante interno (ES8388). Faixa NATIVA de
-// M5.Speaker.setVolume() (0..255) - ao contrario do brilho, 0 e um estado
-// legitimo (mudo), entao nao ha piso: a diferenca que justifica o piso do
-// brilho (uma tela apagada esconde o proprio controle para desfazer) nao
-// existe aqui.
+// Internal speaker volume (ES8388), using M5.Speaker.setVolume()'s native
+// 0..255 range. Unlike brightness, zero is a valid muted state; no nonzero
+// floor is needed because a silent speaker does not hide its own control.
 //
-// APLICADO NA HORA, mesmo padrao de ajustes_definir_brilho() - mas SEM
-// custo de hardware nenhum enquanto ninguem toca som: setVolume() so grava
-// um numero no objeto Speaker, o ES8388 continua desligado ate o primeiro
-// M5.Speaker.tone()/playWav() de algum app (M5Unified inicializa o codec de
-// forma preguicosa - ver o aviso grande em app_config.cpp, junto da secao
-// VOLUME). Por isso pode ser aplicado aqui, no boot, sem esperar nenhum app
-// abrir.
-#define AJUSTES_VOLUME_MIN  0
-#define AJUSTES_VOLUME_MAX  255
+// Applied immediately, like settings_set_brightness(), but with no hardware
+// cost while nothing is playing: setVolume() only updates the Speaker object.
+// The ES8388 remains off until an app first calls M5.Speaker.tone() or
+// playWav(). M5Unified initializes the codec lazily; see the volume warning in
+// app_config.cpp. This is therefore safe to apply during boot.
+#define SETTINGS_VOLUME_MIN  0
+#define SETTINGS_VOLUME_MAX  255
 
-uint8_t ajustes_volume(void);
-void    ajustes_definir_volume(uint8_t volume);
+uint8_t settings_volume(void);
+void    settings_set_volume(uint8_t volume);
 
-// TIMEZONE OFFSET - whole hours from UTC, user-set (default 0/UTC). Only
-// affects display (tab5_local_time() in tab5_time.hpp); the RTC, sync, and
-// logs stay in pure UTC on purpose - see the big warning in tab5_time.hpp.
+// Time-zone offset in whole hours from UTC, set by the user (default 0/UTC).
+// This affects display only (tab5_local_time() in tab5_time.hpp). The RTC,
+// synchronization, and logs deliberately remain in UTC.
 #define SETTINGS_UTC_OFFSET_MIN  -12
 #define SETTINGS_UTC_OFFSET_MAX   14
 
 int8_t settings_utc_offset_hours(void);
 void   settings_set_utc_offset_hours(int8_t hours);
 
-// CASA - posicao de referencia para calcular distancia/direcao ate uma
-// localizacao recebida (Mesh, app_mesh.cpp). E do usuario e nao do Mesh
-// especificamente, pelo mesmo motivo do brilho: nao e requisito de nenhum
-// app, e preferencia de quem segura o aparelho - guardada aqui para poder
-// servir qualquer app que precise no futuro, nao so o Mesh.
+// Home reference position used to calculate distance and direction to a
+// received location (Mesh, app_mesh.cpp). This belongs to the user rather than
+// specifically to Mesh: it is not an app requirement, but a preference that
+// can serve any app that needs it in the future.
 //
-// Devolve false enquanto nao configurada (lat=lon=0 e o valor de fabrica, e
-// tambem o unico ponto real que ninguem mora - fica seguro usar como "vazio"
-// sem precisar de uma flag a parte na NVS).
-bool ajustes_casa(float* lat, float* lon);
-void ajustes_definir_casa(float lat, float lon);
+// Returns false while unset. Latitude and longitude both equal to zero are the
+// factory value and a safe sentinel for "empty" without another NVS flag.
+bool settings_home(float* lat, float* lon);
+void settings_set_home(float lat, float lon);
 
-// AVISO SONORO DA TRILHA: silenciar so a Trilha, com o Mesh ainda tocando.
-// Vive aqui (preferencia do usuario) e nao
-// em notification.h (que so guarda o estado em RAM, ver notif_silenciar()) -
-// mesma distincao do resto deste arquivo: o QUE soa e decisao de quem
-// segura o aparelho, nao do servico. Default TOCAR (true): o beep de
-// notificacao já existia e funcionava; isto e um jeito de desligar, nao de
-// ligar. Fica dentro do proprio app Trilha por enquanto (nao em Ajustes) -
-// se um dia mais fontes pedirem o mesmo controle, cada uma ganha o par
-// analogo (ajustes_beep_mesh() etc.), em vez de um mecanismo generico sem
-// um segundo caso real para validar o formato (ver ARCHITECTURE.md, 1.1).
-bool ajustes_beep_trilha(void);
-void ajustes_definir_beep_trilha(bool tocar);
+// TRAIL SOUND ALERT: mute only Trail while allowing Mesh to sound. This lives
+// here as a user preference, not in notification.h, which stores only runtime
+// state (see notif_silenciar()). The default is enabled to preserve existing
+// behavior. The control remains in the Trail app for now. Each future source
+// should get an analogous pair, such as settings_mesh_beep(), rather than an
+// unvalidated generic mechanism (see ARCHITECTURE.md section 1.1).
+bool settings_trail_beep(void);
+void settings_set_trail_beep(bool play);
 
-// AVISO SONORO DO MESH - o par analogo previsto no aviso acima, feito no
-// mesmo formato. Mesma logica, mesmo
-// default (TOCAR).
-bool ajustes_beep_mesh(void);
-void ajustes_definir_beep_mesh(bool tocar);
+// MESH SOUND ALERT: the analogous pair described above, with the same format
+// and enabled-by-default behavior.
+bool settings_mesh_beep(void);
+void settings_set_mesh_beep(bool play);
 
-// CANAL DO ESP-NOW. 0 = o do roteador; 1..13 = canal fixo (o WiFi
-// solta o roteador). Era so RAM: todo reinicio voltava para o roteador e o
-// Cardputer no canal 1 sumia ate alguem reabrir o app e escolher de novo.
-// Quem aplica e o servico ESP-NOW (tab5_espnow) - aqui so mora a escolha.
-uint8_t ajustes_espnow_canal(void);
-void    ajustes_definir_espnow_canal(uint8_t canal);
+// ESP-NOW channel. Zero follows the router; 1..13 selects a fixed channel and
+// releases the router. This used to be RAM-only, so every restart returned to
+// the router and a Cardputer on channel 1 disappeared until the app was opened
+// and reconfigured. The ESP-NOW service applies the value; this module stores
+// the choice.
+uint8_t settings_espnow_channel(void);
+void    settings_set_espnow_channel(uint8_t channel);
 
-// POR ONDE O TAB5 FALA COM A MALHA MESHTASTIC. Serial = o cabo Grove
-// (PROTO/UART); Bluetooth = BLE pelo C6 interno, sem fio; Internet = MQTT
-// pelo Wi-Fi, sem no nenhum. O PIN e o do pareamento BLE do Meshtastic
-// (padrao 123456 nos aparelhos sem tela).
+// Transport used by the Tab5 to communicate with the Meshtastic mesh. Serial
+// uses the Grove cable (PROTO/UART); Bluetooth uses BLE through the internal
+// C6; Internet uses MQTT over Wi-Fi with no node. The PIN is the Meshtastic BLE
+// pairing PIN (123456 by default on devices without a screen).
 //
-// O GROVE TEM PRIORIDADE: quando a sondagem ACHA um C6L no cabo, a via vira
-// Serial sozinha (kernel/core.cpp). Depois disso a escolha manual vale ate o
-// proximo achado - e a internet tambem pode ser escolhida assim, alem de
-// cobrir a falta do no (ajustes_mesh_internet).
-#define AJUSTES_MESH_SERIAL     0
-#define AJUSTES_MESH_BLUETOOTH  1
-#define AJUSTES_MESH_INTERNET   2
-uint8_t  ajustes_mesh_via(void);
+// GROVE HAS PRIORITY: when probing finds a C6L on the cable, the transport
+// automatically becomes Serial (kernel/core.cpp). A manual choice then remains
+// in effect until the next discovery. Internet can also be selected manually
+// and provides a fallback when no node is available (settings_mesh_internet).
+#define SETTINGS_MESH_TRANSPORT_SERIAL     0
+#define SETTINGS_MESH_TRANSPORT_BLUETOOTH  1
+#define SETTINGS_MESH_TRANSPORT_INTERNET   2
+uint8_t  settings_mesh_transport(void);
 
-// MESH PELA INTERNET QUANDO O NO NAO ESTA CONECTADO: com o Wi-Fi conectado e
-// sem o C6L (cabo ou Bluetooth), as mensagens chegam pelo servidor MQTT.
-// Ligado de fabrica.
-bool     ajustes_mesh_internet(void);
-void     ajustes_definir_mesh_internet(bool ligado);
-// A REDE PUBLICA PELA INTERNET (mqtt.meshtastic.org, LongFast) em paralelo, com o
-// Wi-Fi conectado - nos e conversa separados. Desligada de fabrica: e trafego
-// de internet que ninguem pediu. Liga/desliga na pagina de nos do app Mesh.
-bool     ajustes_mesh_rede_internet(void);
-void     ajustes_definir_mesh_rede_internet(bool ligado);
-void     ajustes_definir_mesh_via(uint8_t via);
-uint32_t ajustes_mesh_pin(void);
-void     ajustes_definir_mesh_pin(uint32_t pin);
-// O no escolhido mostra o PIN na tela (um novo a cada pareamento): o PIN salvo
-// nao serve, e o sistema pergunta sempre. Aprendido na primeira recusa do PIN
-// salvo; volta a false quando outro no e escolhido.
-bool     ajustes_mesh_pin_na_tela(void);
-void     ajustes_definir_mesh_pin_na_tela(bool sim);
-// Endereco BLE do no escolhido ("" = o primeiro Meshtastic que aparecer).
-void     ajustes_mesh_ble_endereco(char out[18]);
-void     ajustes_definir_mesh_ble_endereco(const char* end);
+// MESH OVER THE INTERNET WHEN THE NODE IS DISCONNECTED: with Wi-Fi connected
+// and no C6L available by cable or Bluetooth, messages arrive through MQTT.
+// Enabled by default.
+bool     settings_mesh_internet(void);
+void     settings_set_mesh_internet(bool enabled);
 
-// GPS DO TAB5 PARA A MALHA: de quantos em quantos MINUTOS o Tab5 passa a
-// posicao do GPS (Grove) adiante. 0 = nunca (padrao: posicao e dado pessoal -
-// so sai se o usuario pedir). Com o no do outro lado ela vai SO PARA O NO, que
-// a difunde no ritmo e com a precisao dele (ver enviar_posicao em
-// tab5_mesh.cpp); pela internet, sem no, o Tab5 difunde ele mesmo. Editado no
-// app Mesh, Configurar o no > Localizacao.
-uint8_t ajustes_mesh_posicao_min(void);
-void    ajustes_definir_mesh_posicao_min(uint8_t minutos);
+// Join the public internet network (mqtt.meshtastic.org, LongFast) in parallel
+// while Wi-Fi is connected, with separate nodes and conversations. Disabled
+// by default because it creates unsolicited internet traffic. This is toggled
+// from the Mesh app's nodes page.
+bool     settings_mesh_public_network(void);
+void     settings_set_mesh_public_network(bool enabled);
+void     settings_set_mesh_transport(uint8_t transport);
+uint32_t settings_mesh_pin(void);
+void     settings_set_mesh_pin(uint32_t pin);
 
-// BLUETOOTH LIGADO. Via Bluetooth no Mesh liga junto (ver o app Ajustes).
-bool ajustes_bluetooth(void);
-void ajustes_definir_bluetooth(bool ligado);
+// The selected node displays a new PIN for every pairing, so a saved PIN is
+// not valid and the system must always ask. This is learned after the first
+// rejection of the saved PIN and resets when another node is selected.
+bool     settings_mesh_pin_on_screen(void);
+void     settings_set_mesh_pin_on_screen(bool shown);
 
-// Tela de bloqueio: ao acordar do repouso o aparelho mostra hora e data e pede
-// um deslize para cima. Desligada de fabrica.
-bool ajustes_bloqueio(void);
-void ajustes_definir_bloqueio(bool ligado);
+// BLE address of the selected node ("" means the first Meshtastic found).
+void     settings_mesh_ble_address(char out[18]);
+void     settings_set_mesh_ble_address(const char* address);
 
-// PENDRIVE AO CONECTAR: ligado num computador pelo USB-C, o Tab5 abre o app
-// Pendrive (o cartao SD vira um disco no computador). Desligado de fabrica: o
-// pendrive tira o console do cabo, e quem grava o firmware pelo USB-C nao
-// quer isso acontecendo sozinho. Com um app aberto nao interrompe - so avisa
-// (central de avisos). O app Pendrive abre na mao com o ajuste desligado.
-bool ajustes_pendrive(void);
-void ajustes_definir_pendrive(bool ligado);
+// TAB5 GPS TO MESH: interval in MINUTES at which the Tab5 forwards its Grove
+// GPS position. Zero means never, the default, because position is personal
+// data and is sent only when the user requests it. With a node connected, the
+// position goes only to that node, which broadcasts it at its own cadence and
+// precision (see enviar_posicao in tab5_mesh.cpp). Over the internet without a
+// node, the Tab5 broadcasts it directly. Edited under Mesh > Configure node >
+// Location.
+uint8_t settings_mesh_position_interval_min(void);
+void    settings_set_mesh_position_interval_min(uint8_t minutes);
 
-// ESCALA DO GIROSCOPIO, por eixo do BMI270 (0 = x, 1 = y, 2 = z). O chip sai
-// de fabrica com erro de sensibilidade de alguns por cento, e o rumo do Radar
-// herda esse erro a cada volta. Medida no proprio Radar (voltas inteiras contra
-// uma referencia); 1,0 = sem correcao. Faixa aceita 0,90..1,10.
-float ajustes_giro_escala(int eixo);
-void  ajustes_definir_giro_escala(int eixo, float escala);
+// Whether Bluetooth is enabled. Selecting Bluetooth as the Mesh transport
+// also enables it (see the Settings app).
+bool settings_bluetooth(void);
+void settings_set_bluetooth(bool enabled);
 
-// ORDEM DOS ICONES NA TELA INICIAL, como os NOMES dos apps separados por
-// virgula ("Mesh,Trilha,Radar"). Nome e nao indice: um app novo no firmware
-// ou um app removido nao embaralha o resto - quem nao esta na lista entra no
-// fim, na ordem de apps.cpp, e nome que nao existe mais e ignorado. Vazio = a
-// ordem de apps.cpp. Quem interpreta e o shell (sistema_home_*, app.h).
-void ajustes_ordem_apps(char* out, size_t n);
-void ajustes_definir_ordem_apps(const char* nomes);   // "" ou nullptr = padrao
+// Lock screen: after waking from sleep, show the time and date and require an
+// upward swipe. Disabled by default.
+bool settings_lock_screen(void);
+void settings_set_lock_screen(bool enabled);
 
-// APLICATIVOS ESCONDIDOS DA TELA INICIAL, como os NOMES separados por
-// virgula. Nome que nao existe mais e ignorado. Vazio = todos visiveis.
-// Quem interpreta e o shell, junto da ordem dos icones.
-void ajustes_apps_ocultos(char* out, size_t n);
-void ajustes_definir_apps_ocultos(const char* nomes);   // "" ou nullptr = nenhum
+// FLASH DRIVE ON CONNECTION: when connected to a computer over USB-C, open
+// the Flash Drive app so the SD card becomes a computer disk. Disabled by
+// default because mass storage takes the console off the cable and firmware
+// flashing should not trigger it automatically. An open app is not
+// interrupted; the notification center reports the connection instead. The
+// Flash Drive app can always be opened manually.
+bool settings_flash_drive(void);
+void settings_set_flash_drive(bool enabled);
 
-// PAPEL DE PAREDE DO INICIO (home): linhas abstratas finas sobre preto, os
-// mesmos desenhos do fundo da tela de bloqueio. SORTEIO (o de fabrica) tira
-// um desenho a cada boot e o mantem ate o proximo; 1..5 fixa um; NENHUM e o
-// preto de antes.
-#define AJUSTES_PAREDE_SORTEIO  0
-#define AJUSTES_PAREDE_ESTILOS  5   // 1..5 = fios, ondas, teia, raios, circulos
-#define AJUSTES_PAREDE_NENHUM   6
+// Gyroscope scale by BMI270 axis (0=x, 1=y, 2=z). The sensor can ship with a
+// sensitivity error of a few percent, which accumulates in Radar heading on
+// every turn. Measure this in Radar using full turns against a reference.
+// 1.0 means no correction; accepted range is 0.90..1.10.
+float settings_gyro_scale(int axis);
+void  settings_set_gyro_scale(int axis, float scale);
 
-uint8_t ajustes_parede(void);
-void    ajustes_definir_parede(uint8_t opcao);
+// Home-screen icon order as comma-separated app NAMES
+// ("Mesh,Trilha,Radar"). Names rather than indices keep firmware additions or
+// removals from shuffling the rest. Apps absent from the list follow in
+// apps.cpp order, and unknown names are ignored. Empty means apps.cpp order.
+// The shell interprets this value (sistema_home_*, app.h).
+void settings_apps_order(char* out, size_t n);
+void settings_set_apps_order(const char* names);   // "" or nullptr = default
+
+// Apps hidden from the home screen as comma-separated NAMES. Unknown names
+// are ignored. Empty means all apps are visible. The shell interprets this
+// alongside the icon order.
+void settings_apps_hidden(char* out, size_t n);
+void settings_set_apps_hidden(const char* names);   // "" or nullptr = none
+
+// HOME-SCREEN WALLPAPER: thin abstract lines over black, using the same
+// designs as the lock-screen background. RANDOM (the default) chooses one at
+// each boot and keeps it until the next; 1..5 selects a fixed design; NONE
+// restores the original black background.
+#define SETTINGS_WALLPAPER_RANDOM       0
+#define SETTINGS_WALLPAPER_STYLE_COUNT  5   // 1..5 = threads, waves, web, rays, circles
+#define SETTINGS_WALLPAPER_NONE         6
+
+uint8_t settings_wallpaper(void);
+void    settings_set_wallpaper(uint8_t option);

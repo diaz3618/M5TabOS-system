@@ -1082,7 +1082,7 @@ static void nos_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int, void*)
 // pacotes, que correria a cada segundo).
 static int internet_fase(void)
 {
-  return !ajustes_mesh_rede_internet() ? 0 : mesh_mqtt_internet_conectado() ? 2 : 1;
+  return !settings_mesh_public_network() ? 0 : mesh_mqtt_internet_conectado() ? 2 : 1;
 }
 
 static void canais_assinatura(char* out, size_t tam)
@@ -1137,7 +1137,7 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
   s_chip_internet_liga = chip_t{ 0, 0, 0, 0, 0 };
   if (s_rede_vista == MESH_REDE_INTERNET) {
     x += 14;
-    const bool lig = ajustes_mesh_rede_internet();
+    const bool lig = settings_mesh_public_network();
     const int l = chip(d, x, y, lig ? "TURN OFF" : "TURN ON", lig ? TFT_MAROON : TFT_DARKGREEN, TFT_WHITE);
     s_chip_internet_liga = chip_t{ x - a.x, y - a.y, l, CHIP_A, 0 };
     x += l + 14;
@@ -1283,7 +1283,7 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
       float rlat, rlon; bool ref = false;
       const nmea_position_t fix = tab5_gps_position();
       if (fix.valid && fix.qualidade > 0) { rlat = (float)fix.lat; rlon = (float)fix.lon; ref = true; }
-      else { ref = ajustes_casa(&rlat, &rlon); }
+      else { ref = settings_home(&rlat, &rlon); }
       if (ref && !meu) {
         float km; const char* dir;
         distancia_direcao(rlat, rlon, lat, lon, &km, &dir);
@@ -1492,8 +1492,8 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
   // LINK WITH TRANSPORT: "on air" alone didn't say over what.
   const uint8_t via = tab5_mesh_via();
   const char* nome_via = !tab5_mesh_servico_ativo() ? "stopped"
-                       : via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth"
-                       : via == AJUSTES_MESH_INTERNET  ? "Internet" : "Grove";
+                       : via == SETTINGS_MESH_TRANSPORT_BLUETOOTH ? "Bluetooth"
+                       : via == SETTINGS_MESH_TRANSPORT_INTERNET  ? "Internet" : "Grove";
   snprintf(campos[4].val, sizeof(campos[4].val), "%s · %s", nome_via, tab5_mesh_no_ar() ? "on air" : "no frame");
   campos[4].rot = "link"; campos[4].cor = tab5_mesh_no_ar() ? TFT_GREENYELLOW : TFT_RED;
 
@@ -1689,7 +1689,7 @@ static void distancia_direcao(float lat1, float lon1, float lat2, float lon2,
   double rumo = atan2(y, x) * 180.0 / M_PI;
   if (rumo < 0.0) { rumo += 360.0; }
 
-  static const char* NOMES[8] = { "N", "NE", "L", "SE", "S", "SO", "O", "NO" };
+  static const char* NOMES[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
   *direcao = NOMES[((int)((rumo + 22.5) / 45.0)) % 8];
 }
 
@@ -1726,7 +1726,7 @@ static bool conv_ler(int i, conversa_msg_t* o, void*)
     const nmea_position_t fix = tab5_gps_position();
     s_tem_ref = false;
     if (fix.valid && fix.qualidade > 0) { s_ref_lat = (float)fix.lat; s_ref_lon = (float)fix.lon; s_tem_ref = true; }
-    else if (ajustes_casa(&s_ref_lat, &s_ref_lon)) { s_tem_ref = true; }
+    else if (settings_home(&s_ref_lat, &s_ref_lon)) { s_tem_ref = true; }
   }
 
   o->minha  = (m->de == tab5_mesh_meu_numero());
@@ -1950,19 +1950,19 @@ static char               s_cfg_ant[RC_TOTAL][112];
 // amostra do arraste redesenhava a janela inteira por cima do que a rolagem
 // acabara de deslocar - e o que sobrava disso eram rastros nas bordas.
 static bool               s_cfg_pintada[RC_TOTAL];
-static int                s_editando = 0;   // 0 = nada; RC_LONGO ou RC_CURTO
-static char               s_edit_txt[66];   // o maior campo: senha do Wi-Fi (64)
+static int                s_editando = 0;   // 0 = none; RC_LONGO or RC_CURTO
+static char               s_edit_txt[66];   // the biggest field: Wi-Fi password (64)
 static tecvirt_t          s_kb_cfg;
-// DIARIO DE REINICIOS: sub-pagina cheia aberta tocando em "reinicios do no".
+// REBOOT LOG: full-screen sub-page opened by tapping "node's restarts".
 static bool               s_diario = false;
-// REDES DO WI-FI DO NO: sub-pagina com as redes ja usadas, para escolher.
+// NODE'S WI-FI NETWORKS: sub-page with the already-used networks, to pick from.
 static bool               s_redes_pg = false;
-static char               s_redes_msg[72];
+static char               s_redes_msg[112];
 static mesh_reinicio_t    s_rei[MESH_DIARIO_MAX];
 static int                s_rei_n = 0;
-static uint32_t           s_limpar_ms = 0;      // 1o toque em LIMPAR: confirma em 4 s
-static uint32_t           s_reiniciar_ms = 0;   // 1o toque em REINICIAR: confirma em 4 s
-static char               s_cfg_msg[64];        // resposta curta da ultima acao
+static uint32_t           s_limpar_ms = 0;      // 1st tap on CLEAR: confirms within 4 s
+static uint32_t           s_reiniciar_ms = 0;   // 1st tap on RESTART: confirms within 4 s
+static char               s_cfg_msg[64];        // short response from the last action
 
 
 typedef struct { int32_t v; const char* name; } opcao_t;
@@ -2129,7 +2129,7 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       // DO TAB5 (settings.h), muda na hora. So vai para o no; e o no que
       // difunde, no ritmo de "enviar a cada" (ver enviar_posicao).
       snprintf(rot, tr, "Tab5's GPS to the node");
-      const uint8_t m = ajustes_mesh_posicao_min();
+      const uint8_t m = settings_mesh_position_interval_min();
       const char* n = opc_nome(OPC_TAB5, N_OPC(OPC_TAB5), m, tmp, sizeof(tmp), "a cada %ld min");
       const bool fixa = s_cfg.pos_fixa;
       const bool gps_no = s_cfg.conhecido[MESH_CFG_GPS_MODO] && s_cfg.v[MESH_CFG_GPS_MODO] == 1;
@@ -2188,7 +2188,7 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       snprintf(rot, tr, "node's Bluetooth");
       if (conhecido) {
         snprintf(val, tv, "%s%s", v ? "on" : "off",
-                 tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH ? " (in use by the Tab5)" : "");
+                 tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_BLUETOOTH ? " (in use by the Tab5)" : "");
       }
       break;
     case RC_WIFI: {
@@ -2451,14 +2451,14 @@ static void linha_grupo(int g, char* rot, size_t tr, char* val, size_t tv, bool*
       if (p < 0)  { snprintf(val, tv, "-"); break; }
       linha_cfg(RC_POS_S, r2, sizeof(r2), v2, sizeof(v2), &p2);
       snprintf(val, tv, "%s  ·  %s%s", precisao_nome(p, tmp, sizeof(tmp)), v2,
-               valor_atual(MESH_CFG_POS_INTELIGENTE) ? " e ao se mover" : "");
+               valor_atual(MESH_CFG_POS_INTELIGENTE) ? " and on move" : "");
       break;
     }
     case G_RADIO:
       linha_cfg(RC_SALTOS, r2, sizeof(r2), v2, sizeof(v2), &p2);
       if (s_cfg.regiao >= 0) {
-        snprintf(val, tv, "%s / %s  ·  %s saltos", nome_regiao(s_cfg.regiao),
-                 s_cfg.usa_preset ? nome_preset(s_cfg.preset) : "personalizado", v2);
+        snprintf(val, tv, "%s / %s  ·  %s hops", nome_regiao(s_cfg.regiao),
+                 s_cfg.usa_preset ? nome_preset(s_cfg.preset) : "custom", v2);
       } else { snprintf(val, tv, "-"); }
       break;
     case G_CONEXOES: {
@@ -3168,7 +3168,7 @@ static void tocar_config(int x, int y)
   if (i < 0 || i >= RC_EDITAVEIS) { return; }
   if (i == RC_SOM) { tab5_mesh_definir_beep(!tab5_mesh_beep_ligado()); sistema_pedir_redesenho(); return; }
   if (i == RC_LOC_TAB5) {
-    ajustes_definir_mesh_posicao_min((uint8_t)opc_proximo(OPC_TAB5, N_OPC(OPC_TAB5), ajustes_mesh_posicao_min()));
+    settings_set_mesh_position_interval_min((uint8_t)opc_proximo(OPC_TAB5, N_OPC(OPC_TAB5), settings_mesh_position_interval_min()));
     sistema_pedir_redesenho();
     return;
   }
@@ -3228,7 +3228,7 @@ static void tocar_config(int x, int y)
       case RC_BT:
         // Desligar o Bluetooth do no com o Tab5 falando por ele cortaria a
         // propria conversa - e sem ela nao ha como religar daqui.
-        if (v && tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH) { cfg_aviso("the Tab5 is talking to the node over Bluetooth"); return; }
+        if (v && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { cfg_aviso("the Tab5 is talking to the node over Bluetooth"); return; }
         novo = v ? 0 : 1;
         break;
     }
@@ -3566,7 +3566,7 @@ static void ao_tocar(int x, int y)
     {
       const chip_t& k = s_chip_internet_liga;
       if (k.l && x >= k.x && x < k.x + k.l && y >= k.y && y < k.y + k.a) {
-        ajustes_definir_mesh_rede_internet(!ajustes_mesh_rede_internet());   // o laco do servico sobe/derruba o cliente
+        settings_set_mesh_public_network(!settings_mesh_public_network());   // o laco do servico sobe/derruba o cliente
         pintura_pedir(&s_p);
         sistema_pedir_redesenho_completo();
         return;

@@ -33,7 +33,7 @@ extern "C" void app_main(void)
     // Extrato da RAM interna (tab5_monitor.hpp): cada marco anota quanto a
     // etapa anterior consumiu. O primeiro e a linha de base do heap.
     tab5_mem_marco("boot: app_main");
-    ajustes_iniciar();
+    settings_init();
     tab5_mem_marco("ajustes (NVS)");
 
     tab5_profile_t boot = sistema_perfil_de_boot();
@@ -55,7 +55,7 @@ extern "C" void app_main(void)
     // aviso grande em settings.h). Sem isto, o primeiro som de uma sessao
     // sairia no volume de fabrica do objeto Speaker, so corrigindo depois se
     // o usuario passasse por Ajustes.
-    M5.Speaker.setVolume(ajustes_volume());
+    M5.Speaker.setVolume(settings_volume());
 
     // EMOJI, UMA VEZ SO, PARA O SISTEMA INTEIRO. Precisa vir depois do begin
     // (o callback e um metodo do painel, que so existe daqui para frente) e

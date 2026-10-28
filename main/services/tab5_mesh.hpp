@@ -62,7 +62,7 @@
 
 // AS DUAS REDES. NO e a de sempre (o no, o modo internet, o proxy); INTERNET e
 // o LongFast pelo servidor publico (services/tab5_mesh_mqtt.hpp), ligado em
-// ajustes_mesh_rede_internet(). Os nos ficam marcados com a rede onde foram
+// settings_mesh_public_network(). Os nos ficam marcados com a rede onde foram
 // ouvidos (NO vence: no ouvido aqui e pela internet). A conversa da INTERNET e
 // um CANAL com o indice MESH_CANAL_INTERNET - fora da faixa dos 8 canais do no, entao nunca
 // colide com eles, e a chave (canal, idx) continua valendo em todo lugar.
@@ -232,7 +232,7 @@ bool tab5_mesh_parar(void);
 // a conversa segue.
 bool tab5_mesh_soltar_grove(void);
 
-// Por onde o servico fala com o no (AJUSTES_MESH_SERIAL/BLUETOOTH) e como vai
+// Por onde o servico fala com o no (SETTINGS_MESH_TRANSPORT_SERIAL/BLUETOOTH) e como vai
 // o enlace, em texto para a tela ("conectado a ...", "procurando ...").
 uint8_t     tab5_mesh_via(void);
 const char* tab5_mesh_enlace_descricao(void);
@@ -270,7 +270,7 @@ const char* tab5_mesh_firmware(void);
 
 // AVISO SONORO, par analogo de trilha_definir_beep() (app_trilha/trilha_fundo)
 // (ver o aviso la). Liga/desliga e GRAVA a preferencia
-// (ajustes_definir_beep_mesh()) e, se a fonte "Meshtastic" ja existir em
+// (settings_set_mesh_beep()) e, se a fonte "Meshtastic" ja existir em
 // notification.h, atualiza a bandeira dela tambem - so ela, a Trilha e
 // qualquer outra fonte continuam tocando normalmente.
 void tab5_mesh_definir_beep(bool tocar);

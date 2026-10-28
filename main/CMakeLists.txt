@@ -46,16 +46,16 @@ endforeach()
 # entra em SRCS - e so header, e o glob acima nem passa por la.
 # LDFRAGMENTS: linker.lf manda o .bss dos apps e servicos para a PSRAM (ver o
 # cabecalho daquele arquivo para a regra de quem pode entrar).
-# O CARIMBO DE COMPILACAO ("Compilado em", em Ajustes > Sobre). Era o
-# __DATE__/__TIME__ dentro do app_config.cpp - e ele so muda quando AQUELE
-# arquivo recompila: mexer em qualquer outra parte do sistema deixava a data
-# velha. Agora um .c gerado no build (main/carimbo.cmake) e reescrito a cada
-# 'idf.py build'; a tarefa que o gera roda sempre, antes da libmain.
-set(m5_carimbo_c "${CMAKE_CURRENT_BINARY_DIR}/m5tabos_compilado.c")
+# THE BUILD STAMP ("Built on", in Settings > About). It used to be the
+# __DATE__/__TIME__ inside app_config.cpp - and that only changes when THAT
+# file recompiles: touching any other part of the system left a stale date.
+# Now a .c generated at build time (main/build_stamp.cmake) is rewritten on
+# every 'idf.py build'; the target that generates it always runs, before libmain.
+set(m5_build_stamp_c "${CMAKE_CURRENT_BINARY_DIR}/m5tabos_compiled.c")
 if(NOT CMAKE_SCRIPT_MODE_FILE)
-    execute_process(COMMAND ${CMAKE_COMMAND} -DOUT=${m5_carimbo_c}
-                            -P ${CMAKE_CURRENT_SOURCE_DIR}/carimbo.cmake)
-    list(APPEND app_sources ${m5_carimbo_c})
+    execute_process(COMMAND ${CMAKE_COMMAND} -DOUT=${m5_build_stamp_c}
+                            -P ${CMAKE_CURRENT_SOURCE_DIR}/build_stamp.cmake)
+    list(APPEND app_sources ${m5_build_stamp_c})
 endif()
 
 # A LISTA DE APLICATIVOS SAI DAS PASTAS. Toda pasta main/app_<nome>/ e um app,
@@ -66,7 +66,7 @@ endif()
 #
 # Ordem de fabrica: os apps do sistema na ordem abaixo, depois os outros em
 # ordem alfabetica. A ordem que vale na home e a do usuario (gravada na NVS
-# por nome - ver ajustes_ordem_apps), entao isto so decide o primeiro boot.
+# por nome - ver settings_apps_order), entao isto so decide o primeiro boot.
 set(m5_apps_sistema mesh espnow config files tasks energy imu camera example)
 set(m5_apps_inc "${CMAKE_CURRENT_BINARY_DIR}/apps_lista.inc")
 if(NOT CMAKE_SCRIPT_MODE_FILE)
@@ -129,12 +129,12 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-error=maybe-uninitialized)
 
 if(NOT CMAKE_SCRIPT_MODE_FILE)
-    add_custom_target(m5tabos_carimbo
-                      COMMAND ${CMAKE_COMMAND} -DOUT=${m5_carimbo_c}
-                              -P ${CMAKE_CURRENT_SOURCE_DIR}/carimbo.cmake
-                      BYPRODUCTS ${m5_carimbo_c}
+    add_custom_target(m5tabos_build_stamp
+                      COMMAND ${CMAKE_COMMAND} -DOUT=${m5_build_stamp_c}
+                              -P ${CMAKE_CURRENT_SOURCE_DIR}/build_stamp.cmake
+                      BYPRODUCTS ${m5_build_stamp_c}
                       VERBATIM)
-    add_dependencies(${COMPONENT_LIB} m5tabos_carimbo)
+    add_dependencies(${COMPONENT_LIB} m5tabos_build_stamp)
 endif()
 
 # O SCCB DA CAMERA PASSA PELA TRAVA DO I2C INTERNO. O esp_video

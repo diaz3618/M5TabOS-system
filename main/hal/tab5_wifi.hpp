@@ -5,7 +5,7 @@
 // de pe. Se o WiFi morresse junto com a tela do app que o ligou, cada app teria
 // que reconectar - segundos de espera a cada troca de tela.
 //
-// A vontade do usuario mora em ajustes_wifi() (NVS). Este modulo e o BRACO que
+// A vontade do usuario mora em settings_wifi() (NVS). Este modulo e o BRACO que
 // realiza essa vontade; ele nao decide nada sozinho.
 //
 // -------------------------------------------------------------------------
@@ -65,7 +65,7 @@ enum tab5_wifi_state_t
 };
 
 // Cria a tarefa do service. NAO liga o radio. Chamar uma vez, no boot, depois
-// de ajustes_iniciar() e de tab5_sd_init().
+// de settings_init() e de tab5_sd_init().
 void tab5_wifi_init(void);
 
 // SOMENTE da tarefa de interface (mexem no expansor I2C). Nao bloqueiam: o
@@ -130,11 +130,11 @@ void tab5_wifi_keep_awake(uint32_t who, bool sim);
 bool tab5_wifi_c6_link(void);
 
 // REMOVIDA (auditoria de camadas): fazia "s_pilha_de_pe ||
-// ajustes_wifi()" aqui dentro - HAL perguntando a um service (settings.h),
+// settings_wifi()" aqui dentro - HAL perguntando a um service (settings.h),
 // sentido errado da dependencia (ver WRITING_APPS.md secao 8). O unico
 // chamador era sistema_impor_preferencias() no kernel, que ja tem
-// ajustes_wifi() disponivel legitimamente - a conta virou
-// "tab5_wifi_stack_ready() || ajustes_wifi()" direto la, sem perder nada.
+// settings_wifi() disponivel legitimamente - a conta virou
+// "tab5_wifi_stack_ready() || settings_wifi()" direto la, sem perder nada.
 
 // Varre e imprime as networks visiveis no console. Diagnostico: separa "o radio
 // nao funciona" (lista vazia) de "a network nao aparece" (lista com outras networks,

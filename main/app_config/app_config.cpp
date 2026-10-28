@@ -400,7 +400,7 @@ static void est_wifi(char* o, size_t t)
   else if (e == TAB5_WIFI_NO_CREDENTIALS) { snprintf(o, t, "No saved network"); }
   else if (e == TAB5_WIFI_C6_UNRESPONSIVE)        { snprintf(o, t, "The C6 is not responding"); }
   else if (e == TAB5_WIFI_FAILED)         { snprintf(o, t, "Could not connect"); }
-  else if (e == TAB5_WIFI_OFF)      { snprintf(o, t, ajustes_wifi() ? "Not connected to a router" : "Off"); }
+  else if (e == TAB5_WIFI_OFF)      { snprintf(o, t, settings_wifi() ? "Not connected to a router" : "Off"); }
   else                                    { snprintf(o, t, "Connecting..."); }
 }
 
@@ -433,12 +433,12 @@ static void est_espnow(char* o, size_t t)
 
 static const char* nome_via_mesh(uint8_t via)
 {
-  return via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth" : via == AJUSTES_MESH_INTERNET ? "Internet" : "Grove cable";
+  return via == SETTINGS_MESH_TRANSPORT_BLUETOOTH ? "Bluetooth" : via == SETTINGS_MESH_TRANSPORT_INTERNET ? "Internet" : "Grove cable";
 }
 
 static void est_mesh(char* o, size_t t)
 {
-  snprintf(o, t, "%s - %s", nome_via_mesh(ajustes_mesh_via()), tab5_mesh_enlace_descricao());
+  snprintf(o, t, "%s - %s", nome_via_mesh(settings_mesh_transport()), tab5_mesh_enlace_descricao());
 }
 
 static void est_lora(char* o, size_t t)
@@ -452,7 +452,7 @@ static void est_lora(char* o, size_t t)
 
 static void est_tela(char* o, size_t t)
 {
-  snprintf(o, t, "Blanks after %u s  ·  panel at %d MHz", (unsigned)ajustes_tela_s(),
+  snprintf(o, t, "Blanks after %u s  ·  panel at %d MHz", (unsigned)settings_screen_timeout_s(),
            tab5_power_dpi_clock());
 }
 
@@ -482,7 +482,7 @@ static void est_apps(char* o, size_t t)
 
 static void est_teclado(char* o, size_t t)
 {
-  if (!ajustes_teclado())            { snprintf(o, t, "Disabled"); }
+  if (!settings_keyboard())            { snprintf(o, t, "Disabled"); }
   else if (tab5_keyboard_present())  { snprintf(o, t, "Docked"); }
   else                               { snprintf(o, t, "Looking on ExtPort1..."); }
 }
@@ -494,7 +494,7 @@ static void est_usb(char* o, size_t t)
   if (e.fase == PENDRIVE_ATIVO)           { snprintf(o, t, "Card on the computer"); }
   else if (e.fase != PENDRIVE_PARADO)     { snprintf(o, t, "Flash drive: please wait..."); }
   else if (e.oferta)                      { snprintf(o, t, "Computer connected"); }
-  else if (ajustes_pendrive())            { snprintf(o, t, "Turns on by itself on the computer"); }
+  else if (settings_flash_drive())            { snprintf(o, t, "Turns on by itself on the computer"); }
   else                                    { snprintf(o, t, "Flash drive off"); }
 }
 
@@ -503,13 +503,13 @@ static void est_grove(char* o, size_t t)
   const int dono = (int)tab5_grove_owner();
   if (sistema_grove_sondando())                 { snprintf(o, t, "Probing the cable..."); }
   else if (dono != (int)GROVE_OWNER_NONE)     { snprintf(o, t, "In use: %s", grove_owner_name((grove_owner_t)dono)); }
-  else if (ajustes_grove())                     { snprintf(o, t, "On - %s", grove_name(tab5_grove_type())); }
-  else                                          { snprintf(o, t, "Desligado"); }
+  else if (settings_grove())                     { snprintf(o, t, "On - %s", grove_name(tab5_grove_type())); }
+  else                                          { snprintf(o, t, "Off"); }
 }
 
-// O carimbo do build inteiro (main/carimbo.cmake), e nao o __DATE__ deste
-// arquivo - que so mudava quando ESTE arquivo recompilava.
-extern "C" const char* const m5tabos_compilado;
+// The whole build's stamp (main/build_stamp.cmake), not this file's
+// __DATE__ - which only changed when THIS file recompiled.
+extern "C" const char* const m5tabos_compiled;
 
 static void est_sobre(char* o, size_t t)
 {
@@ -530,13 +530,13 @@ static int barra_l(const area_t& a) { return a.largura - 2 * MARGEM - 2 * (PM_L 
 #define BRILHO_POS_MAX 1000
 static int brilho_para_pos(int b)
 {
-  const float f = (float)(b - AJUSTES_BRILHO_MIN) / (float)(AJUSTES_BRILHO_MAX - AJUSTES_BRILHO_MIN);
+  const float f = (float)(b - SETTINGS_BRIGHTNESS_MIN) / (float)(SETTINGS_BRIGHTNESS_MAX - SETTINGS_BRIGHTNESS_MIN);
   return (int)(powf(f < 0 ? 0 : f, 1.0f / 2.2f) * BRILHO_POS_MAX + 0.5f);
 }
 static int pos_para_brilho(int pos)
 {
   const float f = (float)pos / (float)BRILHO_POS_MAX;
-  return AJUSTES_BRILHO_MIN + (int)(powf(f, 2.2f) * (AJUSTES_BRILHO_MAX - AJUSTES_BRILHO_MIN) + 0.5f);
+  return SETTINGS_BRIGHTNESS_MIN + (int)(powf(f, 2.2f) * (SETTINGS_BRIGHTNESS_MAX - SETTINGS_BRIGHTNESS_MIN) + 0.5f);
 }
 
 static void desenhar_rapido(lgfx::LovyanGFX& d, const area_t& a, int y0, const char* nome,
@@ -598,14 +598,14 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura,
 
 static void desenhar_inicio(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
-  const int b = ajustes_brilho(), v = ajustes_volume();
+  const int b = settings_brightness(), v = settings_volume();
   const int b_ant = s_ub, v_ant = s_uv;
   if (pintura_mudou_i(&s_p, &s_ub, b) || tudo) {
     desenhar_rapido(d, a, RAPIDO_Y0, "Brightness", brilho_para_pos(b), 0, BRILHO_POS_MAX, tudo,
                     b_ant < 0 ? -1 : brilho_para_pos(b_ant));
   }
   if (pintura_mudou_i(&s_p, &s_uv, v) || tudo) {
-    desenhar_rapido(d, a, RAPIDO_Y0 + RAPIDO_A, "Volume", v, AJUSTES_VOLUME_MIN, AJUSTES_VOLUME_MAX, tudo, v_ant);
+    desenhar_rapido(d, a, RAPIDO_Y0 + RAPIDO_A, "Volume", v, SETTINGS_VOLUME_MIN, SETTINGS_VOLUME_MAX, tudo, v_ant);
   }
   if (tudo) { d.drawFastHLine(a.x, a.y + DIVISOR_Y, a.largura, cor_linha(d)); }
 
@@ -627,9 +627,9 @@ static void mexer_rapido(int y0, int tx, int ty, bool so_barra)
   const area_t a = sistema_area();
   const bool brilho = (y0 == RAPIDO_Y0);
   // O brilho anda na posicao perceptual (ver brilho_para_pos).
-  const int minimo = brilho ? 0 : AJUSTES_VOLUME_MIN;
-  const int maximo = brilho ? BRILHO_POS_MAX : AJUSTES_VOLUME_MAX;
-  const int atual  = brilho ? brilho_para_pos(ajustes_brilho()) : ajustes_volume();
+  const int minimo = brilho ? 0 : SETTINGS_VOLUME_MIN;
+  const int maximo = brilho ? BRILHO_POS_MAX : SETTINGS_VOLUME_MAX;
+  const int atual  = brilho ? brilho_para_pos(settings_brightness()) : settings_volume();
   const int passo  = brilho ? PASSO_BRILHO : PASSO_VOLUME;
   const int cy = y0 + 44;
   int novo = atual;
@@ -653,15 +653,15 @@ static void mexer_rapido(int y0, int tx, int ty, bool so_barra)
     int b = pos_para_brilho(novo);
     // No pe da curva dois toques de "-"/"+" podem cair no mesmo valor de PWM:
     // o botao sempre anda pelo menos um.
-    const int b_atual = ajustes_brilho();
+    const int b_atual = settings_brightness();
     if (b == b_atual) { b += (novo > atual) ? 1 : -1; }
-    if (b < AJUSTES_BRILHO_MIN) { b = AJUSTES_BRILHO_MIN; }
-    if (b > AJUSTES_BRILHO_MAX) { b = AJUSTES_BRILHO_MAX; }
+    if (b < SETTINGS_BRIGHTNESS_MIN) { b = SETTINGS_BRIGHTNESS_MIN; }
+    if (b > SETTINGS_BRIGHTNESS_MAX) { b = SETTINGS_BRIGHTNESS_MAX; }
     if (b == b_atual) { return; }
-    ajustes_definir_brilho((uint8_t)b);
+    settings_set_brightness((uint8_t)b);
   }
   else {
-    ajustes_definir_volume((uint8_t)novo);
+    settings_set_volume((uint8_t)novo);
     if (!so_barra) { sistema_beep(880.0f, 80); }   // ouvir o volume novo
   }
   sistema_pedir_redesenho();
@@ -749,7 +749,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   // The typed text does NOT enter the signature: every letter used to
   // repaint the whole page plus the keyboard. Now a letter repaints only
   // the field.
-  snprintf(assin, sizeof(assin), "%s|%s|%d|%d|%d|%s|%d", sub, det, (int)ajustes_wifi(), (int)tab5_wifi_searching(),
+  snprintf(assin, sizeof(assin), "%s|%s|%d|%d|%d|%s|%d", sub, det, (int)settings_wifi(), (int)tab5_wifi_searching(),
            s_wf_n, s_aviso, (int)s_wf_senha);
   const bool mudou = pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) || tudo;
   if (s_wf_senha) {
@@ -786,8 +786,8 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     texto(d, a.x + MARGEM, a.y + y + 28, 32, false, con ? TFT_GREENYELLOW : TFT_WHITE, sub);
     texto(d, a.x + a.largura - MARGEM, a.y + y + 34, 22, false, cor_sub(d), det, top_right);
     y += 84;
-    y = botao_largo(d, a, y, ajustes_wifi() ? "DESLIGAR O WI-FI" : "LIGAR O WI-FI",
-                    ajustes_wifi() ? TFT_ORANGE : TFT_GREENYELLOW);
+    y = botao_largo(d, a, y, settings_wifi() ? "DESLIGAR O WI-FI" : "LIGAR O WI-FI",
+                    settings_wifi() ? TFT_ORANGE : TFT_GREENYELLOW);
     y = botao_largo(d, a, y, tab5_wifi_searching() ? "PROCURANDO..." : "PROCURAR REDES",
                     tab5_wifi_searching() ? TFT_DARKGREY : TFT_SKYBLUE);
     texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d),
@@ -826,7 +826,7 @@ static void wf_pedir(const char* ssid, const char* senha, bool esquecer)
 // Conectar exige o Wi-Fi ligado: liga (e grava a vontade) se estiver desligado.
 static void wf_ligar_se_preciso(void)
 {
-  if (!ajustes_wifi()) { ajustes_definir_wifi(true); tab5_wifi_turn_on(); }
+  if (!settings_wifi()) { settings_set_wifi(true); tab5_wifi_turn_on(); }
 }
 
 static void wf_fechar_senha(void)
@@ -868,8 +868,8 @@ static void toque_wifi(int tx, int ty)
   const int l = a.largura - 2 * MARGEM;
   int y = CONTEUDO_Y + 84;
   if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {
-    const bool ligar = !ajustes_wifi();
-    ajustes_definir_wifi(ligar);
+    const bool ligar = !settings_wifi();
+    settings_set_wifi(ligar);
     if (ligar) { tab5_wifi_turn_on(); } else { tab5_wifi_turn_off(); }
     s_aviso[0] = 0;
     sistema_pedir_redesenho();
@@ -989,10 +989,10 @@ static void pag_bt(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   const bool varrendo = tab5_ble_scanning();
   const uint32_t ver = tab5_ble_version();
   if (ver != s_bt_ver) { s_bt_ver = ver; bt_recarregar(); }
-  const bool via_bt = ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH;
+  const bool via_bt = settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_BLUETOOTH;
   const char* enlace = via_bt ? mesh_ble_descricao()
-                     : ajustes_mesh_via() == AJUSTES_MESH_INTERNET ? "Mesh over the internet" : "Mesh over the Grove cable";
-  snprintf(assin, sizeof(assin), "%s|%d|%d|%d|%s|%s", sub, (int)ajustes_bluetooth(), (int)varrendo, s_bt_n, s_aviso, enlace);
+                     : settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_INTERNET ? "Mesh over the internet" : "Mesh over the Grove cable";
+  snprintf(assin, sizeof(assin), "%s|%d|%d|%d|%s|%s", sub, (int)settings_bluetooth(), (int)varrendo, s_bt_n, s_aviso, enlace);
   const bool mudou = pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) || tudo;
   if (mudou) {
     conteudo_limpo(d, a);
@@ -1017,7 +1017,7 @@ static void reiniciar_mesh_trabalho(void*)
   tab5_mesh_parar();
   // Bluetooth e internet sobem direto (a internet espera o Wi-Fi por conta
   // propria). O cabo: a sondagem acha o C6L e sobe a serial.
-  if (ajustes_mesh_via() != AJUSTES_MESH_SERIAL) { tab5_mesh_iniciar(); }
+  if (settings_mesh_transport() != SETTINGS_MESH_TRANSPORT_SERIAL) { tab5_mesh_iniciar(); }
   else { sistema_grove_redetectar(); }
 }
 
@@ -1062,10 +1062,10 @@ static void toque_bt(int tx, int ty)
   }
   // Meshtastic: vira o no do Mesh, e o Mesh passa para o Bluetooth - tocar e
   // o pedido de conectar, e a linha "Conexão" acompanha o que acontece.
-  ajustes_definir_mesh_ble_endereco(end);
-  if (ajustes_mesh_via() != AJUSTES_MESH_BLUETOOTH) { ajustes_definir_mesh_via(AJUSTES_MESH_BLUETOOTH); }
+  settings_set_mesh_ble_address(end);
+  if (settings_mesh_transport() != SETTINGS_MESH_TRANSPORT_BLUETOOTH) { settings_set_mesh_transport(SETTINGS_MESH_TRANSPORT_BLUETOOTH); }
   // Conectar liga o Bluetooth - e fica gravado, como no botao.
-  if (!ajustes_bluetooth()) { ajustes_definir_bluetooth(true); }
+  if (!settings_bluetooth()) { settings_set_bluetooth(true); }
   tab5_ble_turn_on();   // I2C do trilho: aqui, na interface
   sistema_trabalho_solto(reiniciar_mesh_trabalho, nullptr);
   snprintf(s_aviso, sizeof(s_aviso), "conectando a %s...", nome);
@@ -1130,7 +1130,7 @@ static void pin_valor(lgfx::LovyanGFX& d, const area_t& a, bool forcar)
 {
   char pin[16];
   if (s_pin_editando) { snprintf(pin, sizeof(pin), "%s_", s_pin_txt); }
-  else                { snprintf(pin, sizeof(pin), "%06lu", (unsigned long)ajustes_mesh_pin()); }
+  else                { snprintf(pin, sizeof(pin), "%06lu", (unsigned long)settings_mesh_pin()); }
   if (!pintura_mudou_s(&s_p, s_pin_pintado, sizeof(s_pin_pintado), pin) && !forcar) { return; }
   const int y = mesh_y_pin() + 34;
   if (!forcar) { d.fillRect(a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM - 260 - 8, BTN_A, TFT_BLACK); }
@@ -1148,10 +1148,10 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
     tudo = true;
   }
   char assin[320], salvo[18];
-  ajustes_mesh_ble_endereco(salvo);
-  snprintf(assin, sizeof(assin), "%d|%s|%s|%lu|%u|%d|%s|%d|%s", (int)ajustes_mesh_via(), tab5_mesh_enlace_descricao(), salvo,
-           (unsigned long)ajustes_mesh_pin(), 0u, (int)s_pin_editando, "",
-           (int)ajustes_mesh_internet(), tab5_mesh_internet_estado());
+  settings_mesh_ble_address(salvo);
+  snprintf(assin, sizeof(assin), "%d|%s|%s|%lu|%u|%d|%s|%d|%s", (int)settings_mesh_transport(), tab5_mesh_enlace_descricao(), salvo,
+           (unsigned long)settings_mesh_pin(), 0u, (int)s_pin_editando, "",
+           (int)settings_mesh_internet(), tab5_mesh_internet_estado());
   // A memoria da assinatura (s_assin) guarda 159 caracteres: o que muda
   // depois disso (os estados, que vem no fim) nao repintaria. Vai o HASH da
   // assinatura inteira (FNV-1a), que cabe e muda com qualquer caractere.
@@ -1173,7 +1173,7 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   int y = mesh_y_via();
   static const char* const ROTULO[3] = { "CABO GROVE", "BLUETOOTH", "INTERNET" };
   for (int k = 0; k < 3; ++k) {
-    const bool sel = ajustes_mesh_via() == k;
+    const bool sel = settings_mesh_transport() == k;
     tab5_botao(d, a.x + MARGEM + k * (l3 + 16), a.y + y, l3, BTN_A, ROTULO[k],
                sel ? TFT_GREENYELLOW : d.color565(50, 55, 65), sel ? TFT_BLACK : TFT_LIGHTGREY);
   }
@@ -1199,7 +1199,7 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   }
 
   // Internet (MQTT pelo Wi-Fi): so roda sem o no; o Grove tem prioridade.
-  const bool net = ajustes_mesh_internet();
+  const bool net = settings_mesh_internet();
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Internet too when the node is unreachable (MQTT over Wi-Fi)");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, net ? TFT_GREENYELLOW : TFT_WHITE,
@@ -1227,8 +1227,8 @@ static void aplicar_pin(void)
     } else {
       // PIN FIXO, editado por conta propria (ALTERAR): fica salvo e e tentado
       // primeiro nas proximas conexoes.
-      ajustes_definir_mesh_pin(pin);
-      ajustes_definir_mesh_pin_na_tela(false);
+      settings_set_mesh_pin(pin);
+      settings_set_mesh_pin_on_screen(false);
       mesh_ble_tentar_de_novo();
     }
   }
@@ -1260,10 +1260,10 @@ static void toque_mesh(int tx, int ty)
   int y = mesh_y_via();
   int via = -1;
   for (int k = 0; k < 3; ++k) { if (tab5_dentro(tx, ty, MARGEM + k * (l3 + 16), y, l3, BTN_A)) { via = k; } }
-  if (via >= 0 && via != ajustes_mesh_via()) {
-    ajustes_definir_mesh_via((uint8_t)via);
-    if (via == AJUSTES_MESH_BLUETOOTH) {   // liga o Bluetooth, e fica gravado como no botao
-      if (!ajustes_bluetooth()) { ajustes_definir_bluetooth(true); }
+  if (via >= 0 && via != settings_mesh_transport()) {
+    settings_set_mesh_transport((uint8_t)via);
+    if (via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {   // liga o Bluetooth, e fica gravado como no botao
+      if (!settings_bluetooth()) { settings_set_bluetooth(true); }
       tab5_ble_turn_on();   // I2C do trilho: aqui, na interface
     }
     sistema_trabalho_solto(reiniciar_mesh_trabalho, nullptr);
@@ -1281,16 +1281,16 @@ static void toque_mesh(int tx, int ty)
   if (s_pin_editando) { return; }
   y = mesh_y_net() + 34;
   if (tab5_dentro(tx, ty, a.largura - MARGEM - 260, y, 260, BTN_A)) {
-    ajustes_definir_mesh_internet(!ajustes_mesh_internet());
+    settings_set_mesh_internet(!settings_mesh_internet());
     sistema_pedir_redesenho();
     return;
   }
   y += BTN_A + 12 + 100;
   char salvo[18];
-  ajustes_mesh_ble_endereco(salvo);
+  settings_mesh_ble_address(salvo);
   if (salvo[0] && tab5_dentro(tx, ty, MARGEM, y, a.largura - 2 * MARGEM, BTN_A)) {
-    ajustes_definir_mesh_ble_endereco("");
-    if (ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH) { sistema_trabalho_solto(reiniciar_mesh_trabalho, nullptr); }
+    settings_set_mesh_ble_address("");
+    if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { sistema_trabalho_solto(reiniciar_mesh_trabalho, nullptr); }
     sistema_pedir_redesenho();
   }
 }
@@ -1432,21 +1432,21 @@ static void toque_lora(int tx, int ty)
 static void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char assin[64], v1[16], v2[16];
-  snprintf(v1, sizeof(v1), "%u s", (unsigned)ajustes_tela_s());
+  snprintf(v1, sizeof(v1), "%u s", (unsigned)settings_screen_timeout_s());
   // O relogio EM USO, e nao o gravado: na tela TDDI ele fica no de fabrica
   // (tab5_painel em hal/tab5_power.hpp) e o gravado nao vale.
   snprintf(v2, sizeof(v2), "%d MHz", tab5_power_dpi_clock());
-  snprintf(assin, sizeof(assin), "%s|%s|%d|%d", v1, v2, (int)ajustes_bloqueio(), (int)ajustes_parede());
+  snprintf(assin, sizeof(assin), "%s|%s|%d|%d", v1, v2, (int)settings_lock_screen(), (int)settings_wallpaper());
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = CONTEUDO_Y;
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Blank the screen after, without touch");
   y += 34; menos_mais(d, a, y, v1); y += BTN_A + 12;
   char ajuda[64];
-  snprintf(ajuda, sizeof(ajuda), "From %d to %d seconds.", AJUSTES_TELA_MIN_S, AJUSTES_TELA_MAX_S);
+  snprintf(ajuda, sizeof(ajuda), "From %d to %d seconds.", SETTINGS_SCREEN_TIMEOUT_MIN_S, SETTINGS_SCREEN_TIMEOUT_MAX_S);
   y = paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM, ajuda) - a.y + 24;
   // Bloqueio: alturas fixas, o toque (toque_tela) repete esta conta.
-  const bool bq = ajustes_bloqueio();
+  const bool bq = settings_lock_screen();
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Lock screen when turning on and waking up");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, bq ? TFT_GREENYELLOW : TFT_WHITE,
@@ -1456,11 +1456,11 @@ static void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   y += BTN_A + 24;
   // Papel de parede do inicio: TROCAR passa pelas opcoes em roda.
   static const char* const PAREDE[] = { "Random", "Wires", "Waves", "Web", "Rays", "Circles", "None" };
-  const uint8_t pp = ajustes_parede();
+  const uint8_t pp = settings_wallpaper();
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Home screen wallpaper");
   y += 34;
   texto(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true,
-        pp == AJUSTES_PAREDE_NENHUM ? TFT_WHITE : TFT_GREENYELLOW, PAREDE[pp], middle_left);
+        pp == SETTINGS_WALLPAPER_NONE ? TFT_WHITE : TFT_GREENYELLOW, PAREDE[pp], middle_left);
   tab5_botao(d, a.x + a.largura - MARGEM - 260, a.y + y, 260, BTN_A, "TROCAR", TFT_SKYBLUE);
   y += BTN_A + 24;
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Panel clock");
@@ -1473,16 +1473,16 @@ static void toque_tela(int tx, int ty)
 {
   int y = CONTEUDO_Y + 34;
   int s = menos_mais_toque(tx, ty, y);
-  if (s) { ajustes_definir_tela_s((uint8_t)(ajustes_tela_s() + s * PASSO_TELA_S)); sistema_pedir_redesenho(); return; }
+  if (s) { settings_set_screen_timeout_s((uint8_t)(settings_screen_timeout_s() + s * PASSO_TELA_S)); sistema_pedir_redesenho(); return; }
   y += BTN_A + 12 + 32 + 24 + 34;   // linha do botao do bloqueio
   if (tab5_dentro(tx, ty, sistema_area().largura - MARGEM - 260, y, 260, BTN_A)) {
-    ajustes_definir_bloqueio(!ajustes_bloqueio());
+    settings_set_lock_screen(!settings_lock_screen());
     sistema_pedir_redesenho();
     return;
   }
   y += BTN_A + 24 + 34;   // linha do papel de parede
   if (tab5_dentro(tx, ty, sistema_area().largura - MARGEM - 260, y, 260, BTN_A)) {
-    ajustes_definir_parede((uint8_t)((ajustes_parede() + 1) % (AJUSTES_PAREDE_NENHUM + 1)));
+    settings_set_wallpaper((uint8_t)((settings_wallpaper() + 1) % (SETTINGS_WALLPAPER_NONE + 1)));
     sistema_pedir_redesenho();
     return;
   }
@@ -1490,12 +1490,12 @@ static void toque_tela(int tx, int ty)
   s = menos_mais_toque(tx, ty, y);
   if (s) {
     int v = tab5_power_dpi_clock() + s * PASSO_RELOGIO;
-    if (v < AJUSTES_RELOGIO_MIN) { v = AJUSTES_RELOGIO_MIN; }
-    if (v > AJUSTES_RELOGIO_MAX) { v = AJUSTES_RELOGIO_MAX; }
+    if (v < SETTINGS_PANEL_CLOCK_MIN_MHZ) { v = SETTINGS_PANEL_CLOCK_MIN_MHZ; }
+    if (v > SETTINGS_PANEL_CLOCK_MAX_MHZ) { v = SETTINGS_PANEL_CLOCK_MAX_MHZ; }
     // Aplica primeiro, grava so se deu certo: um valor que o painel recusou
     // nao pode virar o do proximo boot.
     if (tab5_power_dpi_clock(v)) {
-      ajustes_definir_relogio_painel((uint8_t)v);
+      settings_set_panel_clock_mhz((uint8_t)v);
       sistema_pedir_redesenho_completo();
     }
   }
@@ -1548,7 +1548,7 @@ static void apps_alternar(int alvo)
     novos[k] = 0;
   }
   snprintf(s_apps_ocultos, sizeof(s_apps_ocultos), "%s", novos);
-  ajustes_definir_apps_ocultos(s_apps_ocultos);
+  settings_set_apps_hidden(s_apps_ocultos);
   lista_item_mudou(&s_l_apps, alvo);
   sistema_home_apps_recarregar();
 }
@@ -1576,15 +1576,15 @@ static void pag_teclado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char sub[48], assin[64];
   est_teclado(sub, sizeof(sub));
-  if (ajustes_teclado() && tab5_keyboard_present()) {
+  if (settings_keyboard() && tab5_keyboard_present()) {
     snprintf(sub, sizeof(sub), "Docked (firmware %u)", (unsigned)tab5_keyboard_version());
   }
-  snprintf(assin, sizeof(assin), "%s|%d", sub, (int)ajustes_teclado());
+  snprintf(assin, sizeof(assin), "%s|%d", sub, (int)settings_keyboard());
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = info(d, a, CONTEUDO_Y, "Status", sub, tab5_keyboard_present() ? TFT_GREENYELLOW : TFT_WHITE);
-  y = botao_largo(d, a, y, ajustes_teclado() ? "DISABLE" : "ENABLE",
-                  ajustes_teclado() ? TFT_ORANGE : TFT_GREENYELLOW);
+  y = botao_largo(d, a, y, settings_keyboard() ? "DISABLE" : "ENABLE",
+                  settings_keyboard() ? TFT_ORANGE : TFT_GREENYELLOW);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
             "The keyboard docks on ExtPort1. Disabled, the system does not look for it "
             "and the on-screen keyboard is used in conversations.");
@@ -1592,8 +1592,8 @@ static void pag_teclado(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 static void toque_teclado(int tx, int ty)
 {
   if (tab5_dentro(tx, ty, MARGEM, CONTEUDO_Y + 84, sistema_area().largura - 2 * MARGEM, BTN_A)) {
-    const bool novo = !ajustes_teclado();
-    ajustes_definir_teclado(novo);
+    const bool novo = !settings_keyboard();
+    settings_set_keyboard(novo);
     tab5_keyboard_enable(novo);
     sistema_pedir_redesenho();
   }
@@ -1604,12 +1604,12 @@ static void pag_grove(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   char sub[48], assin[64];
   est_grove(sub, sizeof(sub));
-  snprintf(assin, sizeof(assin), "%s|%d", sub, (int)ajustes_grove());
+  snprintf(assin, sizeof(assin), "%s|%d", sub, (int)settings_grove());
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   int y = info(d, a, CONTEUDO_Y, "Status", sub);
-  y = botao_largo(d, a, y, ajustes_grove() ? "TURN OFF THE 5V" : "TURN ON THE 5V",
-                  ajustes_grove() ? TFT_ORANGE : TFT_GREENYELLOW);
+  y = botao_largo(d, a, y, settings_grove() ? "TURN OFF THE 5V" : "TURN ON THE 5V",
+                  settings_grove() ? TFT_ORANGE : TFT_GREENYELLOW);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
             "On, the cable module (C6L, GPS) stays powered at all times and does not reset "
             "on every use. Off saves battery when nothing is plugged in.");
@@ -1617,7 +1617,7 @@ static void pag_grove(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 static void toque_grove(int tx, int ty)
 {
   if (tab5_dentro(tx, ty, MARGEM, CONTEUDO_Y + 84, sistema_area().largura - 2 * MARGEM, BTN_A)) {
-    ajustes_definir_grove(!ajustes_grove());
+    settings_set_grove(!settings_grove());
     sistema_reaplicar_perfil();
     sistema_grove_redetectar();
     sistema_pedir_redesenho();
@@ -1641,7 +1641,7 @@ static void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   char sistema[48];
   snprintf(sistema, sizeof(sistema), "M5tabOS %s", esp_app_get_description()->version);
   y = info(d, a, y, "System", sistema);
-  y = info(d, a, y, "Built on", m5tabos_compilado);
+  y = info(d, a, y, "Built on", m5tabos_compiled);
   y = info(d, a, y, "ESP-IDF", esp_get_idf_version());
   y = info(d, a, y, "Internal memory", mem);
   y = info(d, a, y, "PSRAM", ps);
@@ -1776,7 +1776,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 
   char assin[sizeof(s_assin)];
   snprintf(assin, sizeof(assin), "%d|%d|%d|%s|%s|%s|%s|%d|%u|%u|%s", (int)e.fase, (int)e.motivo, (int)s_usb_confirmar,
-           estado, l2, l3, fim, (int)ajustes_pendrive(), (unsigned)r.conflicts, (unsigned)r.lost, diag);
+           estado, l2, l3, fim, (int)settings_flash_drive(), (unsigned)r.conflicts, (unsigned)r.lost, diag);
   if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
   conteudo_limpo(d, a);
   memset(s_usb_bt, 0, sizeof(s_usb_bt));
@@ -1810,8 +1810,8 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       s_usb_bt[0] = { };   // nao responde
       break;
   }
-  y = usb_botao(d, a, 2, y, ajustes_pendrive() ? "TURN ON BY ITSELF ON THE COMPUTER: YES" : "TURN ON BY ITSELF ON THE COMPUTER: NO",
-                ajustes_pendrive() ? TFT_GREENYELLOW : TFT_LIGHTGREY);
+  y = usb_botao(d, a, 2, y, settings_flash_drive() ? "TURN ON BY ITSELF ON THE COMPUTER: YES" : "TURN ON BY ITSELF ON THE COMPUTER: NO",
+                settings_flash_drive() ? TFT_GREENYELLOW : TFT_LIGHTGREY);
   paragrafo(d, a.x + MARGEM, a.y + y, a.largura - 2 * MARGEM,
             "The Tab5 stays usable in the meantime. Whatever it writes stays in internal memory and "
             "goes to the card when it returns. Files and Camera wait for the card. To finish, "
@@ -1829,7 +1829,7 @@ static void toque_usb(int tx, int ty)
   tab5_pendrive_estado_t e;
   tab5_pendrive_estado(&e);
   if (usb_em(2, tx, ty)) {
-    ajustes_definir_pendrive(!ajustes_pendrive());
+    settings_set_flash_drive(!settings_flash_drive());
     sistema_pedir_redesenho();
     return;
   }
@@ -1886,7 +1886,7 @@ static void abrir_pagina(int p)
     lista_esconder(&s_l_bt);
   }
   if (p == PAG_APPS) {
-    ajustes_apps_ocultos(s_apps_ocultos, sizeof(s_apps_ocultos));
+    settings_apps_hidden(s_apps_ocultos, sizeof(s_apps_ocultos));
     lista_definir(&s_l_apps, ROLAGEM_INICIO, SISTEMA_NUM_APPS,
                   apps_item_altura, apps_item_desenhar, nullptr);
   } else {
@@ -1903,7 +1903,7 @@ static bool ao_abrir(void)
 {
   s_pag = PAG_INICIO;
   s_ub = s_uv = -1;
-  ajustes_apps_ocultos(s_apps_ocultos, sizeof(s_apps_ocultos));
+  settings_apps_hidden(s_apps_ocultos, sizeof(s_apps_ocultos));
   memset(s_sub, 0, sizeof(s_sub));
   for (int i = 0; i < PAG_N; ++i) { PAGINAS[i].state(s_sub[i], sizeof(s_sub[i])); }
   lista_definir(&s_lista, ROLAGEM_INICIO, PAG_N, item_altura, item_desenhar, nullptr);

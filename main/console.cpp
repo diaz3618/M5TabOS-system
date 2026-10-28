@@ -782,7 +782,7 @@ static void cmd_travas(int segundos)
   // O tempo de tela vem de Ajustes e pode ser qualquer coisa. Dizer qual e
   // evita a medida inutil mais provavel: esperar menos que ele e despejar as
   // travas com a tela ainda acesa, quando o painel ainda segura as duas.
-  const int tela = (int)ajustes_tela_s();
+  const int tela = (int)settings_screen_timeout_s();
   if (segundos > 0 && segundos <= tela) {
     printf("AVISO: a tela apaga em %d s e voce pediu %d. Vai medir acordado.\n"
            "       use 'energia travas %d' ou mais.\n", tela, segundos, tela + 10);
@@ -1638,11 +1638,11 @@ static void c_estado(int, char**)
   printf("  bluetooth: %s\n", tab5_ble_description());
 
   printf("  teclado  : %s%s\n",
-         ajustes_teclado() ? "" : "desativado em Ajustes; ",
+         settings_keyboard() ? "" : "desativado em Ajustes; ",
          tab5_keyboard_present() ? "encaixado" : "ausente");
 
   printf("  grove 5V : %s   detectado: %s\n",
-         ajustes_grove() ? "ligado" : "desligado", grove_name(tab5_grove_type()));
+         settings_grove() ? "ligado" : "desligado", grove_name(tab5_grove_type()));
 
   if (tab5_mesh_meu_numero() != 0 || tab5_mesh_no_ar()) {
     uint32_t q, pk, tel, ls, tx, ni; int var;
@@ -1882,7 +1882,7 @@ static void c_tela(int argc, char** argv)
       // mesmo valor ruim.
       if (ok) {
         sistema_pedir_redesenho_completo();
-        ajustes_definir_relogio_painel((uint8_t)mhz);
+        settings_set_panel_clock_mhz((uint8_t)mhz);
       }
       printf(ok ? "painel remontado e gravado - vale no proximo boot tambem\n"
                 : "nao subiu nesse relogio - voltei ao anterior\n");
@@ -1948,7 +1948,7 @@ static void c_tela(int argc, char** argv)
 static void c_brilho(int argc, char** argv)
 {
   if (argc < 2) {
-    printf("brilho: %d (gravado %d)\n", (int)M5.Display.getBrightness(), (int)ajustes_brilho());
+    printf("brilho: %d (gravado %d)\n", (int)M5.Display.getBrightness(), (int)settings_brightness());
     return;
   }
   int b = atoi(argv[1]);
@@ -2884,7 +2884,7 @@ static void c_mesh(int argc, char** argv)
     // settings.cpp (NVS), nao no Mesh: e do usuario, nao do servico.
     if (argc < 4) {
       float lat, lon;
-      if (ajustes_casa(&lat, &lon)) { printf("casa: %.6f, %.6f\n", (double)lat, (double)lon); }
+      if (settings_home(&lat, &lon)) { printf("casa: %.6f, %.6f\n", (double)lat, (double)lon); }
       else { printf("casa: nao configurada. uso: mesh casa <latitude> <longitude>\n"); }
       return;
     }
@@ -2893,7 +2893,7 @@ static void c_mesh(int argc, char** argv)
     if (lat < -90.0f || lat > 90.0f || lon < -180.0f || lon > 180.0f) {
       printf("fora da faixa (latitude -90..90, longitude -180..180)\n");
     } else {
-      ajustes_definir_casa(lat, lon);
+      settings_set_home(lat, lon);
       printf("casa gravada: %.6f, %.6f\n", (double)lat, (double)lon);
     }
     return;
@@ -2957,7 +2957,7 @@ static void c_grove(int argc, char** argv)
   // comando que deveria so diagnosticar.
   const grove_owner_t dono = tab5_grove_owner();
   printf("Grove: %s\n", grove_name(tab5_grove_type()));
-  printf("  energia : %s\n", ajustes_grove() ? "ligada" : "desligada");
+  printf("  energia : %s\n", settings_grove() ? "ligada" : "desligada");
   printf("  porta   : %s\n", (dono == GROVE_OWNER_NONE) ? "livre" : grove_owner_name(dono));
   if (sistema_grove_sondando()) { printf("  sondagem em andamento...\n"); }
   printf("\ntrocou o modulo do cabo? use 'grove trocar'\n");
@@ -3365,7 +3365,7 @@ static const comando_t COMANDOS[] = {
     "mesh enviar para RP05 oi\tdireta ao no de nome curto RP05\n"
     "mesh enviar para ACA97F24 oi\tdireta, pelo numero do no\n"
     "mesh msgs 50\tas 50 mensagens mais recentes\n"
-    "mesh casa -22.88 -42.79\tgrava a posicao de casa" },
+    "mesh casa 0.0 0.0\tgrava a posicao de casa" },
 
   // --- BANCADA ---
   { "grove", "", G_BANCADA,

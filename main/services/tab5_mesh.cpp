@@ -82,8 +82,8 @@ static SemaphoreHandle_t s_trava = nullptr;
 static parada_t      s_parada = { };
 static bool          s_servico_ativo = false;  // ha tarefa e enlace de pe
 // POR ONDE: o cabo Grove ou o Bluetooth. Fixado no iniciar, pela
-// preferencia (ajustes_mesh_via) - so muda parando e subindo de novo.
-static uint8_t       s_via = AJUSTES_MESH_SERIAL;
+// preferencia (settings_mesh_transport) - so muda parando e subindo de novo.
+static uint8_t       s_via = SETTINGS_MESH_TRANSPORT_SERIAL;
 EXT_RAM_BSS_ATTR static mesh_no_t   s_nos[MESH_MAX_NOS];
 static uint32_t    s_despejos = 0;   // quantas vezes achar_no() despejou o mais antigo desde o boot
 EXT_RAM_BSS_ATTR static mesh_msg_t  s_msgs[MESH_MAX_MSGS];
@@ -651,14 +651,14 @@ const char* tab5_mesh_firmware(void) { return s_firmware; }
 
 void tab5_mesh_definir_beep(bool tocar)
 {
-  ajustes_definir_beep_mesh(tocar);
+  settings_set_mesh_beep(tocar);
   // Se a fonte ainda nao existe (servico nunca subiu nesta sessao), nao ha
   // bandeira para atualizar agora - tab5_mesh_iniciar() aplica a preferencia
   // gravada no instante em que a fonte nascer, ver acima.
   if (s_notif >= 0) { notif_silenciar(s_notif, !tocar); }
 }
 
-bool tab5_mesh_beep_ligado(void) { return ajustes_beep_mesh(); }
+bool tab5_mesh_beep_ligado(void) { return settings_mesh_beep(); }
 int      tab5_mesh_nao_lidas(void)   { return s_nao_lidas; }
 int      tab5_mesh_nao_lidas_diretas(void) { return s_nao_lidas_dir; }
 static void publicar_notif(void);   // definida adiante, junto das outras
@@ -870,7 +870,7 @@ static int fav_pendente(uint32_t num)
 static bool radio_aceita_admin(void)
 {
   return s_servico_ativo && s_meu_num != 0 && s_config_ok_ms != 0
-      && (s_via == AJUSTES_MESH_SERIAL || (s_via == AJUSTES_MESH_BLUETOOTH && mesh_ble_conectado()));
+      && (s_via == SETTINGS_MESH_TRANSPORT_SERIAL || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado()));
 }
 
 // ToRadio{ packet: MeshPacket{ to: nos, decoded: Data{ portnum: ADMIN(6),
@@ -943,7 +943,7 @@ void tab5_mesh_definir_favorito(uint32_t num, bool quer)
 // nosso vence: e uma mudanca que o no ainda nao recebeu.
 static void fav_do_radio(uint32_t num, bool fav)
 {
-  if (num == s_meu_num || s_via == AJUSTES_MESH_INTERNET || fav_pendente(num) >= 0) { return; }
+  if (num == s_meu_num || s_via == SETTINGS_MESH_TRANSPORT_INTERNET || fav_pendente(num) >= 0) { return; }
   fav_aplicar(num, fav);
 }
 
@@ -1926,7 +1926,7 @@ static void criar_conversas_dos_canais(void)
     if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_criar_conversa(true, (uint8_t)idx, 0); }
   }
   if (!algum && !esta_apagada(true, 0)) { achar_ou_criar_conversa(true, 0, 0); }
-  if (ajustes_mesh_rede_internet() && !esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
+  if (settings_mesh_public_network() && !esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
 }
 
 // Indices dos canais a OFERECER: os ativos; sem nenhum conhecido, o primario.
@@ -1938,7 +1938,7 @@ static int lista_canais(uint8_t out[MESH_MAX_CANAIS + 1])
     if (s_canais_conhecidos && s_canal_ativo[idx]) { out[n++] = (uint8_t)idx; }
   }
   if (n == 0) { out[n++] = 0; }
-  if (ajustes_mesh_rede_internet()) { out[n++] = MESH_CANAL_INTERNET; }
+  if (settings_mesh_public_network()) { out[n++] = MESH_CANAL_INTERNET; }
   return n;
 }
 
@@ -3308,8 +3308,8 @@ static bool enlace_enviar(const uint8_t* corpo, size_t n)
     mesh_diario_nota_envio(campo == 1 ? MESH_ENV_PACOTE : campo == 3 ? MESH_ENV_CONFIG
                          : campo == 7 ? MESH_ENV_HEARTBEAT : MESH_ENV_NENHUM);
   }
-  if (s_via == AJUSTES_MESH_INTERNET) { return mesh_mqtt_enviar(corpo, n); }
-  if (s_via == AJUSTES_MESH_BLUETOOTH) {
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_enviar(corpo, n); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     if (!mesh_ble_conectado() && mesh_mqtt_conectado()) { return mesh_mqtt_enviar(corpo, n); }
     return mesh_ble_enviar(corpo, n);
   }
@@ -3361,7 +3361,7 @@ static void pedir_apresentacao(void)
   // e injetar ruido no meio de um frame que pode estar chegando ao mesmo
   // tempo. Depois do primeiro contato o radio esta acordado por definicao: ele
   // acabou de falar conosco.
-  if ((s_meu_num == 0 || s_acordar_proxima) && s_via == AJUSTES_MESH_SERIAL) {   // BLE nao tem modo de baixo consumo da serial
+  if ((s_meu_num == 0 || s_acordar_proxima) && s_via == SETTINGS_MESH_TRANSPORT_SERIAL) {   // BLE nao tem modo de baixo consumo da serial
     s_acordar_proxima = false;
     uint8_t acorda[32];
     memset(acorda, 0x94, sizeof(acorda));
@@ -3405,8 +3405,8 @@ static bool pode_sair(bool internet, uint32_t para)
 {
   const bool difusao = (para == 0xFFFFFFFFu);
   if (internet) { return difusao && mesh_mqtt_internet_conectado(); }
-  if (s_via == AJUSTES_MESH_INTERNET) { return difusao && mesh_mqtt_conectado(); }
-  if (s_via == AJUSTES_MESH_BLUETOOTH && !mesh_ble_conectado()) {
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return difusao && mesh_mqtt_conectado(); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && !mesh_ble_conectado()) {
     return difusao && mesh_mqtt_conectado() && !mesh_mqtt_em_proxy();   // a internet cobrindo a falta dele
   }
   return true;
@@ -3584,7 +3584,7 @@ static bool enviar_posicao(void)
 {
   if (!s_servico_ativo || !tab5_gps_service_active()) { return false; }
   const bool com_no = radio_aceita_admin();
-  const bool pela_net = !com_no && (s_via == AJUSTES_MESH_INTERNET || s_via == AJUSTES_MESH_BLUETOOTH)
+  const bool pela_net = !com_no && (s_via == SETTINGS_MESH_TRANSPORT_INTERNET || s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH)
                      && mesh_mqtt_conectado() && !mesh_mqtt_em_proxy();
   if (!com_no && !pela_net) { return false; }
   if (com_no && mesh_admin_no_tem_posicao_propria()) { return true; }
@@ -3782,8 +3782,8 @@ static void vTaskMesh(void*)
     // ocioso entre elas - que e o que permite ao DFS trabalhar.
     // POSICAO DO GPS PARA A MALHA - ver enviar_posicao().
     static uint32_t proxima_posicao = 60000;
-    if (ajustes_mesh_posicao_min() && t > proxima_posicao) {
-      proxima_posicao = t + (enviar_posicao() ? ajustes_mesh_posicao_min() * 60000u : 30000u);
+    if (settings_mesh_position_interval_min() && t > proxima_posicao) {
+      proxima_posicao = t + (enviar_posicao() ? settings_mesh_position_interval_min() * 60000u : 30000u);
     }
 
     // A REDE PUBLICA PELA INTERNET, em paralelo a tudo o resto (ver tab5_mesh_mqtt.hpp):
@@ -3791,7 +3791,7 @@ static void vTaskMesh(void*)
     // pacotes por volta, lidos como da rede INTERNET (s_rede_rx) - nao contam como
     // quadro do no (s_ultimo_quadro_ms e a vida do RADIO).
     {
-      const bool quer_internet = ajustes_mesh_rede_internet() && tab5_wifi_state() == TAB5_WIFI_CONNECTED;
+      const bool quer_internet = settings_mesh_public_network() && tab5_wifi_state() == TAB5_WIFI_CONNECTED;
       if (quer_internet && !mesh_mqtt_internet_ativo()) {
         informar_no_ao_mqtt();
         mesh_mqtt_internet_iniciar();
@@ -3835,16 +3835,16 @@ static void vTaskMesh(void*)
       //   - a via e o no (cabo ou Bluetooth): a internet so cobre a falta
       //     dele, se o ajuste "internet quando sem o no" estiver ligado.
       const bool wifi = tab5_wifi_state() == TAB5_WIFI_CONNECTED;
-      const bool no_ok = (s_via == AJUSTES_MESH_SERIAL)
-                      || (s_via == AJUSTES_MESH_BLUETOOTH && mesh_ble_conectado())
+      const bool no_ok = (s_via == SETTINGS_MESH_TRANSPORT_SERIAL)
+                      || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado())
                       || tab5_grove_type() == GROVE_MESHTASTIC;
-      const bool quer_net = wifi && ((s_via == AJUSTES_MESH_INTERNET)
-                                  || (ajustes_mesh_internet() && !no_ok));
+      const bool quer_net = wifi && ((s_via == SETTINGS_MESH_TRANSPORT_INTERNET)
+                                  || (settings_mesh_internet() && !no_ok));
       // O proxy pede o no CONVERSANDO (nao so a via escolhida) e com o dump
       // completo: e o dump que diz se o proxy esta ligado nele e quais canais
       // descem.
-      const bool no_vivo = (s_via == AJUSTES_MESH_SERIAL && tab5_mesh_no_ar())
-                        || (s_via == AJUSTES_MESH_BLUETOOTH && mesh_ble_conectado());
+      const bool no_vivo = (s_via == SETTINGS_MESH_TRANSPORT_SERIAL && tab5_mesh_no_ar())
+                        || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado());
       // A CHAVE E DO NO: liga-se o proxy na pagina "No" do app Mesh, que grava
       // proxy_to_client_enabled nele. Ligado no no, o Tab5 empresta a internet.
       const bool quer_proxy = wifi && no_vivo && s_config_ok_ms != 0 && mesh_mqtt_no_tem_proxy();
@@ -3860,20 +3860,20 @@ static void vTaskMesh(void*)
       }
       // Subir: a internet como tapa-buraco espera 20 s (o BLE costuma voltar
       // antes disso); a via Internet e o proxy sobem logo.
-      const uint32_t folga = (modo == MQ_NET && s_via != AJUSTES_MESH_INTERNET) ? 20000 : 0;
+      const uint32_t folga = (modo == MQ_NET && s_via != SETTINGS_MESH_TRANSPORT_INTERNET) ? 20000 : 0;
       if (atual == MQ_NADA && modo != MQ_NADA && t - modo_desde >= folga) {
         informar_no_ao_mqtt();
         if (modo == MQ_PROXY) { mesh_mqtt_iniciar_proxy(); } else { mesh_mqtt_iniciar(); }
         atual = !mesh_mqtt_ativo() ? MQ_NADA : modo;
       }
       if (atual == MQ_NET) {
-        if (mesh_mqtt_conectou_agora() && s_via == AJUSTES_MESH_INTERNET) { s_radio_reiniciou = true; }
+        if (mesh_mqtt_conectou_agora() && s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { s_radio_reiniciou = true; }
         // ESVAZIA A FILA, nao um por volta: com o no no cabo a volta espera ate
         // 200 ms na serial, e um pacote por volta (5/s) perdia a rajada do
         // servidor. So o primeiro espera (na via Internet e o ritmo do laco).
         for (int k = 0; k < 16; ++k) {
           const size_t n = mesh_mqtt_receber(quadro, sizeof(quadro),
-                                             (k == 0 && s_via == AJUSTES_MESH_INTERNET) ? 200 : 0);
+                                             (k == 0 && s_via == SETTINGS_MESH_TRANSPORT_INTERNET) ? 200 : 0);
           if (n == 0) { break; }
           travar();
           s_c_quadros++;
@@ -3894,7 +3894,7 @@ static void vTaskMesh(void*)
           enlace_enviar(desce, n);
         }
       }
-      if (s_via == AJUSTES_MESH_INTERNET) {
+      if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) {
         if (!mesh_mqtt_ativo()) { vTaskDelay(pdMS_TO_TICKS(200)); }
         continue;
       }
@@ -3902,7 +3902,7 @@ static void vTaskMesh(void*)
 
     // VIA BLUETOOTH: o enlace ja entrega FromRadio inteiro, sem frame - nao
     // ha maquina de enquadramento. Mesmo prazo de 200 ms da serial.
-    if (s_via == AJUSTES_MESH_BLUETOOTH) {
+    if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
       if (mesh_ble_conectou_agora()) { s_radio_reiniciou = true; }   // pede a configuracao ja
       // O que ja chegou de uma vez (o dump vem em rajada); so o primeiro espera.
       for (int k = 0; k < 16; ++k) {
@@ -4016,9 +4016,9 @@ bool tab5_mesh_parar(void)
 
   mesh_mqtt_parar();
   mesh_mqtt_internet_parar();   // a fila dele e lida so por esta tarefa, que acabou de sair
-  if (s_via == AJUSTES_MESH_BLUETOOTH) {
+  if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     mesh_ble_parar();
-  } else if (s_via == AJUSTES_MESH_SERIAL) {
+  } else if (s_via == SETTINGS_MESH_TRANSPORT_SERIAL) {
     uart_driver_delete(MESH_UART);
     tab5_grove_release(GROVE_OWNER_MESH);
   }
@@ -4059,7 +4059,7 @@ bool tab5_mesh_parar(void)
 
   s_servico_ativo = false;
   sistema_avisar(AVISO_MESH_NOS);   // a barra de escrita passa a "so consulta"
-  ESP_LOGI(TAG, "servico parado%s", s_via == AJUSTES_MESH_SERIAL ? ", Grove livre" : "");
+  ESP_LOGI(TAG, "servico parado%s", s_via == SETTINGS_MESH_TRANSPORT_SERIAL ? ", Grove livre" : "");
   return true;
 }
 
@@ -4067,7 +4067,7 @@ bool tab5_mesh_soltar_grove(void)
 {
   // Via Bluetooth o servico nao esta no Grove: trocar o modulo do cabo nao e
   // motivo para derrubar a conversa com o no.
-  if (s_servico_ativo && s_via != AJUSTES_MESH_SERIAL) { return true; }
+  if (s_servico_ativo && s_via != SETTINGS_MESH_TRANSPORT_SERIAL) { return true; }
   return tab5_mesh_parar();
 }
 
@@ -4076,8 +4076,8 @@ uint8_t tab5_mesh_via(void) { return s_via; }
 const char* tab5_mesh_enlace_descricao(void)
 {
   if (!s_servico_ativo) { return "parado"; }
-  if (s_via == AJUSTES_MESH_INTERNET) { return mesh_mqtt_descricao(); }
-  if (s_via == AJUSTES_MESH_BLUETOOTH) {
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_descricao(); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     return (!mesh_ble_conectado() && mesh_mqtt_ativo()) ? mesh_mqtt_descricao() : mesh_ble_descricao();
   }
   return tab5_mesh_no_ar() ? "cabo Grove, conversando" : "cabo Grove, esperando o no";
@@ -4091,7 +4091,7 @@ void tab5_mesh_iniciar(void)
   // cobrindo a falta do no, ou o Bluetooth quando o Grove acabou de ganhar a
   // prioridade), para antes: sem isto o iniciar_via via "ja esta de pe" e nao
   // fazia nada, e o Mesh seguia na via velha.
-  const uint8_t via = ajustes_mesh_via();
+  const uint8_t via = settings_mesh_transport();
   if (s_servico_ativo && s_via != via && !parada_em_curso(&s_parada)) { tab5_mesh_parar(); }
   iniciar_via(via);
 }
@@ -4099,7 +4099,7 @@ void tab5_mesh_iniciar(void)
 const char* tab5_mesh_rede_internet_estado(void)
 {
   static char t[72];
-  if (!ajustes_mesh_rede_internet())                          { return "desligada"; }
+  if (!settings_mesh_public_network())                          { return "desligada"; }
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)    { return "esperando o Wi-Fi"; }
   if (!s_servico_ativo)                             { return "serviço Mesh parado"; }
   if (!mesh_mqtt_internet_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
@@ -4109,14 +4109,14 @@ const char* tab5_mesh_rede_internet_estado(void)
 
 const char* tab5_mesh_internet_estado(void)
 {
-  if (ajustes_mesh_via() == AJUSTES_MESH_INTERNET) {
+  if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_INTERNET) {
     if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "Internet escolhida: esperando o Wi-Fi conectar"; }
     if (!mesh_mqtt_ativo())                        { return "Internet escolhida: vai conectar em instantes"; }
     return mesh_mqtt_descricao();
   }
-  if (!ajustes_mesh_internet())                   { return "Desligada"; }
+  if (!settings_mesh_internet())                   { return "Desligada"; }
   if (tab5_grove_type() == GROVE_MESHTASTIC
-   || (s_servico_ativo && s_via == AJUSTES_MESH_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
+   || (s_servico_ativo && s_via == SETTINGS_MESH_TRANSPORT_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)  { return "Esperando o Wi-Fi conectar"; }
   if (!mesh_mqtt_ativo())                         { return "Ligada, vai conectar em instantes"; }
   return mesh_mqtt_descricao();
@@ -4139,7 +4139,7 @@ const char* tab5_mesh_proxy_estado(void)
 void tab5_mesh_iniciar_internet(void)
 {
   if (s_servico_ativo) { return; }
-  iniciar_via(AJUSTES_MESH_INTERNET);
+  iniciar_via(SETTINGS_MESH_TRANSPORT_INTERNET);
 }
 
 static void iniciar_via(uint8_t via)
@@ -4173,7 +4173,7 @@ static void iniciar_via(uint8_t via)
   // nasce - este registro acontece de novo a cada sondagem que reencontra o
   // modulo (troca de cabo), entao sem isto o silencio "esqueceria" a cada
   // hot-swap.
-  if (s_notif >= 0) { notif_silenciar(s_notif, !ajustes_beep_mesh()); }
+  if (s_notif >= 0) { notif_silenciar(s_notif, !settings_mesh_beep()); }
   memset(s_nos, 0, sizeof(s_nos));
   ++s_nos_ver;
   memset(s_conv, 0, sizeof(s_conv));
@@ -4221,9 +4221,9 @@ static void iniciar_via(uint8_t via)
   destravar();
 
   s_via = via;
-  if (s_via == AJUSTES_MESH_INTERNET) {
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) {
     // Sem cabo e sem radio: o laco do servico abre o MQTT (usar_internet).
-  } else if (s_via == AJUSTES_MESH_BLUETOOTH) {
+  } else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     // Sem Grove e sem UART: o enlace BLE procura o no, conecta e entrega o
     // que chegar. O Bluetooth ja foi ligado por quem chamou.
     if (!mesh_ble_iniciar()) { ESP_LOGE(TAG, "enlace Bluetooth nao subiu"); return; }
@@ -4267,14 +4267,14 @@ static void iniciar_via(uint8_t via)
     // nada no cabo ate reiniciar.
     parada_desistir(&s_parada);
     s_servico_ativo = false;
-    if (s_via == AJUSTES_MESH_BLUETOOTH) { mesh_ble_parar(); }
-    else if (s_via == AJUSTES_MESH_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_release(GROVE_OWNER_MESH); }
+    if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { mesh_ble_parar(); }
+    else if (s_via == SETTINGS_MESH_TRANSPORT_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_release(GROVE_OWNER_MESH); }
     ESP_LOGE(TAG, "sem memoria para a tarefa do Mesh");
     return;
   }
   sistema_avisar(AVISO_MESH_NOS);
   tab5_mem_marco("Mesh (servico)");
-  if (s_via == AJUSTES_MESH_INTERNET) { ESP_LOGI(TAG, "servico no ar (so internet, sem o no)"); }
-  else if (s_via == AJUSTES_MESH_BLUETOOTH) { ESP_LOGI(TAG, "servico no ar (Bluetooth)"); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { ESP_LOGI(TAG, "servico no ar (so internet, sem o no)"); }
+  else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { ESP_LOGI(TAG, "servico no ar (Bluetooth)"); }
   else { ESP_LOGI(TAG, "servico no ar (Grove %d baud, RX=%d TX=%d)", MESH_BAUD, MESH_RX, MESH_TX); }
 }

@@ -14,7 +14,7 @@
 // na caracteristica (aqui) e o enlace.
 //
 // Com o C6L no Bluetooth o Grove fica livre - e o GPS pode ir nele, com a
-// posicao indo para a malha (ajustes_mesh_posicao).
+// posicao indo para a malha (settings_mesh_position_interval_min()).
 #pragma once
 
 #include <stdint.h>
