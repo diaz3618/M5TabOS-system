@@ -205,7 +205,7 @@ static const int BARRA_Y = 220, BARRA_A = 14;          // trilho desenhado
 static const int BARRA_TOQUE_Y = 204, BARRA_TOQUE_A = 48;   // faixa que aceita o toque
 static const int TEXTO_Y = 252;                        // onde o texto comeca
 static const int ARRASTE_PAGINA = 90;                  // px de arraste vertical que viram a pagina
-static const char* NAV_NOME[4] = { "INÍCIO", "ANTES", "DEPOIS", "FIM" };
+static const char* NAV_NOME[4] = { "START", "BACK", "FORWARD", "END" };
 static int nav_l(int largura) { return (largura - 2 * MARGEM_X - 3 * NAV_G) / 4; }
 static int nav_x(int largura, int i) { return MARGEM_X + i * (nav_l(largura) + NAV_G); }
 // 48 -> 72 (+50%): com 48 px o toque errava o arquivo com frequencia.
@@ -753,7 +753,7 @@ static void desenhar_imagem(lgfx::LovyanGFX& d, const area_t& a, int x, int y)
 {
   if (!s_img_ok) {
     d.setTextColor(TFT_RED, TFT_BLACK);
-    d.drawString("NÃO CONSEGUI LER ESTA IMAGEM", x, y);
+    d.drawString("COULD NOT READ THIS IMAGE", x, y);
     return;
   }
 
@@ -806,7 +806,7 @@ static void desenhar_imagem(lgfx::LovyanGFX& d, const area_t& a, int x, int y)
     s_img_px = (uint16_t*)heap_caps_malloc((size_t)L * A * 2, MALLOC_CAP_SPIRAM);
     if (!s_img_px) {
       d.setTextColor(TFT_RED, TFT_BLACK);
-      d.drawString("SEM MEMÓRIA PARA A IMAGEM", x, y);
+      d.drawString("NOT ENOUGH MEMORY FOR THE IMAGE", x, y);
       return;
     }
     s_img_px_l = L;
@@ -1017,8 +1017,8 @@ static int desenhar_texto(lgfx::LovyanGFX& d, const area_t& a, int y)
   }
   if (s_n_linhas == 0) {
     d.setTextColor(s_abriu_ok ? TFT_LIGHTGREY : TFT_RED, TFT_BLACK);
-    d.drawString(s_abriu_ok ? "(arquivo vazio ou fim do conteúdo)"
-                             : "NÃO CONSEGUI ABRIR - veja o caminho no log", x, y);
+    d.drawString(s_abriu_ok ? "(empty file or end of content)"
+                             : "COULD NOT OPEN - check the path in the log", x, y);
     y += alt_linha;
     if (!s_abriu_ok) {
       char cam[192];
@@ -1068,10 +1068,10 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   if (!tab5_sd_mounted()) {
     tab5_texto(d, 3.625f);
     d.setTextColor(TFT_RED, TFT_BLACK);
-    d.drawString("CARTÃO NÃO MONTADO      ", x, a.y + 24);
+    d.drawString("CARD NOT MOUNTED        ", x, a.y + 24);
     tab5_texto(d, 2);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    d.drawString("Confira o encaixe e se está em FAT32.", x, a.y + 90);
+    d.drawString("Check that it is seated and formatted FAT32.", x, a.y + 90);
     d.drawString("O motivo exato sai no log (sd).  ", x, a.y + 120);
     return;
   }
@@ -1094,7 +1094,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   tab5_titulo(d, 36);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
-  texto_cabendo(d, (s_nivel == NIVEL_PASTAS) ? (tab5_sd_name()[0] ? tab5_sd_name() : "Cartão") : (s_nivel == NIVEL_ARQUIVOS) ? s_pasta : s_arquivo,
+  texto_cabendo(d, (s_nivel == NIVEL_PASTAS) ? (tab5_sd_name()[0] ? tab5_sd_name() : "Card") : (s_nivel == NIVEL_ARQUIVOS) ? s_pasta : s_arquivo,
                 titulo_x, a.y + TOPO_Y + TOPO_A / 2, titulo_fim - titulo_x);
   d.setTextDatum(top_left);
 
@@ -1112,7 +1112,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     }
   } else if (s_e_imagem) {
     if (s_img_ok) { snprintf(linha, sizeof(linha), "imagem %ux%u", (unsigned)s_img_largura, (unsigned)s_img_altura); }
-    else          { snprintf(linha, sizeof(linha), "não consegui ler esta imagem"); }
+    else          { snprintf(linha, sizeof(linha), "could not read this image"); }
   }
   // (a descricao do texto depende de quantas linhas couberam: sai depois dele)
   d.setFont(tab5_fonte_suave(false, 24));
@@ -1165,7 +1165,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   if (s_n_itens == 0) {
     lista_esconder(&s_lista);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    d.drawString(s_listando ? "lendo o cartão...        " : "(vazio)                  ", x, y);
+    d.drawString(s_listando ? "reading the card...      " : "(empty)                  ", x, y);
     return;
   }
 
@@ -1379,7 +1379,7 @@ static void icone_arquivos(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_FILES = {
-  .name  = "Arquivos",
+  .name  = "Files",
   .cor   = TFT_SKYBLUE,
   .perfil = { },
   .usa_sd = true,

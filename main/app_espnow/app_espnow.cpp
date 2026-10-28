@@ -98,10 +98,10 @@ static int estado_agora(void)
 static const char* motivo(int est)
 {
   switch (est) {
-    case 0:  return "rádio C6 de fábrica: ESP-NOW pede atualização (opcional)";
-    case 1:  return "ligue o Wi-Fi em Ajustes (o C6 só tem energia com ele)";
+    case 0:  return "factory C6 radio: ESP-NOW needs an update (optional)";
+    case 1:  return "turn on Wi-Fi in Settings (the C6 only gets power with it)";
     case 2:  return "ligando o ESP-NOW...";
-    case 4:  return "rádio parado - ligue o Wi-Fi ou fixe um canal em Ajustes";
+    case 4:  return "radio stopped - turn on Wi-Fi or fix a channel in Settings";
     default: return "";
   }
 }
@@ -130,8 +130,8 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
     const uint32_t ms = tab5_espnow_ms_desde_rx();
     char ultimo[24];
     if (ms == UINT32_MAX)  { snprintf(ultimo, sizeof(ultimo), "nada ouvido"); }
-    else if (ms < 60000)   { snprintf(ultimo, sizeof(ultimo), "último %lus", (unsigned long)(ms / 1000)); }
-    else                   { snprintf(ultimo, sizeof(ultimo), "último %lumin", (unsigned long)(ms / 60000)); }
+    else if (ms < 60000)   { snprintf(ultimo, sizeof(ultimo), "last %lus", (unsigned long)(ms / 1000)); }
+    else                   { snprintf(ultimo, sizeof(ultimo), "last %lumin", (unsigned long)(ms / 60000)); }
     // EM PE NAO CABE O MAC. Depois do titulo e da pilula sobram ~150 px, e
     // a linha inteira encolhida ate o minimo ainda passava da borda. O MAC e
     // o dado que menos muda (e o do proprio Tab5): sai ele, fica o que diz
@@ -143,7 +143,7 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], tab5_espnow_vistos(), ultimo);
     }
   } else {
-    snprintf(txt, sizeof(txt), "%s", est == 2 ? "ligando..." : est == 4 ? "rádio parado" : "fora do ar");
+    snprintf(txt, sizeof(txt), "%s", est == 2 ? "turning on..." : est == 4 ? "radio stopped" : "offline");
   }
 
   char tudo[128];

@@ -41,7 +41,7 @@ static const int LIN = 34;
 // declarado por quem criou a tarefa - hal/tab5_owners.hpp -, nao adivinhado
 // pelo nome. Cada linha da lista e um cabecalho de grupo ou uma tarefa.
 static const owner_type_t GRUPOS[] = { OWNER_APP, OWNER_BACKGROUND, OWNER_SERVICE, OWNER_SYSTEM };
-static const char* const GRUPO_NOME[] = { "SISTEMA", "SERVIÇOS", "APP ABERTO", "APPS EM FUNDO" };   // por owner_type_t
+static const char* const GRUPO_NOME[] = { "SYSTEM", "SERVICES", "OPEN APP", "BACKGROUND APPS" };   // por owner_type_t
 static int s_linhas[MON_MAX_TAREFAS + 4];   // >= 0: indice em s_f.t; < 0: cabecalho (-1 - owner_type_t)
 static int s_nlinhas = 0;
 
@@ -464,7 +464,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   else                 { snprintf(h, sizeof(h), "%ud%02uh", (unsigned)(up / 86400), (unsigned)((up % 86400) / 3600)); }
   corpo(d);
   if (atraso > 3) {
-    snprintf(buf, sizeof(buf), "monitor sem amostra há %us", (unsigned)atraso);
+    snprintf(buf, sizeof(buf), "monitor with no sample for %us", (unsigned)atraso);
     campo(d, &s_c_rodape, buf, TFT_YELLOW, x, y_rodape + 10, larg - BT_L - 16, lin);
   } else {
     snprintf(buf, sizeof(buf), "%d tarefas | no ar %s", s_f.n, h);
@@ -528,7 +528,7 @@ static void icone_tarefas(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_TASKS = {
-  .name  = "Tarefas",
+  .name  = "Tasks",
   .cor   = TFT_GREENYELLOW,
   .perfil = { },
   .piso_repouso_mhz = 0,

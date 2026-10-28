@@ -21,7 +21,7 @@
 #include "app.h"            // sistema_app_atual
 
 static const char* TAG = "monitor";
-static const char* PASTA = "Tarefas";
+static const char* PASTA = "Tasks";
 
 // Foto do compositor no ultimo minuto gravado (quadros-*.csv).
 static comp_estat_t s_qd_ant = {};

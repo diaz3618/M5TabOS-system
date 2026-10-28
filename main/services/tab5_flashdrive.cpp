@@ -1022,7 +1022,7 @@ void tab5_pendrive_servico_iniciar(void)
 {
   if (s_vigia) { return; }
   s_notif = notif_registrar("Pendrive");
-  notif_associar_app(s_notif, "Ajustes");   // o aviso abre Ajustes (na pagina USB)
+  notif_associar_app(s_notif, "Settings");   // o aviso abre Ajustes (na pagina USB)
   const esp_timer_create_args_t a = { .callback = vigiar, .arg = nullptr,
                                       .dispatch_method = ESP_TIMER_TASK, .name = "pendrive_vigia",
                                       .skip_unhandled_events = true };

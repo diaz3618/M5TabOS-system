@@ -219,7 +219,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     tab5_texto(d, 2);
     d.setTextDatum(middle_center);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    d.drawString("iniciando a câmera...", a.x + s_largura / 2, a.y + s_altura / 2);
+    d.drawString("starting the camera...", a.x + s_largura / 2, a.y + s_altura / 2);
     d.setTextDatum(top_left);
   }
 

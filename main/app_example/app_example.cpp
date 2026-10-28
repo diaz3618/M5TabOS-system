@@ -131,7 +131,7 @@ static void trab_contar(void*)
 {
   int n = 0;
   char pasta[96];
-  if (tab5_sd_mounted() && tab5_sd_folder("Exemplo", pasta, sizeof(pasta))) {
+  if (tab5_sd_mounted() && tab5_sd_folder("Example", pasta, sizeof(pasta))) {
     DIR* d = opendir(pasta);
     if (d) {
       while (readdir(d) && !sistema_trabalho_cancelado()) { ++n; }
@@ -167,7 +167,7 @@ static void b_cartao(void)
 {
   char linha[48];
   snprintf(linha, sizeof(linha), "%lu,%d\n", (unsigned long)tab5_hora_epoch(), s_linhas_gravadas + 1);
-  if (tab5_sd_enqueue_append("Exemplo", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
+  if (tab5_sd_enqueue_append("Example", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
 }
 
 // ---- HORA -------------------------------------------------------------------
@@ -296,7 +296,7 @@ static void laco_fundo(fundo_t* f)
 static bool fundo_sem_som(void) { return false; }
 
 static const fundo_def_t EXEMPLO_FUNDO = {
-  .name  = "Exemplo",
+  .name  = "Example",
   .corpo = laco_fundo,
   .pilha = 3072,
   .perfil = { },
@@ -469,8 +469,8 @@ static bool ao_abrir(void)
     s_fila = nullptr;
     return false;
   }
-  s_notif = notif_registrar("Exemplo");    // idempotente: a mesma vaga a cada abertura
-  notif_associar_app(s_notif, "Exemplo");  // tocar no aviso abre este app
+  s_notif = notif_registrar("Example");    // idempotente: a mesma vaga a cada abertura
+  notif_associar_app(s_notif, "Example");  // tocar no aviso abre este app
   tab5_espnow_janela(true);                // receptor do ESP-NOW ligado com o app na tela
   lista_definir(&s_lista, ROLAGEM_INICIO, N_CARTOES, cartao_altura, cartao_desenhar, nullptr);
   return true;
@@ -533,7 +533,7 @@ static void icone_exemplo(lgfx::LovyanGFX& d, int x, int y, int lado)
 // 'extern' e OBRIGATORIO: em C++ um const de arquivo tem ligacao interna, e o
 // apps.cpp nao enxergaria o simbolo (o erro so aparece no link).
 extern const app_t APP_EXAMPLE = {
-  .name  = "Exemplo",
+  .name  = "Example",
   .cor   = TFT_CYAN,
   // So o que os cartoes usam. O resto fica desligado enquanto o app esta na
   // tela - e o que impede o aparelho de alimentar o que ninguem usa.

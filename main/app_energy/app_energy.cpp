@@ -44,8 +44,8 @@
 
 typedef enum { SERIE_BATERIA = 0, SERIE_CORRENTE, SERIE_POTENCIA, SERIE_TENSAO, SERIE_TEMP } serie_t;
 #define N_SERIES 5
-static const char* SERIE_TITULO[N_SERIES] = { "Nível da bateria (%)", "Corrente (mA)", "Potência (W)", "Tensão (V)", "Temperatura P4 (°C)" };
-static const char* SERIE_CARTAO[N_SERIES] = { "Bateria", "Corrente", "Potência", "Tensão", "Temp P4" };
+static const char* SERIE_TITULO[N_SERIES] = { "Battery level (%)", "Current (mA)", "Power (W)", "Voltage (V)", "P4 temperature (°C)" };
+static const char* SERIE_CARTAO[N_SERIES] = { "Battery", "Current", "Power", "Voltage", "P4 temp" };
 static const uint16_t SERIE_COR[N_SERIES] = {
   lgfx::color565( 90, 170, 255),   // bateria: azul, para nao se confundir com o verde da carga
   TFT_ORANGE,
@@ -599,7 +599,7 @@ static void desenhar_grafico1(lgfx::LovyanGFX& d, const area_t& a)
 
   if (s_24h && (!s_dia || !s_dia->t0)) {
     d.drawFastHLine(gx, gy + ga - 1, gl, COR_EIXO);
-    aviso_no_grafico(d, gx, gl, gy, ga, s_carga_pedida ? "lendo o cartão..." : "24 H precisa do relógio (GPS, malha ou NTP)");
+    aviso_no_grafico(d, gx, gl, gy, ga, s_carga_pedida ? "reading the card..." : "24 H needs the clock (GPS, mesh, or NTP)");
     return;
   }
   const pontos_t* p = s_24h ? &s_m->p24 : &s_m->p30;
@@ -679,7 +679,7 @@ static void desenhar_grafico1(lgfx::LovyanGFX& d, const area_t& a)
     } else {
       const int s = v->t[k];
       if (s < 60) { snprintf(buf, sizeof(buf), "agora   %s", val); }
-      else        { snprintf(buf, sizeof(buf), "há %d min   %s", s / 60, val); }
+      else        { snprintf(buf, sizeof(buf), "%d min ago   %s", s / 60, val); }
     }
     fn(d, 24);
     const int bl = d.textWidth(buf) + 24, ba = 40;
@@ -725,7 +725,7 @@ static void desenhar_grafico2(lgfx::LovyanGFX& d, const area_t& a)
 
   if (!s_dia || !s_dia->t0) {
     d.drawFastHLine(gx, gy + ga - 1, gl, COR_EIXO);
-    aviso_no_grafico(d, gx, gl, gy, ga, s_carga_pedida ? "lendo o cartão..." : "precisa do relógio (GPS, malha ou NTP)");
+    aviso_no_grafico(d, gx, gl, gy, ga, s_carga_pedida ? "reading the card..." : "needs the clock (GPS, mesh, or NTP)");
     return;
   }
 
@@ -773,7 +773,7 @@ static void desenhar_grafico2(lgfx::LovyanGFX& d, const area_t& a)
     fn(d, 24); d.setTextColor(TFT_WHITE, TFT_BLACK); d.drawString(buf, a.x + M, y1);
     duracao(dur, sizeof(dur), s_m->tot_min_tela / 60.0f);
     uint32_t falhas; registro_estado(nullptr, nullptr, &falhas);
-    if (falhas) { snprintf(buf, sizeof(buf), "tela acesa %s   registro: %lu falhas no cartão", dur, (unsigned long)falhas); }
+    if (falhas) { snprintf(buf, sizeof(buf), "screen on %s   log: %lu card failures", dur, (unsigned long)falhas); }
     else        { snprintf(buf, sizeof(buf), "tela acesa %s   toque numa barra para ver a hora", dur); }
     fc(d, 24); d.setTextColor(falhas ? TFT_ORANGE : TFT_LIGHTGREY, TFT_BLACK); d.drawString(buf, a.x + M, y2);
   }
@@ -885,7 +885,7 @@ static void icone_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_ENERGY = {
-  .name  = "Energia",
+  .name  = "Energy",
   .cor   = TFT_ORANGE,
   // Perfil: so o brilho. Todo o resto vem dos defaults do tab5_profile_t,
   // que sao 'desligado' - por isso nao precisa listar o que nao se usa.

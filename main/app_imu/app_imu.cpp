@@ -225,7 +225,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
       tab5_texto(d, 2.3f);
       d.setTextDatum(middle_center);
       d.setTextColor(TFT_RED, TFT_BLACK);
-      d.drawString("IMU não respondeu", a.x + a.largura / 2, a.y + a.altura / 2);
+      d.drawString("IMU did not respond", a.x + a.largura / 2, a.y + a.altura / 2);
     }
     return;
   }
