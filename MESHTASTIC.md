@@ -139,7 +139,7 @@ guardado por um roteador), `66 RANGE_TEST`, `73 MAP_REPORT`,
   do app Mesh; NodeDB do Tab5 em `nodedb.bin`.
 - Conferido nas versões 2.5, 2.7 e atual do firmware: números de campo,
   dispensa de chave no admin local e reinício no `commit_edit_settings`.
-- `ferramentas/teste_mesh_admin.py` prova a montagem com os protobufs oficiais.
+- `tools/test_mesh_admin.py` prova a montagem com os protobufs oficiais.
 
 ## Funcionalidades do Meshtastic que não existem aqui
 

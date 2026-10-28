@@ -54,7 +54,7 @@
 #include "freertos/semphr.h"
 
 #include "eh_cp_feat_peer_data.h"
-#include "tab5_c6.h"   /* o contrato, compartilhado com o P4 */
+#include "tab5_c6.h"   /* o contrato, shared com o P4 */
 
 static const char *TAG = "tab5c6";
 
@@ -62,7 +62,7 @@ static const char *TAG = "tab5c6";
  * PROTOCOLO COM O P4
  * ---------------------------------------------------------------------------
  * Os msg_id sao um contrato entre os dois lados, e moram num arquivo so:
- * compartilhado/tab5_c6.h, incluido pelos dois projetos.
+ * shared/tab5_c6.h, incluido pelos dois projetos.
  *
  * Formato do payload, sempre cru - nada de protobuf aqui. O canal ja entrega
  * (msg_id, bytes, tamanho), e inventar serializacao em cima disso seria

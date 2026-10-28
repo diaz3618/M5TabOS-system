@@ -7,7 +7,7 @@
 //
 // O QUE FALTAVA ERA ESCREVER. Sem alguem AJUSTAR o RX8130 pelo menos uma vez,
 // ele guarda uma hora sem sentido (de fabrica) - a bateria preserva o que foi
-// gravado, nao inventa a hora certa sozinha. Ver services/tab5_hora.hpp para
+// gravado, nao inventa a hora certa sozinha. Ver services/tab5_time.hpp para
 // QUEM decide quando ajustar e de qual fonte.
 #pragma once
 

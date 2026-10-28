@@ -11,8 +11,8 @@
 #include "esp_timer.h"
 #include "app.h"          // sistema_avisar
 #include "tab5_gps.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms
-#include "ajustes.h"       // AJUSTES_MESH_BLUETOOTH
+#include "tab5_time.hpp"   // tab5_agora_ms
+#include "settings.h"       // AJUSTES_MESH_BLUETOOTH
 
 static const char* TAG = "mesh_admin";
 

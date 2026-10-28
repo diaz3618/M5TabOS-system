@@ -58,7 +58,7 @@ lugar nenhum: o seu app mora ao lado destes.
   (ILI9881C + GT911, ST7123, ST7121). O M5GFX detecta e o sistema se ajusta;
   as telas ST71xx ainda não foram testadas em aparelho (veja *Limitações*).
 - **Revisão do ESP32-P4**: v1.x (os Tab5 vendidos até aqui) e v3.x pedem
-  binários diferentes. O `./gravar.sh` lê a revisão do aparelho e compila o
+  binários diferentes. O `./flash.sh` lê a revisão do aparelho e compila o
   certo; à mão é `idf.py build` (v1.x) ou `idf.py -B build_v3 -DM5_CHIP=v3 build`
   (v3.x). As chaves de cada um estão em `sdkconfig.defaults.chip_v1` e `_v3`.
 - Opcional:
@@ -72,23 +72,23 @@ lugar nenhum: o seu app mora ao lado destes.
 2. Prepare o terminal e compile:
 
    ```bash
-   source ambiente.sh
+   source environment.sh
    idf.py build
    ```
 
-   O `ambiente.sh` carrega `$IDF_PATH/export.sh` (padrão `~/esp/esp-idf`).
-   Para um ambiente fora do padrão, crie `ambiente.local.sh`; ele não vai para
+   O `environment.sh` carrega `$IDF_PATH/export.sh` (padrão `~/esp/esp-idf`).
+   Para um ambiente fora do padrão, crie `environment.local.sh`; ele não vai para
    o repositório.
 
 3. Grave com o Tab5 ligado pelo USB-C:
 
    ```bash
-   ./gravar.sh
+   ./flash.sh
    ```
 
    O script acha a porta sozinho (`/dev/cu.usbmodem*` no macOS,
    `/dev/ttyACM*` no Linux) e abre o monitor serial. Para escolher outra
-   porta: `PORTA=/dev/xxx ./gravar.sh`.
+   porta: `PORTA=/dev/xxx ./flash.sh`.
 
 ### Firmware do ESP32-C6 (opcional)
 
@@ -126,11 +126,11 @@ com um gravador serial (por exemplo, o M5Stack ESP32 Downloader):
 4. Grave:
 
    ```bash
-   c6/gravar.sh
+   c6/flash.sh
    ```
 
    O script acha a porta do gravador sozinho (`/dev/cu.usbserial-*` no macOS,
-   `/dev/ttyUSB*` no Linux). Para escolher outra: `PORTA=/dev/xxx c6/gravar.sh`.
+   `/dev/ttyUSB*` no Linux). Para escolher outra: `PORTA=/dev/xxx c6/flash.sh`.
 
 5. Ligue o Tab5. No log de boot deve aparecer
    `host=3.0.9 coprocessor=3.0.9 (match)`.
@@ -164,16 +164,16 @@ Wi-Fi dele e o roteiro de verificação depois de gravar estão em
 A referência das APIs (tela, toque, tarefas, cartão, notificações, energia,
 sensores, Wi-Fi, ESP-NOW, Meshtastic, câmera, console) está em
 [API.md](API.md); o guia de como pensar um app, com os erros que já
-cometemos, em [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md). Para criar um app:
+cometemos, em [WRITING_APPS.md](WRITING_APPS.md). Para criar um app:
 
-1. copie `main/app_exemplo/` para `main/app_<nome>/`;
-2. troque `APP_EXEMPLO` por `APP_<NOME>` (o nome segue a pasta);
+1. copie `main/app_example/` para `main/app_<nome>/`;
+2. troque `APP_EXAMPLE` por `APP_<NOME>` (o nome segue a pasta);
 3. declare o perfil de energia dele e apague os cartões que não usar.
 
 Um app também pode responder a comandos do console serial
 (`app <app> <comando>`), declarando `.comandos` no `app_t`.
 
-A arquitetura do kernel está em [ARQUITETURA.md](ARQUITETURA.md), e a base de
+A arquitetura do kernel está em [ARCHITECTURE.md](ARCHITECTURE.md), e a base de
 tela em [COMPOSITOR.md](COMPOSITOR.md).
 
 ## Estrutura
@@ -184,8 +184,8 @@ main/hal/         hardware: tela, toque, energia, cartão, Wi-Fi, Bluetooth, GPS
 main/services/    serviços: ajustes, notificações, log, Meshtastic, ESP-NOW, registro
 main/app_*/       aplicativos
 c6/               firmware do coprocessador ESP32-C6 (ESP-NOW + esp_hosted)
-compartilhado/    contrato de mensagens entre o P4 e o C6
-ferramentas/      geradores (fontes, emoji, tabela de hardware) e utilitários
+shared/    contrato de mensagens entre o P4 e o C6
+tools/      geradores (fontes, emoji, tabela de hardware) e utilitários
 ```
 
 ## Limitações conhecidas
@@ -194,7 +194,7 @@ ferramentas/      geradores (fontes, emoji, tabela de hardware) e utilitários
   conservador (repouso só apaga a luz, relógio do painel de fábrica), mas
   ainda não foram testados num aparelho. Relatos são bem-vindos.
 - A interface e a documentação estão em português, e o fuso horário é fixo
-  (`TAB5_FUSO_S`, UTC−3) em `services/tab5_hora.hpp`.
+  (`TAB5_FUSO_S`, UTC−3) em `services/tab5_time.hpp`.
 - A curva de bateria (`hal/tab5_power.hpp`) foi calibrada em uma unidade
   (1306,8 mAh medidos). Outras baterias podem pedir recalibração.
 - O Bluetooth é só BLE: o C6 não faz Bluetooth clássico.
@@ -204,4 +204,4 @@ ferramentas/      geradores (fontes, emoji, tabela de hardware) e utilitários
 ## Licença
 
 [MIT](LICENSE). Os componentes de terceiros têm licença própria: ver
-[TERCEIROS.md](TERCEIROS.md).
+[THIRD_PARTY.md](THIRD_PARTY.md).

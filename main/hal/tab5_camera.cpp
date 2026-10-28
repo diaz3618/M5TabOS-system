@@ -1,6 +1,6 @@
 #include "tab5_camera.hpp"
-#include "tab5_marcos.hpp"
-#include "tarefa_app.h"
+#include "tab5_marks.hpp"
+#include "app_task.h"
 #include "tab5_power.hpp"
 #include "tab5_mutex.hpp"
 
@@ -182,7 +182,7 @@ bool tab5_camera_reg(uint16_t reg, int valor, uint8_t* lido)
 // A TAREFA DE CAPTURA. DQBUF bloqueia ate o sensor entregar o proximo frame
 // (livre-rodante, ~30fps) - por isso mora em tarefa_app_t, e nao na tarefa de
 // interface: se o sensor travar, quem fica preso e SO esta tarefa (ver o
-// aviso grande em kernel/tarefa_app.h sobre "abandonada de proposito" - o
+// aviso grande em kernel/app_task.h sobre "abandonada de proposito" - o
 // mesmo raciocinio que ja vale para Mesh/GPS vale aqui).
 static void laco_captura(tarefa_app_t* t)
 {
@@ -536,7 +536,7 @@ static void parar_hardware(void)
   if (s_cam.ligado) {
     // A tarefa so faz DQBUF (bloqueia ate o proximo frame, ~33 ms) e PPA -
     // nenhuma escrita no cartao. 500 ms e folga de sobra; se ela nao sair,
-    // tarefa_app_encerrar() a abandona (ver tarefa_app.h).
+    // tarefa_app_encerrar() a abandona (ver app_task.h).
     tarefa_app_encerrar(&s_cam.tarefa, 500);
     const int tipo = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     ioctl(s_cam.fd, VIDIOC_STREAMOFF, &tipo);
@@ -576,7 +576,7 @@ static void parar_hardware(void)
   // ler ppa_register_client()/ppa_unregister_client() em ppa_core.c, e
   // quando 'do_unregister' da falso a funcao devolve ANTES do free() do
   // client (heap_caps_calloc'd) e antes de soltar a referencia no motor SRM
-  // compartilhado - ou seja, esgotar as tentativas VAZA aquela estrutura de
+  // shared - ou seja, esgotar as tentativas VAZA aquela estrutura de
   // verdade, nao so imprime um aviso feio. 20 tentativas de 25ms (max. meio
   // segundo, e SO quando a corrida realmente acontece) e um preco invisivel
   // no fechamento da camera para reduzir bastante a chance de esgotar - o

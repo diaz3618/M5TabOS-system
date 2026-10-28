@@ -1,6 +1,6 @@
 # MESMA tabela dos exemplos do esp_hosted para 4MB com OTA duplo.
 #
-# A gravacao pelo cabo (idf.py flash / gravar.sh) escreve ESTA tabela no C6,
+# A gravacao pelo cabo (idf.py flash / flash.sh) escreve ESTA tabela no C6,
 # junto com o bootloader e o otadata: e ela que vale no aparelho. (Uma OTA nao
 # regravaria a tabela - so a imagem no slot livre.)
 #

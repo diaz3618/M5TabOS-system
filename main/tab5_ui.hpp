@@ -16,7 +16,7 @@
 // um dia ele tiver bug, o conserto vale para todo app de uma vez, em vez de
 // precisar lembrar de visitar cada copia.
 //
-// Ver ESCREVENDO_APPS.md para o resto do contrato.
+// Ver WRITING_APPS.md para o resto do contrato.
 #pragma once
 
 #include <M5Unified.h>
@@ -36,7 +36,7 @@
 // mensagem (1,05x, quase nativo).
 //
 // Agora o corpo e a Roboto (Apache 2.0) SUAVIZADA - antialiasing de 8 bits,
-// formato VLW - gerada por gerar_fontes.py em ~20 alturas NATIVAS (12 a 56
+// formato VLW - gerada por generate_fonts.py em ~20 alturas NATIVAS (12 a 56
 // px), regular e negrito, com os acentos do portugues. tab5_texto() escolhe a
 // altura nativa mais proxima do que foi pedido: nunca mais escala.
 //
@@ -102,7 +102,7 @@ void tab5_fonte_corpo_negrito(lgfx::LovyanGFX& d);
 #define TAB5_BOTAO_TEXTO_GRANDE  4.0f   // +100% do padrao, usado em varios apps
 
 // GRADE DOS GRAFICOS - NUM SO LUGAR (Energia e Tarefas usam a mesma).
-// Nasceu em app_energia.cpp,
+// Nasceu em app_energy.cpp,
 // escolhida a dedo (nao e TFT_DARKGREY: o cinza medio do LovyanGFX, 0x7BEF,
 // competiria com a linha do grafico - a grade e so uma referencia de leitura,
 // o olho acha ela quando procura e ignora quando olha o dado). Subiu duas

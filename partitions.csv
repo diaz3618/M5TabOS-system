@@ -22,12 +22,12 @@
 # que alguem acrescentar uma particao depois desta.
 #
 # CRESCEU DE 4MB PARA 8MB, para as fontes suaves (Roboto em
-# ~20 alturas nativas, regular e negrito, ~2,4MB - ver gerar_fontes.py). Mesma
+# ~20 alturas nativas, regular e negrito, ~2,4MB - ver generate_fonts.py). Mesma
 # regra: nvs e phy_init nao se mexem, so o app cresce.
 #
 # RESERVA (2 MB, depois do app): o diario das gravacoes feitas enquanto o
 # cartao esta emprestado ao computador (modo pendrive) - ver
-# hal/tab5_reserva.hpp. Fica vazia quase sempre. Mesma regra de sempre: entra
+# hal/tab5_journal.hpp. Fica vazia quase sempre. Mesma regra de sempre: entra
 # DEPOIS das outras, nvs e phy_init nao se mexem, os ajustes continuam. Sobram
 # ~5,9 MB livres no fim da flash.
 #

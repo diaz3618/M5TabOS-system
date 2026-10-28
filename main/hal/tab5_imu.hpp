@@ -1,5 +1,5 @@
 // IMU (BMI270) - leitura compartilhada, no MESMO espirito de tab5_power.hpp
-// (medir() vs ultima()) e tab5_sensores.hpp (cache em vez de queue).
+// (medir() vs ultima()) e tab5_sensors.hpp (cache em vez de queue).
 //
 // -------------------------------------------------------------------------
 // POR QUE ISTO EXISTE - achado ao revisar "pronto para mais de um

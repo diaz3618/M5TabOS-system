@@ -3,14 +3,14 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e as versões seguem [SemVer](https://semver.org/lang/pt-BR/). A versão do
 firmware mora em `version.txt`. As regras de qual número subir, e como
-lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
+lançar uma versão (`tools/release.sh`), estão em `VERSIONING.md`.
 
 ## [Não lançado]
 
 ### Adicionado
-- Versionamento: `ferramentas/lancar.sh patch|minor|major` lança uma versão
+- Versionamento: `tools/release.sh patch|minor|major` lança uma versão
   (version.txt, seção no CHANGELOG, commit e tag), com as regras em
-  `VERSIONAMENTO.md`. O número no binário diz de onde o build saiu
+  `VERSIONING.md`. O número no binário diz de onde o build saiu
   (`0.7.0+66.16a4d6d` = 66 commits depois da 0.7.0), e o build para se o
   `version.txt` ficar abaixo da última versão lançada.
 - Mesh > Nó > Localização: compartilhar a localização liga e desliga (é a
@@ -32,7 +32,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
   computador mudou um arquivo que o Tab5 também reescreveu, o do computador
   fica e o do Tab5 vai para `<nome>.tab5`. A barra avisa quando o diário
   passa de 90%; a página USB mostra o que se perdeu. **Exige regravar com
-  `./gravar.sh`** (tabela de partições nova; os ajustes ficam).
+  `./flash.sh`** (tabela de partições nova; os ajustes ficam).
 - Ajustes > USB: ligar o pendrive sozinho ao conectar num computador
   (desligado de fábrica; com um app aberto ou a tela bloqueada, só avisa).
 - `tab5_sd_acrescentar()` e `tab5_sd_substituir()` — as portas de gravação
@@ -44,7 +44,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
   uma linha abre o app. Fecha tocando fora, na barra, com Esc ou deslizando
   para cima. A barra ganha um ponto colorido por app além do destaque, e a
   tela de bloqueio lista até 4 apps em vez de um só.
-- `notif_listar()` e `notif_associar_app()` em `services/notificacao.h`.
+- `notif_listar()` e `notif_associar_app()` em `services/notification.h`.
 - Mesh: rede americana em paralelo. Um segundo cliente MQTT
   (`mqtt.meshtastic.org`, raiz `msh/US`, LongFast de fábrica) roda junto do
   enlace de sempre — no modo internet, com o nó no cabo/Bluetooth e com o
@@ -122,10 +122,10 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
   ponteiro solto e bytes mágicos. Texto, admin e posição saem pelo mesmo
   envelope; o teste no Mac (`testes/rodar_mesh_pb.sh`, com ASan/UBSan)
   confere que os bytes são idênticos aos de antes.
-- Parada de tarefa de serviço num mecanismo só (`kernel/parada.hpp`): GPS,
+- Parada de tarefa de serviço num mecanismo só (`kernel/service_stop.hpp`): GPS,
   Mesh e o enlace Bluetooth do Mesh esperam a saída num semáforo em vez de
   perguntar a cada 10 ms. No GPS as bandeiras nem eram `volatile`.
-- Ouvinte de evento (`hal/tab5_ouvinte.hpp`) para a varredura BLE, o farejo
+- Ouvinte de evento (`hal/tab5_listener.hpp`) para a varredura BLE, o farejo
   e o CSI: remover o ouvinte espera a chamada em voo. O Radar deixa de
   dormir 40 ms "para dar tempo" ao fechar.
 - Troca de relógio do painel pedida pelo console: espera num semáforo em vez
@@ -177,7 +177,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
   (Downloader), as próximas evoluções acontecem do lado do P4 sem reabrir o
   aparelho. Cada capacidade anuncia um bit em `caps` (só acende se o módulo foi
   compilado), e o P4 esconde o que a gravação não trouxe.
-- Serviço `tab5_farejo` e comando `farejo` no console: o C6 ouve em modo
+- Serviço `tab5_sniffer` e comando `farejo` no console: o C6 ouve em modo
   promiscuo, resume por MAC e manda em lotes; o P4 guarda a tabela só enquanto
   ligado (na PSRAM, numa vaga do pool) e o C6 desliga sozinho se o P4 parar de
   renovar. `farejo info` mostra as capacidades de rádio do C6 gravado.
@@ -219,7 +219,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
 - Mesh: NodeDB do Tab5 no cartão (`nodedb.bin`, PSRAM, 256 nós), carregada ao
   subir o serviço e gravada a cada 10 min e ao parar: o Tab5 lembra mais nós
   do que o teto do rádio (100 no C6L até a 2.7).
-- `ferramentas/teste_mesh_admin.py`: decodifica com os protobufs oficiais os
+- `tools/test_mesh_admin.py`: decodifica com os protobufs oficiais os
   bytes que o M5tabOS monta (admin, texto, canais).
 - Mesh: favoritos (estrela). No cartão do nó, FAVORITAR marca; a tabela mostra
   a estrela e põe os favoritos logo abaixo do nosso nó, na ordem em que foram
@@ -247,7 +247,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
 - Ajustes > Meshtastic: botão LIGAR/DESLIGAR da internet e linha de estado
   (servidor e raiz em uso). O nó no Grove tem prioridade: com ele, a internet
   nunca roda, mesmo com o Wi-Fi ligado.
-- `ferramentas/teste_mqtt_vivo.py`: escuta o servidor real e decifra com o
+- `tools/teste_mqtt_vivo.py`: escuta o servidor real e decifra com o
   mesmo algoritmo, para conferir tópico e criptografia fora do aparelho.
 - Ajustes > Wi-Fi: lista das redes em volta, senha digitada na tela, várias
   redes guardadas (cifradas) e conexão automática na conhecida mais forte.
@@ -324,7 +324,7 @@ lançar uma versão (`ferramentas/lancar.sh`), estão em `VERSIONAMENTO.md`.
   `varrer` do console devolve a conexão no fim.
 - CSI e Farejo: ligar logo depois de desligar podia criar duas tarefas
   (CSI) ou deixar o farejo desligado e sem tabela depois de "ligar" ter
-  respondido sim. Os dois passam a usar a parada do kernel (`parada.hpp`).
+  respondido sim. Os dois passam a usar a parada do kernel (`service_stop.hpp`).
 - Mesh: canais e NodeDB não são mais gravados no laço do rádio (um cartão
   lento fazia perder quadros do nó); vão de carona na tarefa do cartão.
 - Partes de fundo (Trilha, Azimutal): parar espera a saída num semáforo, sem

@@ -47,7 +47,7 @@ typedef struct {
   float       pct_pico;       // maior ja visto desde o boot (ou do zerar)
   uint32_t    pct_pico_em;    // segundos de uptime do pico
   uint32_t    pilha_livre;    // bytes - o minimo que ja sobrou (high water mark)
-  uint8_t     tipo;           // dono_tipo_t (hal/tab5_donos.hpp): sistema, servico, app, fundo
+  uint8_t     tipo;           // dono_tipo_t (hal/tab5_owners.hpp): sistema, servico, app, fundo
   char        dono[MON_NOME]; // quem ("WiFi", "Camera", "Trilha"); vazio = sistema
 } mon_tarefa_t;
 

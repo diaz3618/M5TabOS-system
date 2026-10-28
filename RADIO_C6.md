@@ -15,7 +15,7 @@ Versões conferidas: ESP-IDF 5.5.5, esp_hosted 3.0.9, firmware do C6
 |---|---|---|
 | Wi-Fi STA (associar, IP, sockets) | driver no C6 | RPC do esp_hosted (`esp_wifi_*` do lado do P4 viram chamadas remotas) |
 | Bluetooth LE | controlador no C6, stack NimBLE no P4 | HCI por VHCI |
-| ESP-NOW, farejo (promíscuo), CSI, FTM, 802.15.4 | firmware próprio do C6 (`c6/`) | canal `peer_data` do esp_hosted, contrato em `compartilhado/tab5_c6.h` |
+| ESP-NOW, farejo (promíscuo), CSI, FTM, 802.15.4 | firmware próprio do C6 (`c6/`) | canal `peer_data` do esp_hosted, contrato em `shared/tab5_c6.h` |
 
 O esp_hosted não leva ESP-NOW, modo promíscuo nem CSI pelo RPC: os IDs existem
 no `rpc_v2.proto`, mas não há implementação dos dois lados. Por isso esses
@@ -199,7 +199,7 @@ esp_err_t esp_ieee802154_disable(void)   // components/ieee802154/esp_ieee802154
 `ieee802154_disable()` corta o clock do MAC e troca o estado **sem
 `stop_current_operation()`**. Com o receptor sempre ligado (`rx_when_idle`), o
 MAC está em `RX` e com o pedido de rádio feito ao árbitro, e é congelado
-assim. Os clocks compartilhados não são o problema: `modem_clock` conta
+assim. Os clocks shareds não são o problema: `modem_clock` conta
 referências, e o Wi-Fi e o BLE seguram as deles.
 
 O driver tem o caminho limpo: `esp_ieee802154_sleep()` faz
@@ -288,7 +288,7 @@ recusa síncrona: a sessão começa e termina com status 1 no
 
 | Serviço | Mensagem | Quem usa |
 |---|---|---|
-| `tab5_farejo` | `C6_MSG_FAREJO` (lotes) | Radar (alvos WiFi), console `farejo` |
+| `tab5_sniffer` | `C6_MSG_FAREJO` (lotes) | Radar (alvos WiFi), console `farejo` |
 | `tab5_csi` | `C6_MSG_CSI` | Radar (movimento), console `radio csi` |
 | console | `C6_MSG_FTM`, `C6_MSG_154` | testes `radio ftm` / `radio 154` |
 
@@ -316,7 +316,7 @@ ESP-NOW.
 
 ## Contrato P4 ↔ C6
 
-Mora em `compartilhado/tab5_c6.h`, incluído pelos dois projetos.
+Mora em `shared/tab5_c6.h`, incluído pelos dois projetos.
 
 - **Teto de 8 handlers** do `peer_data` no C6
   (`EH_CP_FEAT_PEER_DATA_MAX_HANDLERS`), e a tabela está cheia (msg_id 1..8).
@@ -346,7 +346,7 @@ o Tab5 **desligado** (o gravador alimenta o C6). O passo a passo, o backup e a
 volta ao firmware de fábrica estão no [README](README.md#firmware-do-esp32-c6-esp-now-e-bluetooth).
 
 ```bash
-c6/gravar.sh   # acha a porta sozinho; PORTA=/dev/xxx c6/gravar.sh escolhe outra
+c6/flash.sh   # acha a porta sozinho; PORTA=/dev/xxx c6/flash.sh escolhe outra
 ```
 
 O firmware tem duas redes de segurança: rollback do bootloader e uma carência

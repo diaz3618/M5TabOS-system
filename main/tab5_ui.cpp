@@ -1,6 +1,6 @@
 #include "tab5_ui.hpp"
-#include "fontes/fontes_suaves.hpp"
-#include "tab5_glifos.hpp"
+#include "fonts/soft_fonts.hpp"
+#include "tab5_glyphs.hpp"
 #include "esp_memory_utils.h"   // esp_ptr_external_ram
 #include <string.h>
 
@@ -18,7 +18,7 @@
 // so a interface desenha texto (o compositor e dela) - quem um dia desenhar
 // de outra tarefa precisa da sua propria copia.
 #define FONTES_MAX 24
-static FonteRapida         s_vlw[2][FONTES_MAX];   // VLW com cache de glifos (tab5_glifos)
+static FonteRapida         s_vlw[2][FONTES_MAX];   // VLW com cache de glifos (tab5_glyphs)
 static lgfx::PointerWrapper s_dados[2][FONTES_MAX];
 static int                 s_altura[2][FONTES_MAX];
 static int                 s_n[2] = { 0, 0 };

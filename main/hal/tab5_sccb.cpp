@@ -81,7 +81,7 @@ extern "C" esp_err_t __wrap_sccb_new_i2c_io(i2c_master_bus_handle_t bus, const s
 {
   if (!bus || !cfg || !io) { return ESP_ERR_INVALID_ARG; }
 
-  // So o barramento INTERNO e compartilhado com o M5GFX. Qualquer outro segue
+  // So o barramento INTERNO e shared com o M5GFX. Qualquer outro segue
   // o caminho normal do componente.
   i2c_master_bus_handle_t interno = nullptr;
   if (i2c_master_get_bus_handle((i2c_port_num_t)PORTA_INTERNA, &interno) != ESP_OK || bus != interno

@@ -2,7 +2,7 @@
 // de energia.
 //
 // -------------------------------------------------------------------------
-// ETAPA 1 do ARQUITETURA.md - o MOTOR
+// ETAPA 1 do ARCHITECTURE.md - o MOTOR
 // -------------------------------------------------------------------------
 // Ate aqui isto vivia dentro de kernel/sistema.cpp, junto da APARENCIA
 // (home, barra de status, roteamento de toque, calibracao) - 2457 linhas
@@ -26,31 +26,31 @@
 #include <string.h>
 #include "esp_heap_caps.h"
 #include "internal.hpp"
-#include "bloqueio_anim.hpp"
-#include "ritmo.hpp"
-#include "rolagem.hpp"
-#include "tela_virtual.hpp"
-#include "orientacao.hpp"
+#include "lockscreen_anim.hpp"
+#include "frame_pacing.hpp"
+#include "scroll.hpp"
+#include "virtual_screen.hpp"
+#include "orientation.hpp"
 #include "compositor.hpp"
-#include "trabalho.hpp"
-#include "pool_tarefas.h"
+#include "work.hpp"
+#include "task_pool.h"
 #include "tab5_monitor.hpp"
-#include "registro.h"
+#include "energy_log.h"
 #include "tab5_log.hpp"
 #include "tab5_camera.hpp"
 #include "tab5_mutex.hpp"
-#include "ajustes.h"
+#include "settings.h"
 #include "tab5_ble.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_espnow.hpp"
-#include "tab5_teclado.hpp"
-#include "tab5_tela.hpp"
+#include "tab5_keyboard.hpp"
+#include "tab5_screen.hpp"
 #include "tab5_grove.hpp"
-#include "tab5_sensores.hpp"
+#include "tab5_sensors.hpp"
 #include "tab5_imu.hpp"
-#include "tab5_hora.hpp"
-#include "tab5_barramento.hpp"
-#include "notificacao.h"
+#include "tab5_time.hpp"
+#include "tab5_bus.hpp"
+#include "notification.h"
 // O tab5_mesh continua aqui por UM motivo so: quem sobe o servico e o boot,
 // dentro da sondagem do Grove (ver vTaskSondagemGrove mais abaixo). Isso e
 // ciclo de vida, nao desenho - kernel/shell.cpp (a antiga "proposta de
@@ -329,7 +329,7 @@ static uint32_t s_ultimo_teclado  = 0;
 
 // ---- comportamento ---------------------------------------------------------
 // Tempo sem toque ate o repouso. Vem do AJUSTE do usuario, nao de constante:
-// e preferencia de quem segura o aparelho, igual ao brilho. Ver ajustes.h para
+// e preferencia de quem segura o aparelho, igual ao brilho. Ver settings.h para
 // o porque dos limites de 15 e 60 s.
 static inline uint32_t ocioso_ms(void) { return (uint32_t)ajustes_tela_s() * 1000u; }
 static const uint32_t PERIODO_UI  = 20;
@@ -371,9 +371,9 @@ const app_t* s_app = nullptr;      // NULL = tela inicial - extern em internal.h
 //
 // O app declara altura_conteudo e nao pensa mais nisso. Quem desloca o desenho,
 // recorta na area, converte as coordenadas do toque e distingue arraste de
-// clique e o codigo abaixo - agora delegado a kernel/rolagem.hpp, o mecanismo
+// clique e o codigo abaixo - agora delegado a kernel/scroll.hpp, o mecanismo
 // COMPARTILHADO com qualquer app que precisar de rolagem propria (o Mesh,
-// consolidado - ver o aviso grande em rolagem.hpp sobre POR QUE
+// consolidado - ver o aviso grande em scroll.hpp sobre POR QUE
 // isto deixou de ser so deste arquivo).
 rolagem_t s_rol;   // zero-init ja e VERTICAL/INICIO - extern em internal.hpp
 
@@ -648,7 +648,7 @@ static bool          s_sd_montou_ok = false;  // resultado da ultima montagem de
 // que de fato deleta o canal I2S (i2s_del_channel), soltando a trava. O
 // proximo tone()/playWav() reabre sozinho: begin() ja e preguicoso por
 // natureza (mesmo mecanismo do "primeiro uso liga o ES8388", ver o aviso em
-// ajustes.h/app_config.cpp), entao nao precisa de nenhum cuidado extra aqui.
+// settings.h/app_config.cpp), entao nao precisa de nenhum cuidado extra aqui.
 //
 // SEGURO chamar M5.Speaker.end()/isRunning()/isPlaying() AQUI: e a mesma
 // tarefa de interface que ja e a unica a chamar M5.Speaker.tone() (ver o
@@ -662,14 +662,14 @@ static const uint32_t SPEAKER_OCIOSO_MS = 4000;
 static uint32_t       s_speaker_ocioso_desde = 0;  // 0 = tocando ou desligado
 
 
-// QUEUE DE EVENTOS - ETAPA 2 do ARQUITETURA.md, primeira fatia.
+// QUEUE DE EVENTOS - ETAPA 2 do ARCHITECTURE.md, primeira fatia.
 //
 // Ate aqui o loop principal so sabia "vTaskDelay(periodo) e confira tudo nao
 // vezes". Isso significa acordar 12,5x/s (PERIODO_ZZZ=80ms) MESMO COM A TELA
 // APAGADA, so para perguntar "aconteceu algo?" - e quase sempre a resposta
 // era nao. Medido (comando "energia travas 40"): a trava de PM
 // "rtos0" do proprio esp_pm fica presa exatamente porque o core 0 nunca
-// fica ocioso por tempo suficiente para ela soltar - ver ARQUITETURA.md,
+// fica ocioso por tempo suficiente para ela soltar - ver ARCHITECTURE.md,
 // secao 2.2.1.
 //
 // A mudanca aqui e so em COMO o loop espera, nunca em O QUE ele decide: toda
@@ -787,7 +787,7 @@ static void IRAM_ATTR isr_teclado(void*)
 
 // Acorda a interface AGORA, sem esperar o proximo prazo periodico - chamado
 // por quem publicou algo que vale a pena perceber na hora (ver
-// notificacao.cpp e a ponte da camera mais abaixo). Seguro chamar de
+// notification.cpp e a ponte da camera mais abaixo). Seguro chamar de
 // QUALQUER tarefa: so poe um evento na queue (nunca bloqueia, 0 de espera) -
 // se a queue estiver cheia (o que exigiria 4 avisos sem a interface rodar
 // nem uma volta do loop, praticamente impossivel), o evento e descartado sem
@@ -822,7 +822,7 @@ void sistema_acordar_interface(void)
 // BEEP DE NOTIFICACAO NOVA + DESLIGAR O I2S OCIOSO,
 // estendido para tambem valer EM REPOUSO, e para respeitar
 // silenciar POR FONTE (a Trilha muda e o Mesh tocando, por exemplo). A pergunta "houve novidade que merece
-// som?" mora inteira em notif_houve_novidade_sonora() (notificacao.cpp) -
+// som?" mora inteira em notif_houve_novidade_sonora() (notification.cpp) -
 // este arquivo nao sabe, e nao precisa saber, quantas fontes existem, os
 // nomes delas, ou quais estao silenciadas. Isto comparava o
 // TOTAL agregado contra um cache aqui mesmo (s_notif_total_beep) - tinha que
@@ -844,7 +844,7 @@ void sistema_acordar_interface(void)
 //
 // SEGURO chamar M5.Speaker.tone()/isRunning()/isPlaying()/end() AQUI: esta e
 // a tarefa de interface, a unica que pode falar I2C (liga o ES8388 no
-// primeiro uso - ver o aviso grande em ajustes.h/app_config.cpp) tanto
+// primeiro uso - ver o aviso grande em settings.h/app_config.cpp) tanto
 // acordada quanto em repouso (o INA226 e o IMU ja fazem I2C em repouso, ver
 // vTaskInterface mais abaixo).
 // BIP COM O CODEC FRIO. Medido no aparelho: o primeiro bip depois de o
@@ -870,7 +870,7 @@ static uint32_t       s_som_quente_em = 0;   // quando o codec esta pronto
 // PHY e sempre do OTG (hal/esp32p4/.../gpio_ll.h: gpio_ll_func_sel e
 // gpio_ll_pullup_dis): ao configurar esses pinos ele DESLIGA o pad do OTG
 // (usb_pad_enable = 0) e o pull-up do D+. Durante o pendrive o OTG esta no
-// USB-C (PHY 0, trocado - ver tab5_pendrive.hpp), entao um bip no meio da
+// USB-C (PHY 0, trocado - ver tab5_flashdrive.hpp), entao um bip no meio da
 // sessao tirava o disco do computador: o Mac via o cabo sair (sem reset
 // nenhum) e o Tab5 seguia esperando o proximo comando. O fim da tarefa do
 // alto-falante (spk_task: pinMode no GPIO 26) faz o mesmo.
@@ -882,7 +882,7 @@ static volatile bool s_som_reservado = false;   // o pendrive pediu os pinos
 static volatile bool s_som_parado    = false;   // a interface ja desligou o alto-falante
 // Dado pela interface quando o alto-falante parou: quem pediu ESPERA NELE, e
 // acorda no instante da confirmacao (era um laco perguntando a cada 10 ms -
-// o mesmo padrao que o kernel/parada.hpp aposentou nos servicos).
+// o mesmo padrao que o kernel/service_stop.hpp aposentou nos servicos).
 static SemaphoreHandle_t s_som_parou = nullptr;   // criado em sistema_iniciar
 
 static void som_atender_reserva(void)
@@ -1079,7 +1079,7 @@ void sistema_impor_preferencias(tab5_perfil_t& p)
   // "necessario" = a stack ja subiu neste boot (tab5_wifi_pilha_de_pe, HAL)
   // OU o usuario quer WiFi ligado (ajustes_wifi, servico) - a conta mora
   // AQUI, porque so o kernel pode ler as duas sem inverter
-  // a dependencia (ver ESCREVENDO_APPS.md secao 8).
+  // a dependencia (ver WRITING_APPS.md secao 8).
   p.radio    = p.radio    || tab5_wifi_pilha_de_pe() || ajustes_wifi()
              || ajustes_bluetooth();   // o C6 e o radio do Bluetooth
   p.grove_5v = p.grove_5v || ajustes_grove();
@@ -1093,7 +1093,7 @@ void sistema_impor_preferencias(tab5_perfil_t& p)
   // momento, nunca corta a energia de um consumidor que segue vivo.
   p.camera   = p.camera   || tab5_camera_ativa();
 
-  // PARTES DE FUNDO (kernel/fundo.h): o que cada uma declarou precisar entra
+  // PARTES DE FUNDO (kernel/background.h): o que cada uma declarou precisar entra
   // aqui - pelo MESMO motivo da camera acima: quem esta na tela nao pode
   // desligar o WiFi de um envio que roda em fundo.
   fundo_somar_perfil(p);
@@ -1144,7 +1144,7 @@ static bool s_area_limpa = false;
 bool sistema_area_foi_limpa(void) { return s_area_limpa; }
 float sistema_quadro_dt(void) { return ritmo_dt(); }
 
-// NAO E rolagem_limite() do modulo generico (kernel/rolagem.hpp), de
+// NAO E rolagem_limite() do modulo generico (kernel/scroll.hpp), de
 // proposito - essa aqui consulta s_rolagem_travada e s_app->altura_conteudo,
 // que sao politica de app/nucleo, nao geometria de rolagem pura. Nome
 // diferente para nao convidar a confundir as duas.
@@ -1253,7 +1253,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   auto& d = tela_virtual();
   area_t a = area_util();
 
-  // TODO quadro passa pelo ritmo (kernel/ritmo): agenda o proximo periodico e
+  // TODO quadro passa pelo ritmo (kernel/frame_pacing): agenda o proximo periodico e
   // da o dt de quem anima. O dono e quem esta desenhando AGORA - trocou, o
   // relogio recomeca.
   static char DONO_BLOQUEIO, DONO_AVISOS, DONO_HOME;   // so os enderecos importam
@@ -1266,7 +1266,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   if (limpar_area) {
     // EM FAIXAS, nao num fillRect so. A area util e ~1,6MB de escrita na PSRAM
     // e o painel DSI le da mesma memoria sem parar; as duas rajadas juntas
-    // secam o FIFO dele e o frame sai AZUL. Ver tab5_tela.hpp - o driver do
+    // secam o FIFO dele e o frame sai AZUL. Ver tab5_screen.hpp - o driver do
     // IDF descreve o sintoma com essas palavras.
     //
     // Era o que acontecia ao SAIR de um app para a home: a home e quase toda
@@ -1413,7 +1413,7 @@ void fechar_app(void)
 
   // O TRABALHO DO APP TERMINA ANTES DO ao_fechar(): a queue e descartada e o
   // que estiver executando e esperado - so entao o app pode liberar os
-  // buffers em que o worker escreve (kernel/trabalho.hpp).
+  // buffers em que o worker escreve (kernel/work.hpp).
   // FECHAR E TELA PARADA: tudo daqui ate o fim roda na tarefa de interface.
   // Passou de 150 ms, o log diz quem segurou - o trabalho ou o ao_fechar().
   const int64_t t0 = esp_timer_get_time();
@@ -1593,7 +1593,7 @@ bool abrir_app(const app_t* app)
   // falharia so as vezes.
   // Orientacao ANTES do perfil e de qualquer desenho: girar muda largura e
   // altura, e tudo que for calculado a partir delas precisa ver o valor novo.
-  // Quais rotacoes existem e por que: kernel/orientacao.cpp.
+  // Quais rotacoes existem e por que: kernel/orientation.cpp.
   orientacao_ao_abrir(app);
 
   tab5_perfil_t perfil = app->perfil;
@@ -1769,7 +1769,7 @@ static void vTaskInterface(void *pvParameters)
   // e a dona do barramento. Sem teclado encaixado ele so avisa e segue.
   //
   // A VONTADE DO USUARIO E EMPURRADA, nunca lida por dentro do HAL - por isso
-  // o habilitar() vem ANTES do iniciar(). Ver o aviso em tab5_teclado.cpp.
+  // o habilitar() vem ANTES do iniciar(). Ver o aviso em tab5_keyboard.cpp.
   tab5_teclado_habilitar(ajustes_teclado());
   tab5_teclado_iniciar();
 
@@ -1787,7 +1787,7 @@ static void vTaskInterface(void *pvParameters)
   // escreve nas paginas do painel.
   tela_virtual_iniciar();
 
-  // O WORKER DO SISTEMA (kernel/trabalho.hpp): o que for lento sai
+  // O WORKER DO SISTEMA (kernel/work.hpp): o que for lento sai
   // desta tarefa.
   trabalho_iniciar();
 
@@ -1847,7 +1847,7 @@ static void vTaskInterface(void *pvParameters)
     // trata o seu caso la embaixo, antes de acender a luz.)
     if (!tab5_power_em_repouso() && comp_painel_novo()) { s_sujo_layout = true; }
 
-    // As partes de fundo (kernel/fundo.h): quem terminou sozinho e limpo, a
+    // As partes de fundo (kernel/background.h): quem terminou sozinho e limpo, a
     // parada pedida pelo console acontece, e o perfil efetivo e reaplicado
     // quando o conjunto mudou. Acordado ou em repouso - o fundo nao dorme.
     ETAPA("partes de fundo");
@@ -2020,7 +2020,7 @@ static void vTaskInterface(void *pvParameters)
       // que as cadencias sao diferentes de proposito) podem consultar sem
       // tocar no barramento I2C interno.
       // EM REPOUSO, NAO: ninguem le este cache com a tela apagada (quem
-      // segue o IMU - kernel/orientacao - mede sozinho a cada 200 ms, e so com
+      // segue o IMU - kernel/orientation - mede sozinho a cada 200 ms, e so com
       // app aberto). Era uma transacao I2C por segundo, todo segundo, para
       // nada; acordado, ela continua servindo o console.
       if (!tab5_power_em_repouso()) { tab5_imu_medir(); }
@@ -2035,7 +2035,7 @@ static void vTaskInterface(void *pvParameters)
     // Teclado fisico: a cada TECLADO_MS. Quando nao ha tecla e UMA transacao
     // I2C (so o contador de eventos), barato o bastante para o laco acordado.
     //
-    // A TRADUCAO E DO DRIVER (hal/tab5_teclado): ele conhece o teclado - o
+    // A TRADUCAO E DO DRIVER (hal/tab5_keyboard): ele conhece o teclado - o
     // modo HID, a tabela das 70 teclas, as teclas mortas dos acentos - e
     // entrega o evento pronto. Aqui so se entrega ao app. Ate 4 teclas por
     // volta: digitando rapido, mais de uma cabe no intervalo, e uma por volta
@@ -2255,7 +2255,7 @@ static void vTaskInterface(void *pvParameters)
 
       // ARRASTE: acumula enquanto o dedo esta na area util. Toda a
       // matematica de arraste/afastamento/sinal mora agora em
-      // kernel/rolagem.hpp - ver o aviso grande la sobre por que isto
+      // kernel/scroll.hpp - ver o aviso grande la sobre por que isto
       // deixou de ser so deste arquivo.
       {
         const area_t ar = area_util();
@@ -2421,7 +2421,7 @@ static void vTaskInterface(void *pvParameters)
           }
         }
       } else {
-        // O RELOGIO DO APP e o ritmo de quadro (kernel/ritmo): o periodo
+        // O RELOGIO DO APP e o ritmo de quadro (kernel/frame_pacing): o periodo
         // pedido, em varreduras inteiras do painel.
         const uint32_t per = periodo_do_app();
         if (per && ritmo_falta_ms() == 0) { s_sujo_dados = true; }
@@ -2450,7 +2450,7 @@ static void vTaskInterface(void *pvParameters)
           }
         }
 
-        // GIRO DA TELA (kernel/orientacao), so para app que segue o IMU. Gira
+        // GIRO DA TELA (kernel/orientation), so para app que segue o IMU. Gira
         // ENTRE quadros, aqui, antes do desenho: a passada completa que vem
         // logo abaixo ja sai na orientacao nova. Nunca com dedo na tela (nem
         // logo depois dele): um arraste viraria toque em outro lugar, e a

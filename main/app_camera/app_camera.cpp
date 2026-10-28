@@ -2,7 +2,7 @@
 //
 // PRIMEIRA VERSAO, escopo deliberadamente pequeno - ver o aviso grande em
 // hal/tab5_camera.hpp para o que ja foi verificado (sensor, pinos, barramento
-// I2C compartilhado com M5.In_I2C, o exemplo oficial que este codigo segue).
+// I2C shared com M5.In_I2C, o exemplo oficial que este codigo segue).
 //
 // A foto sai com o quadro inteiro do sensor (1200x1600); o preview usa a
 // mesma imagem em escala uniforme, sem esticar (ver hal/tab5_camera.cpp).
@@ -18,7 +18,7 @@
 #include "tab5_sd.hpp"
 #include "tab5_ui.hpp"
 #include "tab5_bmp.hpp"
-#include "trabalho.hpp"
+#include "work.hpp"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -324,7 +324,7 @@ extern const app_t APP_CAMERA = {
   // ao_tocar()): ao contrario da camera, o alto-falante NAO tem como se
   // auto-declarar depois do boot (a reserva dos pinos I2S do ES8388 e
   // decisao de FASE 1, antes do M5.begin() - ver o aviso grande em
-  // ajustes.h). Este app usa som de verdade agora, entao declara - mesmo
+  // settings.h). Este app usa som de verdade agora, entao declara - mesmo
   // que o app Ajustes ja declare o mesmo hoje, e uma uniao (OR), nao concorrencia.
   .perfil = { .alto_falante = true },
   .usa_sd = true,

@@ -1,5 +1,5 @@
 #include "tab5_grove.hpp"
-#include "tab5_marcos.hpp"
+#include "tab5_marks.hpp"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -88,7 +88,7 @@ static bool abrir(int baud)
   // Cala o driver da UART durante a sonda.
   //
   // O M5.Ex_I2C e inicializado no boot nos pinos do Grove (54/53) e RESERVA os
-  // GPIOs. Quando o tab5_teclado reaponta esse barramento para o ExtPort1, o
+  // GPIOs. Quando o tab5_keyboard reaponta esse barramento para o ExtPort1, o
   // release() do M5GFX solta o barramento mas nao devolve a reserva - ela fica
   // pendurada. O uart_set_pin entao avisa "GPIO 53 is not usable" e configura o
   // pino assim mesmo (a sonda funciona: medimos 209 bytes de NMEA com o aviso
@@ -302,7 +302,7 @@ grove_tipo_t tab5_grove_detectar(void)
   // costumavam coincidir, mas nao sao a mesma pergunta (o trilho pode estar
   // ligado agora por outro motivo mesmo com a preferencia desligada). Corrigido
   // junto com a auditoria de camadas - HAL pergunta a HAL, nunca
-  // a um servico (ver ESCREVENDO_APPS.md secao 8).
+  // a um servico (ver WRITING_APPS.md secao 8).
   if (tab5_power_grove_ligado()) {
     ESP_LOGI(TAG, "trilho ja estava ligado - sondando sem esperar boot");
   } else {

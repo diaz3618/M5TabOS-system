@@ -5,7 +5,7 @@
 // permite notificar mensagem nova sem o app aberto - se o enlace morresse junto
 // com a janela, so haveria mensagem enquanto voce estivesse olhando.
 //
-// Mesmo desenho de tab5_wifi e tab5_teclado: aqui mora o estado, o app le.
+// Mesmo desenho de tab5_wifi e tab5_keyboard: aqui mora o estado, o app le.
 //
 // -------------------------------------------------------------------------
 // O PROTOCOLO, EM DUAS LINHAS
@@ -58,7 +58,7 @@
 // campos que versoes novas acrescentarem.
 #define MESH_PAYLOAD_MAX 200
 
-// Hora valida: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_hora.hpp).
+// Hora valida: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_time.hpp).
 
 // AS DUAS REDES. NO e a de sempre (o no, o modo internet, o proxy); INTERNET e
 // o LongFast pelo servidor publico (services/tab5_mesh_mqtt.hpp), ligado em
@@ -271,7 +271,7 @@ const char* tab5_mesh_firmware(void);
 // AVISO SONORO, par analogo de trilha_definir_beep() (app_trilha/trilha_fundo)
 // (ver o aviso la). Liga/desliga e GRAVA a preferencia
 // (ajustes_definir_beep_mesh()) e, se a fonte "Meshtastic" ja existir em
-// notificacao.h, atualiza a bandeira dela tambem - so ela, a Trilha e
+// notification.h, atualiza a bandeira dela tambem - so ela, a Trilha e
 // qualquer outra fonte continuam tocando normalmente.
 void tab5_mesh_definir_beep(bool tocar);
 bool tab5_mesh_beep_ligado(void);
@@ -286,7 +286,7 @@ bool tab5_mesh_beep_ligado(void);
 uint32_t tab5_mesh_epoch(void);
 
 // Hora do relogio do no lida em trafego AO VIVO (ver o .cpp); 0 sem nenhuma
-// na ultima hora. E a que tab5_hora usa para acertar o relogio - a de cima,
+// na ultima hora. E a que tab5_time usa para acertar o relogio - a de cima,
 // ancorada no last_heard, pode estar horas atrasada.
 uint32_t tab5_mesh_hora_viva(void);
 
@@ -505,7 +505,7 @@ typedef struct {
 void tab5_mesh_saude(mesh_saude_t* saida);
 
 // Nome legivel do HardwareModel (campo 'hw' do no). Tabela COMPLETA, gerada
-// do enum oficial do Meshtastic por gerar_hw.py (ver tab5_mesh_hw_dados.cpp).
+// do enum oficial do Meshtastic por generate_hw.py (ver tab5_mesh_hw_dados.cpp).
 // Devolve nullptr para o que a lista oficial ainda nao tem (ela cresce a cada
 // versao do firmware) - quem chama decide como mostrar o numero cru; inventar
 // um nome aqui seria pior que admitir a ignorancia.

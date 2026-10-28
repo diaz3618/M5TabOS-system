@@ -19,10 +19,10 @@
 #     a ela na PSRAM (ver a piscada azul);
 #   - portMUX / StaticSemaphore_t / StaticTask_t / pilha de tarefa: travas e
 #     pilhas ficam na interna.
-# Conferido arquivo por arquivo. FICAM DE FORA, de proposito: pool_tarefas
-# (pilhas), tab5_marcos (DRAM_ATTR, lido com o cache desligado), tab5_tela e
-# tab5_quadro (ISR do DSI), tab5_camera (ISR), core (ISR do toque), tab5_power,
-# tab5_sd, tab5_log, tab5_donos e fundo (portMUX), e o app_cobra, que nao e
+# Conferido arquivo por arquivo. FICAM DE FORA, de proposito: task_pool
+# (pilhas), tab5_marks (DRAM_ATTR, lido com o cache desligado), tab5_screen e
+# tab5_frame (ISR do DSI), tab5_camera (ISR), core (ISR do toque), tab5_power,
+# tab5_sd, tab5_log, tab5_owners e background (portMUX), e o app_cobra, que nao e
 # mexido daqui.
 #
 # PARA CONFERIR depois de compilar: o arquivo sai da lista de DIRAM do
@@ -44,16 +44,16 @@ archive: libmain.a
 entries:
   if SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
     # apps (so a tarefa de interface e a vaga do proprio app tocam nisto)
-    app_arquivos (m5tabos_extram_bss)
+    app_files (m5tabos_extram_bss)
     app_azimutal (m5tabos_extram_bss)
     app_config (m5tabos_extram_bss)
-    app_energia (m5tabos_extram_bss)
+    app_energy (m5tabos_extram_bss)
     app_espnow (m5tabos_extram_bss)
-    app_exemplo (m5tabos_extram_bss)
+    app_example (m5tabos_extram_bss)
     app_imu (m5tabos_extram_bss)
     app_mesh (m5tabos_extram_bss)
     app_radar (m5tabos_extram_bss)
-    app_tarefas (m5tabos_extram_bss)
+    app_tasks (m5tabos_extram_bss)
     app_trilha (m5tabos_extram_bss)
     trilha_fundo (m5tabos_extram_bss)
     # servicos (tarefas proprias, nenhuma ISR)
@@ -70,13 +70,13 @@ entries:
     # IPA da camera (tarefa do ISP e console). O portMUX dele tem valor
     # inicial diferente de zero: vai para .data, que fica na interna.
     tab5_camera_ipa (m5tabos_extram_bss)
-    registro (m5tabos_extram_bss)
-    notificacao (m5tabos_extram_bss)
+    energy_log (m5tabos_extram_bss)
+    notification (m5tabos_extram_bss)
     # interface (tabelas de fonte e medidas de texto)
     tab5_ui (m5tabos_extram_bss)
-    conversa (m5tabos_extram_bss)
+    conversation (m5tabos_extram_bss)
     # animacoes do bloqueio (so a tarefa de interface desenha; sem ISR nem DMA)
-    bloqueio_anim (m5tabos_extram_bss)
+    lockscreen_anim (m5tabos_extram_bss)
     # console (tarefa propria, nenhuma ISR). Ele grava na NVS, mas isso so
     # proibe PILHA na PSRAM, nao .bss: a escrita na flash copia o que vem da
     # PSRAM por um buffer interno.

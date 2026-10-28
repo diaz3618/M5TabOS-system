@@ -2,7 +2,7 @@
 //
 // Uma barra fina de informacoes em cima (estado, canal, MAC, quem ja foi
 // ouvido) e a conversa embaixo - baloes, toque para escrever, teclado. A
-// conversa e o componente do sistema (kernel/conversa): este arquivo so diz
+// conversa e o componente do sistema (kernel/conversation): este arquivo so diz
 // QUAIS mensagens existem e COMO enviar. O radio, o historico no cartao e o
 // aviso com o app fechado sao do servico.
 //
@@ -10,12 +10,12 @@
 // firmware oficial de ESP-NOW, por exemplo). Em difusao nao existe ACK - o
 // visto verde diz "saiu pela antena", nao "alguem recebeu".
 #include "app.h"
-#include "conversa.hpp"
-#include "pintura.hpp"
+#include "conversation.hpp"
+#include "paint.hpp"
 #include "tab5_espnow.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_ui.hpp"
-#include "tab5_tela.hpp"
+#include "tab5_screen.hpp"
 #include <cstdio>
 #include <cstring>
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR

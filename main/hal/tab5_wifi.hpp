@@ -117,7 +117,7 @@ bool tab5_wifi_radio_ativo(void);
 // precisar mais. O radio so economiza sem pedido nenhum. Nao bloqueia.
 #define TAB5_ACORDADO_ESPNOW  (1u << 0)
 // Um bit POR QUEM PEDE: o servico ESP-NOW reafirma o dele de tempos em tempos,
-// e com um bit compartilhado ele desfazia o pedido do farejo.
+// e com um bit shared ele desfazia o pedido do farejo.
 #define TAB5_ACORDADO_FAREJO  (1u << 1)
 #define TAB5_ACORDADO_TESTE   (1u << 2)   // comando radio do console
 #define TAB5_ACORDADO_CSI     (1u << 3)   // servico CSI (tab5_csi)
@@ -130,8 +130,8 @@ void tab5_wifi_manter_acordado(uint32_t quem, bool sim);
 bool tab5_wifi_c6_enlace(void);
 
 // REMOVIDA (auditoria de camadas): fazia "s_pilha_de_pe ||
-// ajustes_wifi()" aqui dentro - HAL perguntando a um servico (ajustes.h),
-// sentido errado da dependencia (ver ESCREVENDO_APPS.md secao 8). O unico
+// ajustes_wifi()" aqui dentro - HAL perguntando a um servico (settings.h),
+// sentido errado da dependencia (ver WRITING_APPS.md secao 8). O unico
 // chamador era sistema_impor_preferencias() no kernel, que ja tem
 // ajustes_wifi() disponivel legitimamente - a conta virou
 // "tab5_wifi_pilha_de_pe() || ajustes_wifi()" direto la, sem perder nada.

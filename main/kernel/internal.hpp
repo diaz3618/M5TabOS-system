@@ -1,7 +1,7 @@
 // PONTE PRIVADA entre core.cpp e shell.cpp - NUNCA incluido por um app.
 //
 // -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE (Etapa 1 do ARQUITETURA.md)
+// POR QUE ISTO EXISTE (Etapa 1 do ARCHITECTURE.md)
 // -------------------------------------------------------------------------
 // sistema.cpp tinha crescido de 1129 para 2457 linhas fazendo oito coisas
 // diferentes, compartilhando estaticas sem fronteira nenhuma - "o arquivo
@@ -32,7 +32,7 @@
 #pragma once
 
 #include "app.h"
-#include "rolagem.hpp"
+#include "scroll.hpp"
 
 // ---------------------------------------------------------------------------
 // GEOMETRIA COMPARTILHADA - usada por core.cpp (area_util(), calculos de
@@ -62,7 +62,7 @@ static const int TOQUE_DY = 10;
 extern const app_t* s_app;             // NULL = tela inicial
 extern const app_t* s_app_carregando;  // app com montagem de SD pendente
 extern const app_t* s_app_recusado;    // app que o sistema nao abriu (tela de motivo no lugar)
-extern rolagem_t    s_rol;             // rolagem do app aberto - mecanismo em kernel/rolagem.hpp
+extern rolagem_t    s_rol;             // rolagem do app aberto - mecanismo em kernel/scroll.hpp
 extern bool         s_sujo_layout;     // a TELA mudou - pede repintura completa
 extern bool         s_sujo_dados;      // so um VALOR mudou - pede repintura incremental
 extern bool         s_nav_travada;     // navegacao travada (teclado/captura na tela)

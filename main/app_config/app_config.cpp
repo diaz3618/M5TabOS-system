@@ -5,7 +5,7 @@
 //   - no TOPO, o que se mexe sem pensar: BRILHO e VOLUME, direto na barra;
 //   - uma linha, e embaixo a LISTA das paginas - icone, nome, e uma linha de
 //     estado ("Conectado a ...", "Desligado") para saber sem entrar;
-//   - cada pagina tem VOLTAR e as opcoes dela. A lista rola (kernel/lista):
+//   - cada pagina tem VOLTAR e as opcoes dela. A lista rola (kernel/list):
 //     opcao nova e UMA linha na tabela PAGINAS, nao um remendo de posicao.
 //
 // A versao anterior empilhava todas as secoes numa coluna de 1800 px que o
@@ -14,31 +14,31 @@
 //
 // O que mora aqui e do USUARIO, nao do aplicativo: cada app continua
 // declarando o hardware que precisa no perfil dele; este app controla o que
-// atravessa todos (ajustes.h).
+// atravessa todos (settings.h).
 
 #include <math.h>
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 #include "app.h"
 #include <cmath>
-#include "ajustes.h"
+#include "settings.h"
 #include "tab5_wifi.hpp"
 #include "tab5_ble.hpp"
-#include "tab5_sinal.hpp"
+#include "tab5_signal.hpp"
 #include "tab5_espnow.hpp"
 #include "tab5_mesh.hpp"
 #include "tab5_mesh_ble.hpp"
 #include "tab5_lora.hpp"
-#include "tab5_teclado.hpp"
+#include "tab5_keyboard.hpp"
 #include "tab5_grove.hpp"
-#include "tab5_tela.hpp"
+#include "tab5_screen.hpp"
 #include "tab5_ui.hpp"
-#include "pintura.hpp"
-#include "lista.hpp"
-#include "conversa.hpp"          // conversa_quebrar_linhas (texto corrido)
-#include "teclado_virtual.hpp"   // o PIN do Meshtastic
-#include "trabalho.hpp"
+#include "paint.hpp"
+#include "list.hpp"
+#include "conversation.hpp"          // conversa_quebrar_linhas (texto corrido)
+#include "virtual_keyboard.hpp"   // o PIN do Meshtastic
+#include "work.hpp"
 
-#include "tab5_pendrive.hpp"
+#include "tab5_flashdrive.hpp"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -1167,7 +1167,7 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   const int l3 = (a.largura - 2 * MARGEM - 32) / 3;
 
   // TRES VIAS. O Grove ganha sozinho quando o C6L e achado no cabo; depois
-  // disso a escolha aqui vale ate o proximo achado (ver ajustes.h).
+  // disso a escolha aqui vale ate o proximo achado (ver settings.h).
   texto(d, a.x + MARGEM, a.y + CONTEUDO_Y, 22, false, cor_sub(d), "Falar com a malha por (o Grove tem prioridade)");
   int y = mesh_y_via();
   static const char* const ROTULO[3] = { "CABO GROVE", "BLUETOOTH", "INTERNET" };
@@ -1652,7 +1652,7 @@ static void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 // ---- USB (pendrive) --------------------------------------------------------
 // A tela do pendrive inteira: estado, transferencia, o diario das gravacoes
 // guardadas, o resultado da ultima volta e o ajuste de ligar sozinho. O
-// trabalho mora no servico (services/tab5_pendrive) - esta pagina so pede e
+// trabalho mora no servico (services/tab5_flashdrive) - esta pagina so pede e
 // mostra, e a pessoa pode sair dela a vontade: o pendrive segue em segundo
 // plano. A CONFIRMACAO de devolver sem o computador ter ejetado e daqui.
 typedef struct { int x, y, l, a; } usb_ret_t;
@@ -1761,7 +1761,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
       case PENDRIVE_RECUSA_USB:        snprintf(fim, sizeof(fim), "O USB não iniciou. O cartão continua no Tab5."); break;
       default:
         if (e.sem_ejetar) {
-          // Ver tab5_pendrive.cpp (s_saiu_sem_ejetar): o disco nao aparecer
+          // Ver tab5_flashdrive.cpp (s_saiu_sem_ejetar): o disco nao aparecer
           // logo da proxima vez e o computador verificando o cartao.
           snprintf(fim, sizeof(fim), "Saiu sem ejetar: o computador verifica o cartão antes de abrir.");
         } else if (r.completo) {

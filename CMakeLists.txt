@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16.0)
 
 # A VERSAO DO SISTEMA mora em version.txt (uma linha, SemVer) e so muda pelo
-# ferramentas/lancar.sh - as regras estao em VERSIONAMENTO.md.
+# tools/release.sh - as regras estao em VERSIONING.md.
 #
 # O numero que vai para o binario (esp_app_get_description()->version, o que
 # aparece em Ajustes, no console e no log de boot) diz tambem DE ONDE o build

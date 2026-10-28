@@ -1,4 +1,4 @@
-// GERADO por gerar_emoji.py a partir da lista oficial de emoji do
+// GERADO por generate_emoji.py a partir da lista oficial de emoji do
 // Unicode (emoji-test.txt) e da arte do Twemoji (CC-BY 4.0,
 // twemoji.twitter.com). Nao editar a mao - rode o script de novo.
 //

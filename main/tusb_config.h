@@ -1,5 +1,5 @@
 // Configuracao do TinyUSB (componente espressif/tinyusb) para o modo pendrive
-// - services/tab5_pendrive.cpp. O main/CMakeLists.txt passa esta pasta para
+// - services/tab5_flashdrive.cpp. O main/CMakeLists.txt passa esta pasta para
 // a biblioteca do TinyUSB, que procura "tusb_config.h" pelo nome.
 //
 // SO DISPOSITIVO, SO MSC, SO A PORTA FULL SPEED. O USB-C do Tab5 esta ligado

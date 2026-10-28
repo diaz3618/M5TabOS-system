@@ -63,7 +63,7 @@
 // TAB5_EMOJI_TABELA e ORDENADA por codigo, e tab5_emoji.cpp busca nela por
 // BUSCA BINARIA - com mais de mil entradas, varredura linear seria
 // desperdicio (ate 1357 comparacoes por emoji desconhecido, contra no maximo
-// 11 na busca binaria). O gerador (gerar_emoji.py) ja escreve a tabela
+// 11 na busca binaria). O gerador (generate_emoji.py) ja escreve a tabela
 // ordenada; se um dia alguem editar isto a mao, a ordem PRECISA ser mantida.
 #pragma once
 

@@ -2,7 +2,7 @@
 // de toque para o app certo, e a calibracao do toque.
 //
 // -------------------------------------------------------------------------
-// ETAPA 1 do ARQUITETURA.md - metade do SHELL (aparencia)
+// ETAPA 1 do ARCHITECTURE.md - metade do SHELL (aparencia)
 // -------------------------------------------------------------------------
 // Ate aqui isto vivia dentro de kernel/sistema.cpp, junto do MOTOR (agenda
 // de desenho, ciclo de vida dos apps, politica de energia) - 2457 linhas
@@ -21,22 +21,22 @@
 
 #include "app.h"
 #include "internal.hpp"
-#include "bloqueio_anim.hpp"
-#include "tela_virtual.hpp"
-#include "ajustes.h"
+#include "lockscreen_anim.hpp"
+#include "virtual_screen.hpp"
+#include "settings.h"
 #include "tab5_ble.hpp"
 #include "tab5_mesh_ble.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_espnow.hpp"
-#include "tab5_tela.hpp"
+#include "tab5_screen.hpp"
 #include "tab5_grove.hpp"
-#include "tab5_sensores.hpp"
-#include "notificacao.h"
+#include "tab5_sensors.hpp"
+#include "notification.h"
 #include "tab5_mesh.hpp"
 #include "tab5_gps.hpp"
 #include "tab5_sd.hpp"
 #include "tab5_ui.hpp"
-#include "tab5_hora.hpp"
+#include "tab5_time.hpp"
 #include <time.h>
 #include <string.h>
 #include <strings.h>   // strcasecmp

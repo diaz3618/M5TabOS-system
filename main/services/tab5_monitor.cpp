@@ -1,10 +1,10 @@
 #include "tab5_monitor.hpp"
-#include "tab5_donos.hpp"
-#include "tab5_marcos.hpp"
+#include "tab5_owners.hpp"
+#include "tab5_marks.hpp"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
 
 #include <string.h>
-#include "pool_tarefas.h"
+#include "task_pool.h"
 #include "esp_heap_caps.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,8 +15,8 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "tab5_sd.hpp"
-#include "tab5_hora.hpp"
-#include "tab5_quadro.hpp"
+#include "tab5_time.hpp"
+#include "tab5_frame.hpp"
 #include "compositor.hpp"   // contador de underrun do painel
 #include "app.h"            // sistema_app_atual
 
@@ -437,7 +437,7 @@ static void amostrar(bool primeira)
   s_ram_anterior = nova.ram.livre;
 
   // O FRAME AZUL VIRA EVENTO. O vigia de underrun
-  // (hal/tab5_quadro) conta cada vez que o painel ficou sem dados; aqui cada
+  // (hal/tab5_frame) conta cada vez que o painel ficou sem dados; aqui cada
   // aumento vira evento com o APP QUE ESTAVA ABERTO - a piscada azul deixa de
   // ser relato e passa a ter hora e lugar.
   const uint32_t und = tab5_quadro_underruns();
@@ -470,7 +470,7 @@ static void amostrar(bool primeira)
     }
   }
 
-  // Os detectores que nao dependem do log do driver (ver hal/tab5_quadro):
+  // Os detectores que nao dependem do log do driver (ver hal/tab5_frame):
   // frame que atrasou (DMA religado tarde) e erro no DSI host.
   {
     uint32_t pior_us = 0, periodo_us = 0;
@@ -495,7 +495,7 @@ static void amostrar(bool primeira)
       evento("  em %ld.%03lds: sd +%ldms -%ldms, quadro %ldms antes (%luKpx)",
              (long)(t / 1000000), (long)(t / 1000 % 1000), ms(mont), ms(desm), ms(qd),
              (unsigned long)(px / 1000));
-      // OS MARCOS DOS 300 ms ANTERIORES (hal/tab5_marcos): trocas de clock da
+      // OS MARCOS DOS 300 ms ANTERIORES (hal/tab5_marks): trocas de clock da
       // CPU (e com elas o reajuste do barramento da PSRAM), repouso, sondagem
       // do Grove... Direto no log, e nao em evento(), porque a linha e longa.
       tab5_marco_t m[12];
@@ -720,7 +720,7 @@ void tab5_monitor_iniciar(void)
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskMonitor, "monitor", 6144, nullptr, 1, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "Monitor");   // ver hal/tab5_donos.hpp
+    tab5_dono_registrar(h, DONO_SERVICO, "Monitor");   // ver hal/tab5_owners.hpp
   }
 }
 

@@ -1,13 +1,13 @@
 #include "tab5_espnow.hpp"
-#include "tab5_farejo.hpp"   // repassa o PRONTO (versao e capacidades do C6)
-#include "tab5_donos.hpp"
+#include "tab5_sniffer.hpp"   // repassa o PRONTO (versao e capacidades do C6)
+#include "tab5_owners.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_sd.hpp"
 #include "tab5_power.hpp"   // tab5_power_em_repouso
-#include "notificacao.h"
-#include "ajustes.h"
+#include "notification.h"
+#include "settings.h"
 #include "app.h"
-#include "tab5_hora.hpp"
+#include "tab5_time.hpp"
 
 #include "eh_host_feat_peer_data.h"
 #include "esp_wifi.h"
@@ -509,7 +509,7 @@ static void vTaskEspnow(void*)
 }
 
 // ---------------------------------------------------------------------------
-// O RELOGIO SALTOU (ver tab5_hora.hpp): as mensagens desta sessao foram
+// O RELOGIO SALTOU (ver tab5_time.hpp): as mensagens desta sessao foram
 // carimbadas pela hora velha e andam junto. So a RAM - a linha que ja foi para
 // o cartao fica com a hora de quando foi gravada.
 static void ao_saltar_relogio(int32_t delta)
@@ -567,7 +567,7 @@ void tab5_espnow_iniciar(void)
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskEspnow, "espnow", 6144, nullptr, 3, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "ESP-NOW");   // ver hal/tab5_donos.hpp
+    tab5_dono_registrar(h, DONO_SERVICO, "ESP-NOW");   // ver hal/tab5_owners.hpp
   }
   ESP_LOGI(TAG, "servico no ar (espera o firmware nosso no C6)");
 }

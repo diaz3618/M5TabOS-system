@@ -1,5 +1,5 @@
 #include "tab5_wifi.hpp"
-#include "tab5_donos.hpp"
+#include "tab5_owners.hpp"
 
 #include <string.h>
 #include <stdio.h>
@@ -344,7 +344,7 @@ static bool ler_credenciais(void)
   //
   // Nao e otimizacao, e correcao. O controlador SDMMC do P4 e UM SO e
   // multiplexa entre os dois slots: o cartao no 0, o ESP32-C6 do WiFi no 1.
-  // Montar ou desmontar o cartao mexe em estado compartilhado - com o link do
+  // Montar ou desmontar o cartao mexe em estado shared - com o link do
   // C6 de pe, isso ja derrubou o WiFi e reiniciou a placa. Por isso o cartao
   // e lido UMA vez por boot, antes de existir qualquer link com o C6; quem
   // grava rede nova (Ajustes, console) atualiza a RAM junto.
@@ -1164,7 +1164,7 @@ void tab5_wifi_iniciar(void)
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskWifi, "wifi", 6144, nullptr, 3, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "WiFi");   // ver hal/tab5_donos.hpp
+    tab5_dono_registrar(h, DONO_SERVICO, "WiFi");   // ver hal/tab5_owners.hpp
   }
 
   // Anuncia-se no boot. Sem esta linha o servico sobe invisivel, e um log de

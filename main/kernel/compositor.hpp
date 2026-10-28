@@ -2,7 +2,7 @@
 //
 // MODO DIRETO (o "direct mode" da LVGL com duas paginas). Todo desenho cai
 // DIRETO na pagina de tras do painel - nao existe mais uma terceira imagem
-// no meio. O objeto de desenho (kernel/tela_virtual) anota cada retangulo
+// no meio. O objeto de desenho (kernel/virtual_screen) anota cada retangulo
 // tocado (comp_invalidar), e o quadro tem tres tempos:
 //
 //   1. ABRIR (preguicoso, no primeiro desenho da volta - comp_abrir):
@@ -25,7 +25,7 @@
 #pragma once
 
 #include <M5Unified.h>
-#include "tab5_quadro.hpp"
+#include "tab5_frame.hpp"
 
 // Marca um retangulo como desenhado neste quadro.
 void comp_invalidar(const tab5_ret_t& r);
@@ -113,7 +113,7 @@ typedef struct {
   uint32_t n_desenho_completo;
   uint64_t us_volta;              // voltas inteiras que geraram quadro
   uint32_t voltas[COMP_FAIXAS];   // histograma do custo dessas voltas, em periodos
-  uint64_t px_rolados;            // rolagem total (hal/tab5_tela: DMA ou CPU)
+  uint64_t px_rolados;            // rolagem total (hal/tab5_screen: DMA ou CPU)
   uint64_t us_rolar;
 } comp_estat_t;
 

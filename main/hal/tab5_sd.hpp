@@ -69,7 +69,7 @@ FILE* tab5_sd_abrir(const char* app, const char* arquivo, const char* modo);
 //
 // Por que so por elas: o cartao pode estar EMPRESTADO ao computador (modo
 // pendrive, ver mais abaixo). Ai o que for gravado por uma porta vai para o
-// diario na flash interna (hal/tab5_reserva) e chega ao cartao na volta, na
+// diario na flash interna (hal/tab5_journal) e chega ao cartao na volta, na
 // ordem em que aconteceu. Quem grava com fopen() direto perde o dado nessa
 // hora - e, se escrevesse no cartao com o computador usando, o corromperia.
 //
@@ -146,7 +146,7 @@ const char* tab5_sd_descricao(void);
 const char* tab5_sd_nome(void);
 
 // ---------------------------------------------------------------------------
-// EMPRESTIMO AO COMPUTADOR - o modo pendrive (services/tab5_pendrive)
+// EMPRESTIMO AO COMPUTADOR - o modo pendrive (services/tab5_flashdrive)
 // ---------------------------------------------------------------------------
 // O cartao nao pode ter DOIS donos do sistema de arquivos. O FAT do Tab5
 // guarda tabela e diretorio em cache; o do computador tambem. Se os dois

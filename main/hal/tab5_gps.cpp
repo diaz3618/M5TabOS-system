@@ -1,8 +1,8 @@
 #include "tab5_gps.hpp"
 #include "tab5_mutex.hpp"
-#include "tab5_donos.hpp"
-#include "pool_tarefas.h"
-#include "parada.hpp"      // parada cooperativa da tarefa (kernel)
+#include "tab5_owners.hpp"
+#include "task_pool.h"
+#include "service_stop.hpp"      // parada cooperativa da tarefa (kernel)
 #include "tab5_grove.hpp"
 
 #include "freertos/FreeRTOS.h"
@@ -10,7 +10,7 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 #include <string.h>
 
 static const char* TAG = "gps";
@@ -43,7 +43,7 @@ static QueueHandle_t s_assinante = nullptr;   // quem quiser sentenca crua (Azim
 // nota (a posicao fica errada por um frame so); a intencao declarada e
 // varios apps lendo ao mesmo tempo, e ai a chance de pegar um valor
 // "rasgado" (latitude nova com longitude velha) sobe. Lazy-create e nunca
-// destruida, MESMO MOLDE de services/notificacao.cpp - o primeiro uso e
+// destruida, MESMO MOLDE de services/notification.cpp - o primeiro uso e
 // sempre antes de qualquer disputa de verdade (o boot chama tab5_gps_iniciar
 // antes de qualquer app poder ler), entao criar aqui e seguro.
 static SemaphoreHandle_t s_trava = nullptr;
@@ -205,7 +205,7 @@ static void vTaskGPS_corpo(void*)
   }
 
   parada_confirmar(&s_parada);
-  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/pool_tarefas.h).
+  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/task_pool.h).
 }
 
 bool tab5_gps_parar(void)

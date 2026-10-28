@@ -1,6 +1,6 @@
 #include "tab5_sd.hpp"
-#include "tab5_marcos.hpp"
-#include "tab5_reserva.hpp"
+#include "tab5_marks.hpp"
+#include "tab5_journal.hpp"
 #include <errno.h>
 
 #include "esp_vfs_fat.h"
@@ -94,7 +94,7 @@ static bool s_anunciou = false;   // a primeira montagem do boot ja foi para o l
 // e a trilha gravam em momentos proximos, e cada montagem liga o regulador e
 // reinicializa o cartao. Com a folga, gravacoes vizinhas dividem UMA montagem;
 // sem ninguem pedir de novo, desmonta e o regulador desliga. E o mesmo padrao
-// de "timeout de ociosidade" do alto-falante (ARQUITETURA.md, 1.1).
+// de "timeout de ociosidade" do alto-falante (ARCHITECTURE.md, 1.1).
 static const uint64_t   SD_OCIOSO_US = 10ULL * 1000 * 1000;
 static esp_timer_handle_t s_ocioso = nullptr;
 static void desmontar_de_verdade(void);
@@ -778,7 +778,7 @@ bool tab5_sd_espaco(uint64_t* total, uint64_t* livre)
 // O GRAVADOR (ver o .hpp)
 // ===========================================================================
 #include "freertos/task.h"
-#include "tab5_donos.hpp"
+#include "tab5_owners.hpp"
 
 #define ANEXO_BUF      (16 * 1024)   // cada um dos dois buffers, na PSRAM
 #define ANEXO_PRAZO_MS 5000          // o que nao e urgente espera no maximo isto
@@ -837,7 +837,7 @@ bool tab5_sd_anexar(const char* app, const char* arquivo, const char* texto,
 // ---------------------------------------------------------------------------
 // O DESTINO DE CADA GRAVACAO
 // ---------------------------------------------------------------------------
-// Cartao, ou o diario na flash (hal/tab5_reserva) - decidido SEMPRE com a
+// Cartao, ou o diario na flash (hal/tab5_journal) - decidido SEMPRE com a
 // trava de gravacao presa, a mesma do emprestimo e da aplicacao do diario.
 // Enquanto o diario tiver algo pendente, TUDO vai para ele, mesmo com o
 // cartao ja de volta: gravar direto no cartao passaria na frente do que

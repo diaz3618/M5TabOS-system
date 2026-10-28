@@ -1,5 +1,5 @@
 #include "tab5_imu.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 #include "tab5_mutex.hpp"
 #include <M5Unified.h>
 #include "tab5_power.hpp"
@@ -12,7 +12,7 @@ static const char* TAG = "imu";
 
 static tab5_imu_dados_t s_cache = { };
 
-// Lazy-create, nunca destruida - mesmo molde de services/notificacao.cpp e
+// Lazy-create, nunca destruida - mesmo molde de services/notification.cpp e
 // tab5_gps.cpp: o primeiro uso sempre vem antes de qualquer disputa de
 // verdade (o boot chama tab5_imu_medir() antes de qualquer app poder ler).
 static SemaphoreHandle_t s_trava = nullptr;

@@ -12,11 +12,11 @@
 
 #include "app.h"
 #include "tab5_power.hpp"
-#include "ajustes.h"
+#include "settings.h"
 #include "tab5_emoji.hpp"
 #include "tab5_ui.hpp"
 #include "tab5_monitor.hpp"   // tab5_mem_marco - o extrato da RAM interna
-#include "tab5_pendrive.hpp"
+#include "tab5_flashdrive.hpp"
 
 static const char *TAG = "main";
 
@@ -52,7 +52,7 @@ extern "C" void app_main(void)
 
     // VOLUME salvo, aplicado JA - antes que qualquer app toque o primeiro som
     // (M5.Speaker.tone()/playWav() sobe o ES8388 sozinho, na hora, ver o
-    // aviso grande em ajustes.h). Sem isto, o primeiro som de uma sessao
+    // aviso grande em settings.h). Sem isto, o primeiro som de uma sessao
     // sairia no volume de fabrica do objeto Speaker, so corrigindo depois se
     // o usuario passasse por Ajustes.
     M5.Speaker.setVolume(ajustes_volume());

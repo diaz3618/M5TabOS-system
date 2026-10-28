@@ -18,12 +18,12 @@ cardputer_teste/sdkconfig.old
 # caminho absoluto da maquina: e regenerado no primeiro build.
 c6/dependencies.lock
 
-# Ambiente de cada maquina (ver ambiente.sh) e configuracao de editor
-ambiente.local.sh
+# Ambiente de cada maquina (ver environment.sh) e configuracao de editor
+environment.local.sh
 .vscode/
 .idea/
 
-# Cache das imagens baixadas por ferramentas/gerar_emoji.py
+# Cache das imagens baixadas por tools/generate_emoji.py
 .emoji_cache/
 
 # Firmware de fabrica do C6 (da M5Stack - nao e redistribuivel)
@@ -37,9 +37,9 @@ energia.csv
 .DS_Store
 __pycache__/
 
-# Termos pessoais procurados pelo ferramentas/publicar.sh antes de publicar
-ferramentas/privado.local.txt
+# Termos pessoais procurados pelo tools/publicar.sh antes de publicar
+tools/privado.local.txt
 .m5tabos-publico
 
-# Firmware gerado para o M5Burner (ferramentas/m5burner.sh)
+# Firmware gerado para o M5Burner (tools/m5burner.sh)
 M5tabOS-*.bin

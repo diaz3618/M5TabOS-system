@@ -1,12 +1,12 @@
 # API do M5tabOS
 
 A referência do que o sistema oferece a um aplicativo: a função, o que ela faz
-e **de qual tarefa ela pode ser chamada**. O app [`Exemplo`](main/app_exemplo/app_exemplo.cpp)
+e **de qual tarefa ela pode ser chamada**. O app [`Exemplo`](main/app_example/app_example.cpp)
 usa cada uma destas áreas num cartão próprio. Abra-o no aparelho e leia o
 código lado a lado.
 
 Para o *como pensar* (as regras de desenho, o porquê de cada uma, os erros que
-já cometemos) o guia é o [ESCREVENDO_APPS.md](ESCREVENDO_APPS.md). Este arquivo
+já cometemos) o guia é o [WRITING_APPS.md](WRITING_APPS.md). Este arquivo
 é o *o quê*.
 
 ---
@@ -34,7 +34,7 @@ já quebrou assim:
   que rodam `ao_abrir`, `ao_fechar`, `desenhar`, `ao_tocar*`, `ao_teclar`,
   `ao_aviso`. Nada nela pode bloquear (cartão, rede, espera longa).
 - **tarefas do app** (`tarefa_app`), **worker** (`sistema_trabalho`), **fundo**
-  (`fundo.h`) e **console**: fazem o trabalho lento, mudam dado (atômico, fila
+  (`background.h`) e **console**: fazem o trabalho lento, mudam dado (atômico, fila
   ou com trava) e pedem redesenho.
 - **serviços do sistema** (Mesh, ESP-NOW, WiFi, GPS...): têm tarefa própria e
   entregam por cópia (`tab5_*_msg`, `tab5_*_posicao`) e por aviso (`AVISO_*`).
@@ -109,18 +109,18 @@ Avisos existentes: `AVISO_MESH_MSG`, `AVISO_MESH_ENVIO`, `AVISO_MESH_NOS`,
 | `tab5_sprite_novo` / `tab5_sprite_soltar` | sprite sempre na PSRAM (ou `nullptr`) |
 | `SIS_FUNDO`, `SIS_LINHA`, `SIS_BORDA` | a paleta do sistema (`app.h`) |
 
-### Pintura por diferença: `kernel/pintura.hpp`
+### Pintura por diferença: `kernel/paint.hpp`
 
 `pintura_iniciar(&p)` no começo do `desenhar`; `pintura_completa(&p)` para o
 que nunca muda; `pintura_mudou_i/_s(&p, &memoria, agora)` para cada valor. Não
 encadeie comparadores com `||` (veja o guia, 2.3).
 
-### Limpar: `hal/tab5_tela.hpp`
+### Limpar: `hal/tab5_screen.hpp`
 
 `tab5_tela_limpar(x, y, l, a, cor)` (UI): limpa em faixas, sem piscar azul. Use
 para qualquer área que **pode** passar de ~40 linhas da tela.
 
-### Listas: `kernel/lista.hpp`
+### Listas: `kernel/list.hpp`
 
 A lista rolável do sistema: mede cada item uma vez, rola deslocando pixels e
 repinta só o item que mudou (`lista_item_mudou`). O Exemplo inteiro é uma lista.
@@ -132,7 +132,7 @@ if (lista_arrastar(&l, x, y, pressionado)) sistema_pedir_redesenho();   // ao_to
 int i = lista_item_tocado(&l, x, y, &dy);   // ao_tocar; <0 = nada ou fim de arraste
 ```
 
-### Conversa e teclado virtual: `kernel/conversa.hpp`, `kernel/teclado_virtual.hpp`
+### Conversa e teclado virtual: `kernel/conversationtion.hpp`, `kernel/virtual_keyboard.hpp`
 
 `conversa_t` é a tela de mensagens pronta (balões, histórico, barra de escrita,
 teclado); o app só diz como contar, ler e enviar. `tecvirt_*` é o teclado na tela
@@ -140,7 +140,7 @@ para quem precisa só dele. Os apps Mesh e ESP-NOW usam os dois.
 
 ---
 
-## 4. Toque e teclado: `kernel/app.h`, `hal/tab5_teclado.hpp`
+## 4. Toque e teclado: `kernel/app.h`, `hal/tab5_keyboard.hpp`
 
 | função | de onde | o que faz |
 |---|---|---|
@@ -160,11 +160,11 @@ modificadores `TAB5_TECLA_CTRL/SHIFT/ALT`.
 
 | API | quando | de onde |
 |---|---|---|
-| `tarefa_app_criar(&t, corpo, nome, pilha, prio)` / `tarefa_app_encerrar(&t, ms)` (`kernel/tarefa_app.h`) | laço contínuo enquanto o app está aberto | UI (`ao_abrir`/`ao_fechar`) |
-| `sistema_trabalho(fn, arg)` (`kernel/trabalho.hpp`) | uma operação lenta (ler arquivo, montar lista); fim chega por `AVISO_TRABALHO` | qualquer |
+| `tarefa_app_criar(&t, corpo, nome, pilha, prio)` / `tarefa_app_encerrar(&t, ms)` (`kernel/app_task.h`) | laço contínuo enquanto o app está aberto | UI (`ao_abrir`/`ao_fechar`) |
+| `sistema_trabalho(fn, arg)` (`kernel/work.hpp`) | uma operação lenta (ler arquivo, montar lista); fim chega por `AVISO_TRABALHO` | qualquer |
 | `sistema_trabalho_cancelado()` | dentro do trabalho: o app fechou, pare | worker |
 | `sistema_trabalho_solto(fn, arg)` | segundos de trabalho que não podem segurar o fechamento (gravar foto); `arg` é dele | qualquer |
-| `sistema_fundo_iniciar/parar/ativo(&def)` (`kernel/fundo.h`) | trabalho que **continua com o app fechado** (gravar trilha, cronômetro) | UI |
+| `sistema_fundo_iniciar/parar/ativo(&def)` (`kernel/background.h`) | trabalho que **continua com o app fechado** (gravar trilha, cronômetro) | UI |
 | `fundo_esperar(f, ms)`, `fundo_ceder(f)`, `fundo_estado(f, n, txt)` | dentro do laço de fundo | fundo |
 
 Regras do laço (as três): nunca espere com `portMAX_DELAY` (o pedido de parada
@@ -195,7 +195,7 @@ computador e entregam na volta, na ordem. **Só reescreva o que leu.**
 
 ---
 
-## 7. Notificações: `services/notificacao.h`
+## 7. Notificações: `services/notification.h`
 
 Estado, não fila: cada fonte tem **um** estado atual, e publicar de novo substitui.
 
@@ -234,8 +234,8 @@ você), `NOTIF_URGENTE`. A barra pinta pela pior fonte ativa.
 | `tab5_imu_ultima(&d)` (`hal/tab5_imu.hpp`) | qualquer | aceleração (g) e giro (°/s); precisa de `perfil.imu` |
 | `tab5_gps_no_ar()`, `tab5_gps_posicao()`, `tab5_gps_tempo()` (`hal/tab5_gps.hpp`) | qualquer | GPS no Grove; lat/lon zerados sem fix |
 | `tab5_gps_assinar(fila)` | qualquer | recebe cada sentença nova numa fila sua |
-| `tab5_sensores_temp(&c)` (`hal/tab5_sensores.hpp`) | qualquer | temperatura interna |
-| `tab5_hora_epoch()` (`services/tab5_hora.hpp`) | qualquer | agora em UTC, ou 0 se o relógio não foi acertado |
+| `tab5_sensores_temp(&c)` (`hal/tab5_sensors.hpp`) | qualquer | temperatura interna |
+| `tab5_hora_epoch()` (`services/tab5_time.hpp`) | qualquer | agora em UTC, ou 0 se o relógio não foi acertado |
 | `tab5_hora_local(epoch, &tm)` | qualquer | para **mostrar** (fuso aplicado); guarde sempre UTC |
 | `tab5_hora_fonte()` | qualquer | de onde veio o acerto (GPS, rede, malha, RTC) |
 | `tab5_agora_ms()` | qualquer | relógio monótono para medir intervalo (compare por diferença) |
@@ -346,7 +346,7 @@ ajusta sozinho o que difere: vigia do toque, repouso e relógio do painel (veja
 e lê o toque pelo `ao_tocar` não precisa saber qual é.
 
 O **chip** é outra história: o ESP32-P4 v1.x e o v3.x pedem binários
-diferentes (`sdkconfig.defaults.chip_v1` / `_v3`). O `./gravar.sh` lê a
+diferentes (`sdkconfig.defaults.chip_v1` / `_v3`). O `./flash.sh` lê a
 revisão do aparelho e escolhe. Para compilar à mão:
 
 ```bash

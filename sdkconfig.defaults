@@ -15,7 +15,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # NAO mora aqui: o P4 v1.x (os Tab5 vendidos ate agora) e o v3.x pedem
 # binarios DIFERENTES, e cada um esta num arquivo proprio -
 # sdkconfig.defaults.chip_v1 e sdkconfig.defaults.chip_v3. Quem escolhe e o
-# CMakeLists.txt da raiz (M5_CHIP, padrao v1); o gravar.sh le a revisao do
+# CMakeLists.txt da raiz (M5_CHIP, padrao v1); o flash.sh le a revisao do
 # aparelho conectado e escolhe sozinho.
 
 # --- PSRAM ---------------------------------------------------------------
@@ -222,7 +222,7 @@ CONFIG_WIFI_RMT_RX_BA_WIN=32
 # era. Um apagamento de setor leva dezenas de ms: dois ou tres frames inteiros
 # sem ninguem religar o DMA.
 #
-# Quem escreve na NVS neste sistema: ajustes.cpp (brilho, wifi, teclado, grove,
+# Quem escreve na NVS neste sistema: settings.cpp (brilho, wifi, teclado, grove,
 # tempo de tela - o app Ajustes) e tab5_mesh (o nosso numero de no). Ou seja: a
 # piscada ao sair de Ajustes nunca foi banda de memoria. Era isto.
 #

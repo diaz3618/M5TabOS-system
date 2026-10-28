@@ -1,9 +1,9 @@
 #include "tab5_ble.hpp"
-#include "tab5_ouvinte.hpp"
-#include "tab5_sinal.hpp"
+#include "tab5_listener.hpp"
+#include "tab5_signal.hpp"
 #include "tab5_wifi.hpp"
-#include "tab5_donos.hpp"
-#include "pool_tarefas.h"   // ligar/desligar numa vaga, sem tarefa propria
+#include "tab5_owners.hpp"
+#include "task_pool.h"   // ligar/desligar numa vaga, sem tarefa propria
 
 #include "esp_hosted_bt_host_stack.h"
 #include "nimble/nimble_port.h"
@@ -18,7 +18,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 #include "tab5_monitor.hpp"   // tab5_mem_marco
 #include <cstdio>
 #include <cstring>
@@ -36,7 +36,7 @@ extern "C" void ble_store_config_init(void);
 
 // LIGAR/DESLIGAR SEM TAREFA PROPRIA. Havia uma tarefa de 4 KB (RAM interna)
 // dormindo para sempre so para atender estes dois pedidos raros. Agora o
-// pedido vai para uma vaga do pool de tarefas (kernel/pool_tarefas.h), que
+// pedido vai para uma vaga do pool de tarefas (kernel/task_pool.h), que
 // existe so enquanto a subida/descida dura. A ORDEM continua garantida: so
 // uma execucao por vez (s_rodando), e cada pedido ganha um numero - a
 // execucao so termina quando atendeu o ultimo numero pedido, e quem chega
@@ -348,7 +348,7 @@ static int ao_evento_gap(struct ble_gap_event* ev, void*)
     case BLE_GAP_EVENT_DISC: {
       anotar(&ev->disc.addr, ev->disc.rssi, ev->disc.data, ev->disc.length_data);
       // Fora da trava da lista. Quem tira o ouvinte espera esta chamada
-      // terminar (tab5_ouvinte.hpp) antes de destruir o que ele usa.
+      // terminar (tab5_listener.hpp) antes de destruir o que ele usa.
       tab5_ouvinte_chamar(&s_ouvinte, (const uint8_t*)ev->disc.addr.val, ev->disc.rssi);
       break;
     }

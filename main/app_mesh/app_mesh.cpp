@@ -25,26 +25,26 @@
 // conteudo se acomoda: a tabela de nos esconde colunas, a malha vira uma
 // coluna so, botoes lado a lado encolhem.
 
-#include "lista.hpp"
+#include "list.hpp"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
-#include "trabalho.hpp"
+#include "work.hpp"
 #include "app.h"
 #include "tab5_mesh.hpp"
 #include "tab5_mesh_mqtt.hpp"   // mesh_mqtt_internet_conectado
 #include "tab5_mesh_admin.hpp"
-#include "tab5_mesh_diario.hpp"
-#include "tab5_mesh_wifi_no.hpp"
-#include "tab5_teclado.hpp"
-#include "teclado_virtual.hpp"
-#include "conversa.hpp"
-#include "pintura.hpp"
-#include "rolagem.hpp"
-#include "tab5_tela.hpp"
-#include "tab5_hora.hpp"
+#include "tab5_mesh_reboot_log.hpp"
+#include "tab5_mesh_wifi_node.hpp"
+#include "tab5_keyboard.hpp"
+#include "virtual_keyboard.hpp"
+#include "conversation.hpp"
+#include "paint.hpp"
+#include "scroll.hpp"
+#include "tab5_screen.hpp"
+#include "tab5_time.hpp"
 #include <ctime>
 #include "tab5_ui.hpp"
 #include "tab5_emoji.hpp"
-#include "ajustes.h"
+#include "settings.h"
 #include "tab5_gps.hpp"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -137,7 +137,7 @@ static chave_t chave_de(int c)
 }
 
 // A CONVERSA - baloes, barra de escrita, teclado e rolagem sao o componente do
-// sistema (kernel/conversa). Ver conv_ler(), mais abaixo.
+// sistema (kernel/conversation). Ver conv_ler(), mais abaixo.
 EXT_RAM_BSS_ATTR static conversa_t s_c;   // ~1 KB, so a interface toca: PSRAM
 static bool s_eh_canal = false;       // conversa aberta e de canal (rotulo de remetente)
 static void atualizar_eh_canal(void);
@@ -158,7 +158,7 @@ static void atualizar_eh_canal(void);
 static mesh_msg_t* s_hist = nullptr;   // o que a tela mostra (so a interface le)
 static chave_t     s_hist_chave = { }; // de qual conversa e o s_hist
 
-// A CARGA DO HISTORICO, FORA DA INTERFACE (kernel/trabalho). O
+// A CARGA DO HISTORICO, FORA DA INTERFACE (kernel/work). O
 // worker le o cartao para ESTE buffer - nunca o que a tela desenha - e a
 // interface so troca os dois no ao_aviso(AVISO_TRABALHO). Antes a leitura era
 // feita na tarefa de interface a cada mensagem nova: montar o SD e ler a
@@ -173,7 +173,7 @@ static bool          s_recarregar   = false;   // pediram de novo durante a carg
 static int  s_n_hist = 0;
 
 // ---------------------------------------------------------------------------
-// AS TRES LISTAS DO APP - todas kernel/lista
+// AS TRES LISTAS DO APP - todas kernel/list
 // ---------------------------------------------------------------------------
 // Mensagens, conversas e nos rolam cada uma na sua janela; o trilho e a
 // navegacao ficam parados. Por isso nao e a rolagem do sistema
@@ -520,7 +520,7 @@ static void desenhar_trilho(lgfx::LovyanGFX& d, const area_t& a)
   marca_mesh(d, a.x + (TRILHO_L - ml) / 2, marca_y, ml);
 }
 
-// A COLUNA DE CONVERSAS E UMA kernel/lista. Item de altura fixa;
+// A COLUNA DE CONVERSAS E UMA kernel/list. Item de altura fixa;
 // a lista rola, recorta, desenha a faixa exposta, a barra e responde ao toque.
 // A coluna so e repintada por inteiro em passada completa (a unica hora em que
 // nomes, selecao e nao-lidas mudam); fora disso, so a rolagem.
@@ -1668,7 +1668,7 @@ static bool achar_coord(const char* txt, float* lat, float* lon)
 
 // Distancia (formula de haversine, correta em qualquer escala) e direcao
 // (rumo inicial, arredondado para os 8 pontos cardeais) da posicao de
-// referencia ("casa", ajustes.h) ate a localizacao recebida.
+// referencia ("casa", settings.h) ate a localizacao recebida.
 static void distancia_direcao(float lat1, float lon1, float lat2, float lon2,
                               float* dist_km, const char** direcao)
 {
@@ -1692,7 +1692,7 @@ static void distancia_direcao(float lat1, float lon1, float lat2, float lon2,
 }
 
 // ---------------------------------------------------------------------------
-// A CONVERSA - o componente do sistema (kernel/conversa),
+// A CONVERSA - o componente do sistema (kernel/conversation),
 // ---------------------------------------------------------------------------
 // Baloes, barra de escrita, teclado virtual e rolagem eram uma copia inteira
 // aqui (~700 linhas). O componente nasceu DELES, para o ESP-NOW; agora o Mesh
@@ -1980,7 +1980,7 @@ static const opcao_t OPC_PRECISAO[] = {
   { 0, "não compartilhar" }, { 32, "exata" }, { 18, "aproximada (~90 m)" },
   { 16, "aproximada (~360 m)" }, { 14, "aproximada (~1,5 km)" }, { 12, "só a cidade (~6 km)" },
 };
-// De quantos em quantos minutos o GPS do Tab5 vai para o no (ajustes.h).
+// De quantos em quantos minutos o GPS do Tab5 vai para o no (settings.h).
 static const opcao_t OPC_TAB5[] = {
   { 0, "não usar" }, { 5, "a cada 5 min" }, { 15, "a cada 15 min" }, { 30, "a cada 30 min" }, { 60, "a cada 1 h" },
 };
@@ -2122,7 +2122,7 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       break;
     }
     case RC_LOC_TAB5: {
-      // DO TAB5 (ajustes.h), muda na hora. So vai para o no; e o no que
+      // DO TAB5 (settings.h), muda na hora. So vai para o no; e o no que
       // difunde, no ritmo de "enviar a cada" (ver enviar_posicao).
       snprintf(rot, tr, "GPS do Tab5 para o nó");
       const uint8_t m = ajustes_mesh_posicao_min();
@@ -3329,7 +3329,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     // ao_aviso troca os buffers e pede a repintura - que aqui seria cedo
     // demais (o historico novo ainda nao existe) e duplicada.
     //
-    // A posicao de leitura e da lista (kernel/lista): colado no fim, a
+    // A posicao de leitura e da lista (kernel/list): colado no fim, a
     // mensagem nova aparece; lendo o historico, a tela nao se mexe.
     s_hist_pronto = false;
     s_msgs_quando_li = nm;
@@ -3375,7 +3375,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   else                              { lista_esconder(&s_l_conv); }
 }
 
-// A TELA GIROU (kernel/orientacao). Deitado -> em pe com uma conversa
+// A TELA GIROU (kernel/orientation). Deitado -> em pe com uma conversa
 // aberta: ela vem para a frente, e quem estava escrevendo segue escrevendo.
 // Em pe -> deitado: lista e conversa voltam a ficar lado a lado. O resto se
 // acomoda sozinho na passada completa que o sistema ja pediu.

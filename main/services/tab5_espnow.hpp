@@ -3,7 +3,7 @@
 // O P4 nao tem radio, e o esp_hosted nao leva o ESP-NOW: as funcoes esp_now_*
 // nem linkam deste lado. Por isso o ESP-NOW roda DENTRO do C6, no firmware
 // nosso (pasta c6/), e este servico conversa com ele pelo canal peer_data do
-// esp_hosted - o contrato de mensagens mora em compartilhado/tab5_c6.h.
+// esp_hosted - o contrato de mensagens mora em shared/tab5_c6.h.
 //
 // Mesmo molde do Mesh: o servico e dono do radio e do historico, avisa pela
 // notificacao com o app fechado, e o app ESP-NOW e so a janela.

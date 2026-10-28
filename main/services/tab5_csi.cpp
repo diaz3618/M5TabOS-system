@@ -1,9 +1,9 @@
 #include "tab5_csi.hpp"
-#include "tab5_ouvinte.hpp"
-#include "tab5_farejo.hpp"     // tab5_farejo_caps_c6: o que o C6 gravado sabe fazer
+#include "tab5_listener.hpp"
+#include "tab5_sniffer.hpp"     // tab5_farejo_caps_c6: o que o C6 gravado sabe fazer
 #include "tab5_wifi.hpp"
-#include "pool_tarefas.h"
-#include "parada.hpp"      // pedir/confirmar a saida da tarefa (o mesmo do GPS e do Mesh)
+#include "task_pool.h"
+#include "service_stop.hpp"      // pedir/confirmar a saida da tarefa (o mesmo do GPS e do Mesh)
 #include "tab5_mutex.hpp"
 #include "eh_host_feat_peer_data.h"
 #include "esp_wifi.h"

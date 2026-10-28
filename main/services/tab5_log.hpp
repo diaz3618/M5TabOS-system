@@ -13,7 +13,7 @@
 // POR DIA, NAO POR BOOT, com o motivo junto
 // -------------------------------------------------------------------------
 // "por boot complica bastante, pq toda hora estamos bootando" - este sistema
-// reinicia o tempo todo durante desenvolvimento (cada gravar.sh e um boot
+// reinicia o tempo todo durante desenvolvimento (cada flash.sh e um boot
 // novo). Um arquivo por boot viraria uma pasta ilegivel de arquivos de
 // segundos. Por DIA, usando a data do RTC (ver tab5_rtc.hpp - bateria
 // propria, "quase nunca descarrega"), varios boots do mesmo dia caem no

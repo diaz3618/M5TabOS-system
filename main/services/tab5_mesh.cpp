@@ -1,6 +1,6 @@
 #include "app.h"   // sistema_avisar
-#include "tab5_donos.hpp"
-#include "pool_tarefas.h"
+#include "tab5_owners.hpp"
+#include "task_pool.h"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
 #include "tab5_mesh.hpp"
 
@@ -10,8 +10,8 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
-#include "tarefa_app.h"
-#include "parada.hpp"      // parada cooperativa da tarefa (kernel)
+#include "app_task.h"
+#include "service_stop.hpp"      // parada cooperativa da tarefa (kernel)
 #include "driver/uart.h"
 #include "esp_task_wdt.h"
 #include "esp_log.h"
@@ -23,17 +23,17 @@
 #include "tab5_mutex.hpp"
 #include "tab5_grove.hpp"
 #include "tab5_power.hpp"
-#include "notificacao.h"
-#include "ajustes.h"
+#include "notification.h"
+#include "settings.h"
 #include "tab5_mesh_ble.hpp"
 #include "tab5_mesh_mqtt.hpp"
 #include "tab5_mesh_admin.hpp"
-#include "tab5_mesh_diario.hpp"
-#include "tab5_mesh_wifi_no.hpp"
+#include "tab5_mesh_reboot_log.hpp"
+#include "tab5_mesh_wifi_node.hpp"
 #include "mesh_pb.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_gps.hpp"
-#include "tab5_hora.hpp"
+#include "tab5_time.hpp"
 
 static const char *TAG = "mesh";
 
@@ -75,7 +75,7 @@ static SemaphoreHandle_t s_trava = nullptr;
 // do Grove para sempre. Trocar o C6L pelo GPS no cabo nao adiantava nada - o
 // modulo novo estava la, mudo, com a porta na mao de quem ja tinha ido embora.
 //
-// Parada COOPERATIVA (kernel/parada.hpp), e nao vTaskDelete de fora: a
+// Parada COOPERATIVA (kernel/service_stop.hpp), e nao vTaskDelete de fora: a
 // tarefa pega mutex e escreve no cartao, e mata-la no meio disso deixaria o
 // mutex preso e o arquivo aberto. Quem pede marca o pedido; a tarefa termina
 // o que estava fazendo, confirma, e so entao a limpeza acontece.
@@ -296,7 +296,7 @@ static void gravar_desfecho(uint32_t id, uint8_t estado, uint8_t erro)
 }
 
 // ---------------------------------------------------------------------------
-// CARIMBO CORRIGIDO - quando o relogio salta (ver tab5_hora.hpp)
+// CARIMBO CORRIGIDO - quando o relogio salta (ver tab5_time.hpp)
 // ---------------------------------------------------------------------------
 // A mensagem enviada leva a hora do NOSSO relogio. Se ele estava errado e uma
 // fonte o acerta depois, a mensagem ficava no dia errado para sempre: a linha
@@ -2535,7 +2535,7 @@ static void ler_local_stats(pb_leitor_t l)
 // entre eles o 111 = M5Stack C6L, o proprio radio que este sistema usa.
 //
 // A correcao nao e adivinhar mais - e parar de adivinhar. TAB5_MESH_HW_NOMES
-// (tab5_mesh_hw_dados.cpp) e gerada pelo gerar_hw.py direto do enum oficial
+// (tab5_mesh_hw_dados.cpp) e gerada pelo generate_hw.py direto do enum oficial
 // do Meshtastic; "envelhece e mente" deixa de ser risco porque reexportar e
 // um comando, nao uma memoria de quais numeros existem.
 const char* mesh_hw_nome(uint8_t hw)
@@ -3690,7 +3690,7 @@ static void vTaskMesh(void*)
       // chamada.
       esp_task_wdt_delete(NULL);
       parada_confirmar(&s_parada);
-      return;   // a vaga do pool devolve o dono e volta a dormir (kernel/pool_tarefas.h)
+      return;   // a vaga do pool devolve o dono e volta a dormir (kernel/task_pool.h)
     }
 
     // PROVA DE VIDA. Chegar aqui de novo significa que a volta anterior

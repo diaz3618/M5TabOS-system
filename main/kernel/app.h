@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include "tab5_power.hpp"
 #include "tab5_sd.hpp"
-#include "fundo.h"      // parte de fundo de um app (trabalho que sobrevive a janela)
+#include "background.h"      // parte de fundo de um app (trabalho que sobrevive a janela)
 
 // Retangulo onde o app pode desenhar. Fica entre a barra de status (topo) e a
 // barra de navegacao (base) - o app nunca precisa saber a altura delas.
@@ -36,7 +36,7 @@ typedef struct {
 typedef enum {
   ORI_EM_PE = 0,    // o padrao: retrato, 720x1280
   ORI_DEITADO,      // paisagem fixa, 1280x720
-  // Segue o aparelho (kernel/orientacao): em pe ou deitado conforme a
+  // Segue o aparelho (kernel/orientation): em pe ou deitado conforme a
   // gravidade, entre os mesmos dois estados. Com o teclado fisico encaixado,
   // fica deitado - e a unica postura em que ele faz sentido.
   ORI_SEGUE_IMU,
@@ -113,7 +113,7 @@ typedef struct {
   // muito mais. ORI_SEGUE_IMU deixa o proprio aparelho escolher.
   //
   // Funciona porque a rotacao no M5GFX transforma COORDENADAS, nao o
-  // framebuffer: o double buffer (tab5_tela) monta os ponteiros de linha a partir
+  // framebuffer: o double buffer (tab5_screen) monta os ponteiros de linha a partir
   // das dimensoes fisicas do painel, que nao mudam. E o area_util() ja calcula
   // tudo a partir de Display.width()/height(), entao barra e navegacao se
   // reacomodam sozinhas.
@@ -199,7 +199,7 @@ typedef struct {
   //
   // 'texto' vem com terminador nulo, em UTF-8 (uma letra acentuada composta
   // pela tecla morta tem 2 bytes); para as teclas especiais ele vem VAZIO e o
-  // que vale e 'codigo' (hal/tab5_teclado.hpp):
+  // que vale e 'codigo' (hal/tab5_keyboard.hpp):
   //
   //   TAB5_TECLA_ENTER, _APAGAR (Backspace), _DEL, _ESC, _TAB,
   //   _ESQUERDA, _DIREITA, _CIMA, _BAIXO
@@ -300,7 +300,7 @@ void sistema_pedir_redesenho(void);
 void sistema_beep(float hz, uint32_t ms);
 
 // OS PINOS DO ALTO-FALANTE PARA O USB - so o pendrive usa (services/
-// tab5_pendrive). O I2S do alto-falante (GPIO 26/27) e o PHY USB que o ESP-IDF
+// tab5_flashdrive). O I2S do alto-falante (GPIO 26/27) e o PHY USB que o ESP-IDF
 // acha que e do OTG: configurar esses pinos desliga o USB-C durante o
 // pendrive (ver o aviso em core.cpp). Ceder: o alto-falante e desligado pela
 // interface e fica mudo; true quando ja esta parado (espera ate espera_ms).
@@ -308,11 +308,11 @@ void sistema_beep(float hz, uint32_t ms);
 bool sistema_som_ceder_pinos(uint32_t espera_ms);
 void sistema_som_devolver_pinos(void);
 
-// ACORDA A INTERFACE AGORA - Etapa 2 do ARQUITETURA.md. Em
+// ACORDA A INTERFACE AGORA - Etapa 2 do ARCHITECTURE.md. Em
 // repouso, a interface pode estar dormindo ate ~1s esperando o proximo prazo
 // periodico (ver kernel/core.cpp); isto pula a espera na hora que algo
 // realmente novo aconteceu, em vez de deixar o aviso esperar. Pensado para
-// SERVICOS chamarem (notificacao.cpp e a ponte da camera ja chamam), mas
+// SERVICOS chamarem (notification.cpp e a ponte da camera ja chamam), mas
 // nada impede um app de usar se um dia precisar do mesmo efeito - so poe um
 // evento na queue, nunca bloqueia, seguro de qualquer tarefa.
 void sistema_acordar_interface(void);
@@ -327,7 +327,7 @@ void sistema_acordar_interface(void);
 #define AVISO_MESH_NOS    (1u << 2)   // tabela de nos mudou
 #define AVISO_GPS         (1u << 3)   // posicao nova
 #define AVISO_TRILHA      (1u << 4)   // amostra nova da trilha
-#define AVISO_TRABALHO    (1u << 5)   // um sistema_trabalho() deste app terminou (kernel/trabalho.hpp)
+#define AVISO_TRABALHO    (1u << 5)   // um sistema_trabalho() deste app terminou (kernel/work.hpp)
 #define AVISO_ESPNOW      (1u << 6)   // ESP-NOW: mensagem, estado de envio ou canal mudou (services/tab5_espnow)
 void sistema_avisar(uint32_t avisos);
 
@@ -363,7 +363,7 @@ bool sistema_area_foi_limpa(void);
 
 // QUANTO TEMPO ESTE QUADRO REPRESENTA, em segundos - para quem anima por
 // tempo. E a distancia entre as varreduras do painel em que este quadro e o
-// anterior vao ao ar (kernel/ritmo.hpp), e nao entre os instantes em que
+// anterior vao ao ar (kernel/frame_pacing.hpp), e nao entre os instantes em que
 // foram desenhados: o que aparece andou exatamente o que ficou na tela.
 // Chamar de dentro de desenhar(). Sempre > 0; limite como lhe convier (depois
 // de uma pausa longa ele e grande).
@@ -393,7 +393,7 @@ area_t sistema_area(void);
 // (coordenadas de TELA, como as de area_t) dentro dele. So em retrato
 // (rotacao 0) - false em paisagem. O retangulo precisa ter a LARGURA INTEIRA
 // da tela e y/altura multiplos de 8: o PPA invalida o cache por linhas
-// inteiras (ver tela_virtual.cpp). Quem escreveu avisa com
+// inteiras (ver virtual_screen.cpp). Quem escreveu avisa com
 // sistema_superficie_mudou(r), NA TAREFA DE INTERFACE (no desenhar): e ai
 // que a area vai, por DMA, para a pagina de tras do painel.
 typedef struct {
@@ -435,7 +435,7 @@ void sistema_impor_preferencias(tab5_perfil_t& p);
 // TFT_DARKGREY do LovyanGFX NAO serve de moldura apesar do nome - ele e cinza
 // MEDIO, rgb(123,123,123), e compete com o conteudo em vez de recuar.
 // PREFIXADAS. Sem o "SIS_" o COR_BORDA daqui colidia com uma constante de
-// mesmo nome dentro do app Cobra - macro em header compartilhado nao respeita
+// mesmo nome dentro do app Cobra - macro em header shared nao respeita
 // escopo, e o erro sai no arquivo de quem nem sabia da existencia dela.
 #define SIS_FUNDO   0x2124      /* rgb(36, 38, 40) - fundo de barra e coluna */
 #define SIS_LINHA   0x39E7      /* rgb(56, 60, 60) - separador discreto      */
@@ -504,7 +504,7 @@ void sistema_simular_toque(int x, int y);
 void sistema_simular_abrir(const app_t* app);
 
 // ORDEM DOS ICONES NA TELA INICIAL. SISTEMA_APPS (apps.cpp) e a ordem de
-// fabrica; por cima dela vale a do usuario, gravada na NVS (ajustes.h) e
+// fabrica; por cima dela vale a do usuario, gravada na NVS (settings.h) e
 // mudada segurando um icone na home e arrastando, ou por 'ordem' no console.
 // Posicoes de 0 a SISTEMA_NUM_APPS-1. Mover/padrao gravam e repintam a home.
 const app_t* sistema_home_app(int pos);
@@ -549,7 +549,7 @@ void sistema_travar_navegacao(bool travar);
 // repouso em curso tambem segura o clock no piso). O do app (SISTEMA_ACORDADO_APP) o sistema solta
 // sozinho ao fechar qualquer app.
 #define SISTEMA_ACORDADO_APP       (1u << 0)
-#define SISTEMA_ACORDADO_PENDRIVE  (1u << 1)   // computador usando o cartao (services/tab5_pendrive)
+#define SISTEMA_ACORDADO_PENDRIVE  (1u << 1)   // computador usando o cartao (services/tab5_flashdrive)
 void sistema_manter_acordado(uint32_t motivo, bool sim);
 
 // O app em primeiro plano EXIGE o cartao (app_t.exige_sd). Seguro de

@@ -30,7 +30,7 @@
 // exemplo oficial da Espressif usa para ESTA placa
 // (esp-bsp/examples/display_camera_video) - so trocamos LVGL por M5GFX e
 // callback assincrono por tarefa_app_t (o molde que este projeto ja usa para
-// todo servico de fundo, ver kernel/tarefa_app.h).
+// todo servico de fundo, ver kernel/app_task.h).
 #pragma once
 
 #include <stddef.h>
@@ -92,7 +92,7 @@
 
 // Liga o sensor (ou so soma mais um interessado, se ja estiver ligado - ver
 // o aviso grande acima sobre contagem de referencia): barramento I2C
-// compartilhado, esp_video_init, abre o dispositivo, aloca os buffers de
+// shared, esp_video_init, abre o dispositivo, aloca os buffers de
 // captura, registra o PPA (escala + rotaciona 270 graus - o sensor esta
 // montado de lado na placa) e sobe a tarefa que produz frames.
 // 'largura'/'altura' e o tamanho do buffer de SAIDA (RGB565, ja pronto para

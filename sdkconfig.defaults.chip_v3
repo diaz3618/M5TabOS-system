@@ -1,7 +1,7 @@
 # P4 REVISAO v3.x (M5_CHIP=v3). Somado ao sdkconfig.defaults pelo
 # CMakeLists.txt da raiz. Compilar:
 #     idf.py -B build_v3 -DM5_CHIP=v3 build
-# (ou ./gravar.sh, que le a revisao do aparelho e escolhe sozinho).
+# (ou ./flash.sh, que le a revisao do aparelho e escolhe sozinho).
 #
 # O IDF avisa no proprio Kconfig: v3.0 em diante e v1.x tem "huge hardware
 # difference" - um binario de um NAO roda no outro (o bootloader recusa a

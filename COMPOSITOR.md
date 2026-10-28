@@ -98,7 +98,7 @@ LongFast), a outra página fica velha nesses pontos e pisca.
            ▼
  ┌──────────────────────┐
  │  HAL DE QUADRO       │  página de trás ← fatias
- │  (hal/tab5_quadro)   │  flip no limite do quadro
+ │  (hal/tab5_frame)   │  flip no limite do quadro
  └─────────┬────────────┘  espera on_frame_buf_complete
            │               sincroniza as áreas sujas na página que saiu
            ▼
@@ -185,12 +185,12 @@ Cada etapa compila, grava e é testada no aparelho antes da próxima.
 | # | etapa | entrega | como sabemos que funcionou |
 |---|---|---|---|
 | 0 | **medir** | contador de underrun, tempo de frame, SRAM livre | números de base para comparar |
-| 1 | **HAL de frame** | `hal/tab5_quadro`: QoS AXI, flip no limite, `on_frame_buf_complete`, sincronizar áreas, cópia por PPA | tela de teste no console: retângulo animado + rolagem sintética, zero underrun, zero rasgo |
+| 1 | **HAL de frame** | `hal/tab5_frame`: QoS AXI, flip no limite, `on_frame_buf_complete`, sincronizar áreas, cópia por PPA | tela de teste no console: retângulo animado + rolagem sintética, zero underrun, zero rasgo |
 | 2 | **compositor** | lista de áreas sujas, fusão, fatias na SRAM, loop de frame | a mesma tela de teste passando pelo compositor |
 | 3 | **objetos + entrada** | árvore, estilos, `rotulo/botao/painel/imagem/lista/canvas`, toque, lista com inércia; fontes suaves no tamanho exato | home e barra de status reescritas na base nova |
 | 4 | **Mesh** | mensagens como `lista` virtualizada de balões | a rolagem que hoje deforma, lisa, sem nenhum código de tela no app |
 | 5 | **demais apps** | um por vez; os não portados rodam no `canvas` de ponte | cada app testado sozinho |
-| 6 | **apagar o legado** | `pintura.*`, faixas/respiros do `tab5_tela`, `rolagem_deslocar`, `REPINTURA_MIN_MS`, regras de desenho nº 1–4 | o código de tela dos apps vira só declaração |
+| 6 | **apagar o legado** | `paint.*`, faixas/respiros do `tab5_screen`, `rolagem_deslocar`, `REPINTURA_MIN_MS`, regras de desenho nº 1–4 | o código de tela dos apps vira só declaração |
 
 ---
 
@@ -204,18 +204,18 @@ Cada etapa compila, grava e é testada no aparelho antes da próxima.
   segundo é mais simples, o primeiro permite preencher e misturar por
   hardware. Decidir medindo (etapa 1).
 - **Fontes**: VLW suave (o M5GFX já carrega) gerada nos tamanhos de uso por
-  script, como o `gerar_emoji.py` já faz com os emoji (etapa 3).
+  script, como o `generate_emoji.py` já faz com os emoji (etapa 3).
 
 ---
 
 ## 7. Diário
 
 **Etapas 0 e 1 no código, aguardando teste no aparelho.**
-- `hal/tab5_quadro.{hpp,cpp}`: QoS do DW-GDMA no AXI (liga/desliga), aviso de
+- `hal/tab5_frame.{hpp,cpp}`: QoS do DW-GDMA no AXI (liga/desliga), aviso de
   fim de frame (`on_frame_buf_complete`), cópia de retângulo entre páginas
   pelo PPA, contador de underrun (vigia no canal 2 da saída da ROM, que o
   boot deixa livre — conta sem substituir o console).
-- `hal/tab5_tela`: `tab5_tela_igualar_paginas()`, `tab5_tela_apresentar()`
+- `hal/tab5_screen`: `tab5_tela_igualar_paginas()`, `tab5_tela_apresentar()`
   (sincroniza cache só das áreas → pede troca → espera o fim do frame →
   copia as áreas para a página que saiu), `tab5_tela_escrever_na_frente()`.
 - `app_quadro` (descartável): a mesma animação no LEGADO e no NOVO, com QoS
@@ -243,7 +243,7 @@ fatia → página pelo PPA assíncrono, sincronia adiada que pula o que vai ser
 redesenhado, troca pedida sem esperar. Teste: COMP ROLAR / COMP QUADRADO.
 
 **Correções depois das piscadas azuis.**
-- O "QoS" do app de teste DUPLICAVA o `hal/tab5_barramento` (já ligado no
+- O "QoS" do app de teste DUPLICAVA o `hal/tab5_bus` (já ligado no
   boot: arbitragem 8 + ARQOS 8). "QoS OFF" do teste = estado misto; "QoS ON"
   = ARQOS 15, que piscou azul sem parar. Duplicata removida; o botão do teste
   agora liga/desliga o módulo original de verdade.
@@ -257,7 +257,7 @@ Resultado do teste: COMP ROLAR "bem suave, nada de rasgo nem fragmento";
 COMP QUADRADO a 63,5 q/s (teto do painel) com 2,4 ms; nenhum azul a 80 MHz.
 
 Etapa 3a — **o sistema inteiro passa pelo compositor**:
-- `kernel/tela_virtual`: canvas 720×1280 na PSRAM que o painel nunca lê, com
+- `kernel/virtual_screen`: canvas 720×1280 na PSRAM que o painel nunca lê, com
   um **painel rastreador** (subclasse do `Panel_Sprite`) que anota cada
   retângulo tocado por qualquer primitiva do M5GFX, já convertido para
   coordenadas físicas (a mesma conta de rotação do `Panel_Sprite`, então o
@@ -268,7 +268,7 @@ Etapa 3a — **o sistema inteiro passa pelo compositor**:
   antes de acender a luz.
 - `tab5_tela_limpar/rolar` escrevem no alvo (tela virtual) e **sem respiro**.
 - Painel recriado (repouso, relógio) → o compositor percebe pela geração do
-  `tab5_tela` e invalida a tela inteira.
+  `tab5_screen` e invalida a tela inteira.
 - Azimutal: `pushSprite(px,py)` escrevia no PAI do canvas (M5.Display) —
   passava por fora; agora `pushSprite(&d, ...)`, sem fatiamento.
 - App Frame: só ROLAR / QUADRADO / QoS.
@@ -279,12 +279,12 @@ antiga (`para_tras/mostrar`), `REPINTURA_MIN_MS`, `rolagem_deslocar`,
 
 **Etapa 3a validada; limpeza do
 legado; primeiro componente padrão.**
-- `hal/tab5_tela` 811 → 275 linhas: saíram double buffer antiga, faixas,
+- `hal/tab5_screen` 811 → 275 linhas: saíram double buffer antiga, faixas,
   respiros, `gastou` (vira no-op só por causa do Cobra), sincronização de
   cache em faixas. `REPINTURA_MIN_MS` e `rolagem_em_arraste` saíram do kernel;
   o "assentamento" de 70 ms ao acordar saiu do `tab5_power`; `comp_encerrar`
   saiu do compositor.
-- **`kernel/lista`**: lista rolável padrão (altura por item em cache, faixa
+- **`kernel/list`**: lista rolável padrão (altura por item em cache, faixa
   exposta, barra, compensação de item novo em lista ancorada no fim).
 - **Mesh/mensagens** migrado para a lista, com **cache de balões**
   (`construir_layout`): cada mensagem é medida uma vez por carga do histórico,
@@ -312,7 +312,7 @@ legado; primeiro componente padrão.**
 1. **Avisos** (`sistema_avisar`, `AVISO_*`, `app_t.avisos/ao_aviso/periodo_agora`):
    serviço diz o que mudou, app redesenha na hora. Mesh: sem período nas
    mensagens (só Nós/Malha, que mostram idade, têm 1 s).
-2. **Worker de sistema** (`kernel/trabalho`): trabalho lento fora da
+2. **Worker de sistema** (`kernel/work`): trabalho lento fora da
    interface; resultado entregue por `AVISO_TRABALHO`; fechar app espera o
    trabalho em andamento e descarta a queue. Mesh (histórico e cartão, com dois
    buffers) e Arquivos (contagem de linhas e página) migrados.
@@ -345,12 +345,12 @@ integrado (mAh gastos/carregados, Wh). Redesenho por região. Registro:
 saiu (o monitor cobre). Monitor ganhou gatilho de UNDERRUN com o app aberto.
 
 **Revisão de retalhos e o padrão de lista.**
-- `kernel/lista` virou a ÚNICA forma de lista rolável: ganhou o toque
+- `kernel/list` virou a ÚNICA forma de lista rolável: ganhou o toque
   (`lista_arrastar`, `lista_item_tocado` com `LISTA_ARRASTE`), a atualização
   de um item só (`lista_item_mudou`), respiro no topo e `lista_esconder`.
   Migradas: Mesh (mensagens, conversas, nós), Arquivos, Tarefas, Azimutal
   (dias) e Trilha (sessões — as páginas ANTERIOR/PRÓXIMA saíram). Nenhum app
-  chama `rolagem_*` direto; `kernel/rolagem` é o motor da lista e do kernel.
+  chama `rolagem_*` direto; `kernel/scroll` é o motor da lista e do kernel.
 - Limites que escondiam os arquivos NOVOS (readdir devolve na ordem de
   criação): Arquivos 24→512 (ordenado, pastas primeiro, arquivos do mais novo),
   Azimutal 24→400 dias, Trilha 60→1000 sessões — tudo na PSRAM.
@@ -452,7 +452,7 @@ pelo PPA da frente para trás → 3 Radar sem sprites, Tarefas por diferença �
 - **Por que texto custa:** o `VLWfont::drawChar` do M5GFX faz um
   `writeFillRect` 1x1 por pixel de borda suavizada, mais um por linha de
   fundo - ~200 chamadas por letra de 30 px, cada uma passando pelo rastreador.
-- **Cache de glifos** (`tab5_glifos`, `FonteRapida` no lugar do `VLWfont`):
+- **Cache de glifos** (`tab5_glyphs`, `FonteRapida` no lugar do `VLWfont`):
   a letra é desenhada uma vez pelo próprio M5GFX num rascunho RGB565 e
   guardada por (fonte, letra, cor, fundo); depois, um `pushImage` por letra.
   Só texto com fundo, tamanho 1, destino de 16 bits e letra que não invade a

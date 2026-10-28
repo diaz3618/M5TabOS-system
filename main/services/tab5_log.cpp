@@ -1,7 +1,7 @@
 #include "tab5_log.hpp"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
 #include "tab5_sd.hpp"
-#include "tab5_hora.hpp"   // tab5_hora_nome_do_dia
+#include "tab5_time.hpp"   // tab5_hora_nome_do_dia
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -122,7 +122,7 @@ static int log_vprintf(const char* fmt, va_list args)
 
   // ORIGINAL com os argumentos ORIGINAIS - o console/serial continua
   // identico ao que sempre foi, ninguem que ja depende dele (o proprio
-  // gravar.sh, quem acompanha ao vivo) percebe qualquer diferenca.
+  // flash.sh, quem acompanha ao vivo) percebe qualquer diferenca.
   const int ret = s_original ? s_original(fmt, args) : vprintf(fmt, args);
 
   if (n > 0 && s_buf && s_escrita && !xPortInIsrContext()) {
@@ -175,7 +175,7 @@ static void descarregar(void)
   nome_arquivo_hoje(nome, sizeof(nome));
 
   // MARCA DE BOOT, uma vez por sessao - o mesmo raciocinio do "BOOT" em
-  // registro.cpp/energia.csv: como varios boots do mesmo dia caem no MESMO
+  // energy_log.cpp/energia.csv: como varios boots do mesmo dia caem no MESMO
   // arquivo (ver o aviso grande no .hpp sobre "por dia, nao por boot"), sem
   // isto ficaria impossivel saber onde um reinicio separa duas sessoes. O
   // "(N)" de cada linha de ESP_LOG e so milissegundos desde ESTE boot - a

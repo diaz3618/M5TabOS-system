@@ -57,10 +57,10 @@ dependencies:
     version: "==2.4.2"
   espressif/cmake_utilities:
     version: "==0.5.3"
-  ## MODO PENDRIVE (services/tab5_pendrive). O TinyUSB cru, sem o
+  ## MODO PENDRIVE (services/tab5_flashdrive). O TinyUSB cru, sem o
   ## esp_tinyusb por cima: o esp_tinyusb monta o PHY do jeito padrao, e o
   ## USB-C do Tab5 precisa do PHY full speed TROCADO com o do console (ver
-  ## tab5_pendrive.hpp). A configuracao e main/tusb_config.h.
+  ## tab5_flashdrive.hpp). A configuracao e main/tusb_config.h.
   ## 0.21 e nao 0.19: o driver DWC2 da 0.19, no modo DMA, so guarda UM pacote
   ## SETUP no EP0 (a 0.21 guarda tres e reescreveu o caminho), trata as
   ## interrupcoes de saida antes das de entrada, e o MSC rearma o proximo

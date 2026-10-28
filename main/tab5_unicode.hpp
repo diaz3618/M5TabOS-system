@@ -1,6 +1,6 @@
 // TEXTO DE FORA, PRONTO PARA AS FONTES DO SISTEMA.
 //
-// As fontes suaves (ferramentas/gerar_fontes.py) tem ASCII, o Latin-1 do
+// As fontes suaves (tools/generate_fonts.py) tem ASCII, o Latin-1 do
 // portugues e meia duzia de simbolos; o resto que tem desenho e o emoji de um
 // codigo so (tab5_emoji). TODO o restante vira o "dummy" da M5GFX - um
 // RETANGULO (IFont::drawCharDummy) - e e dai que vinham as mensagens "todas em

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "tab5_unicode.hpp"
-#include "fontes/fontes_suaves.hpp"
+#include "fonts/soft_fonts.hpp"
 
 // BUSCA BINARIA, nao varredura - ver o aviso em tab5_emoji_dados.cpp. Com
 // 1357 entradas, varredura custaria ate 1357 comparacoes por emoji
@@ -106,7 +106,7 @@ static int32_t emoji_cb(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint32_t code
   // centrado no espaco do caractere; acima disso, no maior multiplo inteiro.
   //
   // ABAIXO DE 24 px ele ENCOLHE para a altura da linha: as fontes suaves vao
-  // ate 12 px (gerar_fontes.py), e ali um emoji de 24 px invadia a linha de
+  // ate 12 px (generate_fonts.py), e ali um emoji de 24 px invadia a linha de
   // cima e a de baixo. Encolher pula linhas de pixel em vez de duplicar - a
   // perda de detalhe num desenho deste tamanho nao se nota; a invasao, sim.
   const float lado = (float)TAB5_EMOJI_LADO;
@@ -135,7 +135,7 @@ void tab5_emoji_iniciar(void)
 }
 
 // O QUE TEM DESENHO: a fonte (lida do proprio VLW - a lista de glifos e a
-// que gerar_fontes.py gravou, sem copia a manter em sincronia) ou o emoji.
+// que generate_fonts.py gravou, sem copia a manter em sincronia) ou o emoji.
 // A de corpo e a negrito saem do mesmo CARACTERES; basta uma.
 static bool fonte_tem(uint32_t code)
 {

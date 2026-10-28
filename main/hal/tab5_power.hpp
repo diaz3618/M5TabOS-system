@@ -162,8 +162,8 @@ void tab5_power_grove(bool ligar);
 
 // Trilho ja esta ligado AGORA? Existe para tab5_grove.cpp decidir se precisa
 // esperar o modulo bootar antes de sondar - pergunta de ESTADO DE HARDWARE,
-// nao de preferencia do usuario (por isso mora aqui, e nao em ajustes.h: HAL
-// pergunta a HAL, nunca a um servico - ver ESCREVENDO_APPS.md secao 8).
+// nao de preferencia do usuario (por isso mora aqui, e nao em settings.h: HAL
+// pergunta a HAL, nunca a um servico - ver WRITING_APPS.md secao 8).
 bool tab5_power_grove_ligado(void);
 
 // Quando o Tab5 mexeu no 5V do Grove / reaplicou o perfil pela ultima vez

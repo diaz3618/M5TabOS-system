@@ -21,7 +21,7 @@ endif()
 
 # APPS FORA DESTE BUILD, sem apagar a pasta: -DM5_SEM_APPS="cobra;radar" tira
 # as pastas main/app_cobra/ e main/app_radar/ dos fontes e da lista de apps.
-# E o que o ferramentas/m5burner.sh usa para o firmware publicado nao levar o
+# E o que o tools/m5burner.sh usa para o firmware publicado nao levar o
 # que ainda e projeto em andamento.
 set(M5_SEM_APPS "" CACHE STRING "Apps (nome da pasta sem app_) fora deste build")
 foreach(n ${M5_SEM_APPS})
@@ -42,7 +42,7 @@ endforeach()
 # "app.h" batendo so em "." - por isso cada pasta nova entra aqui, e nenhum
 # #include em nenhum .cpp do projeto precisou mudar.
 #
-# compartilhado/ traz o contrato de mensagens com o firmware do C6. Ele NAO
+# shared/ traz o contrato de mensagens com o firmware do C6. Ele NAO
 # entra em SRCS - e so header, e o glob acima nem passa por la.
 # LDFRAGMENTS: linker.lf manda o .bss dos apps e servicos para a PSRAM (ver o
 # cabecalho daquele arquivo para a regra de quem pode entrar).
@@ -67,7 +67,7 @@ endif()
 # Ordem de fabrica: os apps do sistema na ordem abaixo, depois os outros em
 # ordem alfabetica. A ordem que vale na home e a do usuario (gravada na NVS
 # por nome - ver ajustes_ordem_apps), entao isto so decide o primeiro boot.
-set(m5_apps_sistema mesh espnow config arquivos tarefas energia imu camera exemplo)
+set(m5_apps_sistema mesh espnow config files tasks energy imu camera example)
 set(m5_apps_inc "${CMAKE_CURRENT_BINARY_DIR}/apps_lista.inc")
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     file(GLOB m5_app_dirs LIST_DIRECTORIES true CONFIGURE_DEPENDS
@@ -108,7 +108,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
 endif()
 
 idf_component_register(SRCS ${app_sources}
-                       INCLUDE_DIRS "." "kernel" "hal" "services" "../compartilhado"
+                       INCLUDE_DIRS "." "kernel" "hal" "services" "../shared"
                        LDFRAGMENTS "linker.lf")
 
 # AVISOS COMO ERRO: o GCC desta instalacao do IDF (mais novo que o usado nos
@@ -116,7 +116,7 @@ idf_component_register(SRCS ${app_sources}
 # e maybe-uninitialized a erro por padrao, mesmo com CONFIG_COMPILER_DISABLE_
 # DEFAULT_ERRORS=y (esse Kconfig nao cobre estes quatro). Sao avisos legitimos
 # (buffer menor que o maximo teorico de um nome de arquivo; um "\" no fim de
-# um comentario // que, no diagrama do teclado em tab5_teclado.cpp, e so a
+# um comentario // que, no diagrama do teclado em tab5_keyboard.cpp, e so a
 # tecla \ mesmo; o 'v' de pb_varint(&l,&v), usado as centenas de vezes no
 # parser do Mesh, que o GCC nao prova inicializado em todo caminho) mas nao
 # sao bugs novos - so nao paravam o build antes. Opção 3 do proprio texto de
@@ -152,7 +152,7 @@ target_include_directories(${COMPONENT_LIB} PRIVATE "$ENV{IDF_PATH}/components/e
 target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # O TINYUSB LE A CONFIGURACAO DAQUI. A biblioteca procura "tusb_config.h"
-# pelo nome; o arquivo mora em main/ (services/tab5_pendrive.cpp tambem o
+# pelo nome; o arquivo mora em main/ (services/tab5_flashdrive.cpp tambem o
 # usa) e esta pasta entra so no caminho de busca dela. O nome do componente
 # muda se um dia o TinyUSB vier de copia local em vez do registro.
 idf_build_get_property(build_components BUILD_COMPONENTS)
@@ -176,13 +176,13 @@ target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_ipa_pipeline_ge
 
 # MARCOS DE TROCA DE CLOCK. Toda troca de frequencia do esp_pm passa
 # por rtc_clk_cpu_freq_set_config_fast() - e antes dela o IDF reajusta o
-# barramento da PSRAM. Desviada para hal/tab5_marcos.cpp, que anota o instante
+# barramento da PSRAM. Desviada para hal/tab5_marks.cpp, que anota o instante
 # para o monitor cruzar com o frame atrasado. Mesmo --undefined do SCCB.
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=rtc_clk_cpu_freq_set_config_fast"
                                                  "-Wl,--undefined=__wrap_rtc_clk_cpu_freq_set_config_fast")
 
 # Mais suspeitos do frame atrasado: setores do cartao e sincronia de cache
-# grande (hal/tab5_marcos.cpp).
+# grande (hal/tab5_marks.cpp).
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=sdmmc_read_sectors"
                                                  "-Wl,--wrap=sdmmc_write_sectors"
                                                  "-Wl,--wrap=esp_cache_msync"

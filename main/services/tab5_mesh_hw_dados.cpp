@@ -1,4 +1,4 @@
-// GERADO por gerar_hw.py a partir do HardwareModel oficial do
+// GERADO por generate_hw.py a partir do HardwareModel oficial do
 // Meshtastic (meshtastic/protobufs, mesh.proto). Nao editar a mao -
 // rode o script de novo se a lista oficial crescer.
 #include "tab5_mesh.hpp"

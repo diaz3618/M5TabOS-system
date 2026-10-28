@@ -25,7 +25,7 @@
 // para TODOS os apps), nao deste playground.
 
 #include "app.h"
-#include "pintura.hpp"
+#include "paint.hpp"
 #include <math.h>
 #include <stdio.h>
 #include "esp_log.h"

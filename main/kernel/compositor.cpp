@@ -1,6 +1,6 @@
 #include "compositor.hpp"
 
-#include "tab5_tela.hpp"
+#include "tab5_screen.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -421,7 +421,7 @@ uint32_t comp_contar_desenho(uint32_t us, bool completo)
 
 void comp_contar_volta(uint32_t us)
 {
-  // O periodo MEDIDO do painel (hal/tab5_quadro), e nao um numero fixo: o
+  // O periodo MEDIDO do painel (hal/tab5_frame), e nao um numero fixo: o
   // relogio do painel e ajuste do usuario (59 MHz = 20,6 ms, 80 MHz = 15,7).
   uint32_t periodo = 0;
   tab5_quadro_atrasos(nullptr, &periodo);

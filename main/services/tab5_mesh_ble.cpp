@@ -1,11 +1,11 @@
 #include "tab5_mesh_ble.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 #include "tab5_ble.hpp"
-#include "tab5_donos.hpp"
-#include "pool_tarefas.h"
-#include "parada.hpp"      // parada cooperativa da tarefa (kernel)
-#include "ajustes.h"
-#include "notificacao.h"
+#include "tab5_owners.hpp"
+#include "task_pool.h"
+#include "service_stop.hpp"      // parada cooperativa da tarefa (kernel)
+#include "settings.h"
+#include "notification.h"
 
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
@@ -490,7 +490,7 @@ static void vTaskMeshBle(void*)
   s_conectado = false;
   estado("parado");
   parada_confirmar(&s_parada);
-  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/pool_tarefas.h).
+  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/task_pool.h).
 }
 
 // ---------------------------------------------------------------------------

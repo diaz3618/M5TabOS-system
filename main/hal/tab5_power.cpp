@@ -1,9 +1,9 @@
 #include "tab5_power.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms
-#include "tab5_marcos.hpp"
-#include "tab5_sensores.hpp"
-#include "tab5_tela.hpp"
-#include "tab5_barramento.hpp"
+#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_marks.hpp"
+#include "tab5_sensors.hpp"
+#include "tab5_screen.hpp"
+#include "tab5_bus.hpp"
 
 #include "esp_log.h"
 #include <math.h>
@@ -16,7 +16,7 @@
 #include <stdio.h>
 
 // Necessario para chegar no handle do painel DPI (ver tab5_power_repouso).
-#include "tab5_painel_dsi_interno.hpp"
+#include "tab5_internal_dsi_panel.hpp"
 
 static const char *TAG = "power";
 
@@ -231,7 +231,7 @@ tab5_medida_t tab5_power_ultima(void) { return s_ultima; }
 // aparelho entrou em loop de reinicio por brownout logo depois) - 21,5 horas
 // sem interrupcao, sem emenda de sessoes diferentes (o problema que estragou
 // as duas tentativas anteriores) e ja com a tensao gravada em %.3f (o outro
-// problema, corrigido em registro.cpp antes desta analise).
+// problema, corrigido em energy_log.cpp antes desta analise).
 //
 // O METODO: Coulomb counting de verdade. Integramos mA*dt (trapezio) desde o
 // primeiro instante de descarga real ate o fim, o que da a capacidade
@@ -491,7 +491,7 @@ tab5_medida_t tab5_power_medir(void)
   // amostra SEMPRE virar o slot MAIS ANTIGO do historico, com temp travada
   // em -273 - e ficava ali por 30 minutos INTEIROS de uptime, toda vez que o
   // aparelho reiniciava. Como o desenvolvimento reinicia o aparelho o tempo
-  // todo (gravar.sh), o grafico de temperatura SEMPRE parecia faltar
+  // todo (flash.sh), o grafico de temperatura SEMPRE parecia faltar
   // informacao logo na borda mais antiga.
   //
   // A correcao: se ainda nao ha o PRIMEIRO historico (s_hist_ultimo==0) e a
@@ -559,8 +559,8 @@ void tab5_power_travas(const char* etiqueta)
 // ---------------------------------------------------------------------------
 
 // O acesso aos membros protegidos de Panel_DSI mora agora num ponto so,
-// compartilhado com tab5_tela.cpp - ver o aviso grande em
-// tab5_painel_dsi_interno.hpp (consolidado; antes disto havia
+// shared com tab5_screen.cpp - ver o aviso grande em
+// tab5_internal_dsi_panel.hpp (consolidado; antes disto havia
 // uma copia deste mesmo truque em cada arquivo).
 namespace {
   esp_lcd_panel_handle_t painel_dpi(void)

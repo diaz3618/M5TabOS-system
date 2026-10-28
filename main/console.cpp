@@ -1,5 +1,5 @@
 #include "console.hpp"
-#include "tab5_hora.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_agora_ms
 
 #include <stdio.h>
 #include <string.h>
@@ -15,7 +15,7 @@
 #include "esp_log.h"
 #include "driver/ledc.h"
 #include "esp_timer.h"
-#include "tab5_quadro.hpp"
+#include "tab5_frame.hpp"
 #include "tab5_bmp.hpp"
 #include "tab5_camera.hpp"
 #include "tab5_camera_ipa.h"
@@ -35,11 +35,11 @@
 #include "app.h"
 #include "esp_wifi.h"
 #include "tab5_espnow.hpp"      // sistema_diag_toque
-#include "tab5_pendrive.hpp"
-#include "tab5_farejo.hpp"
+#include "tab5_flashdrive.hpp"
+#include "tab5_sniffer.hpp"
 #include "tab5_csi.hpp"
 #include "tab5_sd.hpp"
-#include "tab5_teclado.hpp"
+#include "tab5_keyboard.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_grove.hpp"
 #include "tab5_mesh.hpp"
@@ -61,19 +61,19 @@
 #include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
-#include "registro.h"
+#include "energy_log.h"
 #include "tab5_log.hpp"
-#include "ajustes.h"
+#include "settings.h"
 #include "tab5_power.hpp"
 #include "tab5_ble.hpp"
 #include "tab5_mesh_ble.hpp"
-#include "tela_virtual.hpp"
+#include "virtual_screen.hpp"
 #include "compositor.hpp"
-#include "tab5_glifos.hpp"
+#include "tab5_glyphs.hpp"
 #include "internal.hpp"   // sistema_trocar_relogio_painel
 #include "esp_pm.h"
-#include "tab5_barramento.hpp"
-#include "tab5_tela.hpp"
+#include "tab5_bus.hpp"
+#include "tab5_screen.hpp"
 #include "tab5_monitor.hpp"   // tab5_mem_extrato
 
 
@@ -1069,7 +1069,7 @@ static int cmd_despejar(int argc, char** argv)
   if (argc < 2) {
     printf("uso: despejar <caminho>\n"
            "  ex.: despejar /sdcard/apps/Sistema/energia/energia-AAAA-MM-DD.csv\n"
-           "  no Mac, para salvar:  ./ferramentas/baixar.py <caminho>\n");
+           "  no Mac, para salvar:  ./tools/download.py <caminho>\n");
     return 1;
   }
   char buf[160];
@@ -1702,7 +1702,7 @@ static void c_energia(int argc, char** argv)
   else                             { mostrar_uso("energia"); }
 }
 
-// As partes de fundo dos apps (kernel/fundo.h). A parada pedida daqui
+// As partes de fundo dos apps (kernel/background.h). A parada pedida daqui
 // acontece na interface (fundo_manter), como toda parada.
 static void c_fundo(int argc, char** argv)
 {
@@ -1908,7 +1908,7 @@ static void c_tela(int argc, char** argv)
   printf("  limpezas dispensadas      : %lu\n",
          (unsigned long)tab5_tela_limpezas_evitadas());
   {
-    // Os detectores de hal/tab5_quadro. Sem 'pior': ler zera, e quem
+    // Os detectores de hal/tab5_frame. Sem 'pior': ler zera, e quem
     // acompanha o pior e o monitor, que vira evento.
     uint32_t periodo_us = 0;
     const uint32_t atrasos = tab5_quadro_atrasos(nullptr, &periodo_us);
@@ -2881,7 +2881,7 @@ static void c_mesh(int argc, char** argv)
   if (eh(o, "casa")) {
     // POSICAO DE REFERENCIA para a conversa mostrar distancia/direcao ate uma
     // localizacao recebida - ver achar_coord() em app_mesh.cpp. Fica em
-    // ajustes.cpp (NVS), nao no Mesh: e do usuario, nao do servico.
+    // settings.cpp (NVS), nao no Mesh: e do usuario, nao do servico.
     if (argc < 4) {
       float lat, lon;
       if (ajustes_casa(&lat, &lon)) { printf("casa: %.6f, %.6f\n", (double)lat, (double)lon); }
@@ -3238,9 +3238,9 @@ static const comando_t COMANDOS[] = {
     "manda o arquivo inteiro, para salvar no Mac",
     "despejar <caminho>\tsem limite, entre marcadores >>>INICIO/>>>FIM",
     "Cala o log durante o envio para nenhuma linha cair no meio do arquivo.\n"
-    "No Mac, com o monitor fechado: ./ferramentas/baixar.py <caminho>",
+    "No Mac, com o monitor fechado: ./tools/download.py <caminho>",
     [](int c, char** v) { cmd_despejar(c, v); },
-    "despejar apps/Sistema/energia/energia-2026-10-01.csv\tcopia para o Mac (use ferramentas/baixar.py)" },
+    "despejar apps/Sistema/energia/energia-2026-10-01.csv\tcopia para o Mac (use tools/download.py)" },
   { "apagar", "", G_CARTAO,
     "apaga um arquivo do cartao",
     "apagar <caminho>\tum arquivo por vez, sem curinga",
