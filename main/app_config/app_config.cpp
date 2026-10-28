@@ -27,6 +27,7 @@
 #include "tab5_espnow.hpp"
 #include "tab5_mesh.hpp"
 #include "tab5_mesh_ble.hpp"
+#include "tab5_lora.hpp"
 #include "tab5_teclado.hpp"
 #include "tab5_grove.hpp"
 #include "tab5_tela.hpp"
@@ -47,6 +48,7 @@
 #include "esp_timer.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 // ---------------------------------------------------------------------------
 // MEDIDAS
@@ -80,7 +82,7 @@ static uint16_t cor_sub(lgfx::LovyanGFX& d)   { return d.color565(150, 156, 168)
 // ---------------------------------------------------------------------------
 typedef enum {
   PAG_INICIO = -1,
-  PAG_WIFI = 0, PAG_BLUETOOTH, PAG_ESPNOW, PAG_MESH, PAG_TELA, PAG_TECLADO, PAG_GROVE, PAG_USB, PAG_SOBRE,
+  PAG_WIFI = 0, PAG_BLUETOOTH, PAG_ESPNOW, PAG_MESH, PAG_LORA, PAG_TELA, PAG_APPS, PAG_TECLADO, PAG_GROVE, PAG_USB, PAG_SOBRE,
   PAG_N
 } pagina_t;
 
@@ -91,7 +93,9 @@ static void ic_wifi(lgfx::LovyanGFX&, int, int, int);
 static void ic_bt(lgfx::LovyanGFX&, int, int, int);
 static void ic_espnow(lgfx::LovyanGFX&, int, int, int);
 static void ic_mesh(lgfx::LovyanGFX&, int, int, int);
+static void ic_lora(lgfx::LovyanGFX&, int, int, int);
 static void ic_tela(lgfx::LovyanGFX&, int, int, int);
+static void ic_apps(lgfx::LovyanGFX&, int, int, int);
 static void ic_teclado(lgfx::LovyanGFX&, int, int, int);
 static void ic_grove(lgfx::LovyanGFX&, int, int, int);
 static void ic_usb(lgfx::LovyanGFX&, int, int, int);
@@ -100,7 +104,9 @@ static void est_wifi(char*, size_t);
 static void est_bt(char*, size_t);
 static void est_espnow(char*, size_t);
 static void est_mesh(char*, size_t);
+static void est_lora(char*, size_t);
 static void est_tela(char*, size_t);
+static void est_apps(char*, size_t);
 static void est_teclado(char*, size_t);
 static void est_grove(char*, size_t);
 static void est_usb(char*, size_t);
@@ -112,7 +118,9 @@ static const pagina_def_t PAGINAS[PAG_N] = {
   { "Bluetooth",    ic_bt,      est_bt      },
   { "ESP-NOW",      ic_espnow,  est_espnow  },
   { "Meshtastic",   ic_mesh,    est_mesh    },
+  { "LoRa",         ic_lora,    est_lora    },
   { "Tela",         ic_tela,    est_tela    },
+  { "Aplicativos",  ic_apps,    est_apps    },
   { "Teclado",      ic_teclado, est_teclado },
   { "Grove 5V",     ic_grove,   est_grove   },
   { "USB (pendrive)", ic_usb,   est_usb     },
@@ -129,6 +137,10 @@ static char      s_sub[PAG_N][48];     // a linha de estado de cada item, como d
 static int       s_ub = -1, s_uv = -1; // brilho/volume desenhados
 static char      s_assin[512];         // "assinatura" da pagina aberta: mudou, redesenha
 static char      s_aviso[96];          // recado curto numa pagina ("escolhido para o Mesh")
+
+// Aplicativos: a lista completa e os nomes escondidos da tela inicial.
+static lista_t   s_l_apps;
+static char      s_apps_ocultos[1024];
 
 // Bluetooth: a lista de aparelhos vistos
 static lista_t   s_l_bt;
@@ -289,6 +301,18 @@ static void ic_mesh(lgfx::LovyanGFX& d, int x, int y, int l)
   d.fillCircle(cx, cy, l / 10, TFT_WHITE);
 }
 
+static void ic_lora(lgfx::LovyanGFX& d, int x, int y, int l)
+{
+  fundo_icone(d, x, y, l, d.color565(190, 80, 35));
+  const int cx = x + l / 2, cy = y + l * 3 / 4;
+  d.fillRect(cx - 2, y + l / 4, 5, l / 2, TFT_WHITE);
+  d.fillCircle(cx, cy, l / 14, TFT_WHITE);
+  for (int k = 0; k < 2; ++k) {
+    const int r = l * (22 + 14 * k) / 100;
+    d.drawArc(cx, cy, r, r - 3, 205, 335, TFT_WHITE);
+  }
+}
+
 static void ic_tela(lgfx::LovyanGFX& d, int x, int y, int l)
 {
   fundo_icone(d, x, y, l, d.color565(240, 150, 20));
@@ -300,6 +324,18 @@ static void ic_tela(lgfx::LovyanGFX& d, int x, int y, int l)
     for (int e = -1; e <= 1; ++e) {
       d.drawLine(cx + (int)(r0 * cosf(ang)) + e, cy + (int)(r0 * sinf(ang)),
                  cx + (int)(r1 * cosf(ang)) + e, cy + (int)(r1 * sinf(ang)), TFT_WHITE);
+    }
+  }
+}
+
+static void ic_apps(lgfx::LovyanGFX& d, int x, int y, int l)
+{
+  fundo_icone(d, x, y, l, d.color565(70, 130, 210));
+  const int q = l / 4, vao = l / 10;
+  const int x0 = x + (l - 2 * q - vao) / 2, y0 = y + (l - 2 * q - vao) / 2;
+  for (int f = 0; f < 2; ++f) {
+    for (int c = 0; c < 2; ++c) {
+      d.fillRoundRect(x0 + c * (q + vao), y0 + f * (q + vao), q, q, q / 5, TFT_WHITE);
     }
   }
 }
@@ -405,10 +441,43 @@ static void est_mesh(char* o, size_t t)
   snprintf(o, t, "%s - %s", nome_via_mesh(ajustes_mesh_via()), tab5_mesh_enlace_descricao());
 }
 
+static void est_lora(char* o, size_t t)
+{
+  const tab5_lora_status_t s = tab5_lora_status();
+  if (!s.sondado)             { snprintf(o, t, "Ainda não sondado"); }
+  else if (!s.ioe_endereco)   { snprintf(o, t, "M5IOE1 não encontrado"); }
+  else if (s.radio_presente)  { snprintf(o, t, "SX1262 responde · M5IOE1 0x%02X", s.ioe_endereco); }
+  else                        { snprintf(o, t, "M5IOE1 0x%02X · SX1262 não respondeu", s.ioe_endereco); }
+}
+
 static void est_tela(char* o, size_t t)
 {
   snprintf(o, t, "Apaga em %u s  ·  painel a %d MHz", (unsigned)ajustes_tela_s(),
            tab5_power_relogio_dpi());
+}
+
+static bool nome_em_lista(const char* lista, const char* nome)
+{
+  const size_t nome_n = strlen(nome);
+  const char* p = lista ? lista : "";
+  while (*p) {
+    const char* fim = strchr(p, ',');
+    const size_t n = fim ? (size_t)(fim - p) : strlen(p);
+    if (n == nome_n && strncasecmp(p, nome, n) == 0) { return true; }
+    if (!fim) { break; }
+    p = fim + 1;
+  }
+  return false;
+}
+
+static void est_apps(char* o, size_t t)
+{
+  int visiveis = 0;
+  for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
+    if (strcasecmp(SISTEMA_APPS[i]->nome, "Ajustes") == 0
+        || !nome_em_lista(s_apps_ocultos, SISTEMA_APPS[i]->nome)) { ++visiveis; }
+  }
+  snprintf(o, t, "%d de %d visíveis", visiveis, SISTEMA_NUM_APPS);
 }
 
 static void est_teclado(char* o, size_t t)
@@ -1235,6 +1304,95 @@ static void teclar_mesh(const char* txt, uint8_t codigo)
   if (txt && txt[0] >= '0' && txt[0] <= '9' && n < 6) { s_pin_txt[n] = txt[0]; s_pin_txt[n + 1] = 0; sistema_pedir_redesenho(); }
 }
 
+// ---- LoRa ------------------------------------------------------------------
+// Diagnostico do transceptor NU no M5-Bus. Nao usa nem altera o servico
+// Meshtastic: sao aparelhos e caminhos eletricos diferentes.
+static const int LORA_BOTAO_Y = 840;
+
+static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
+{
+  const tab5_lora_status_t s = tab5_lora_status();
+  tab5_lora_pin_t pinos[16];
+  const size_t n = tab5_lora_pinos(pinos, sizeof(pinos) / sizeof(pinos[0]));
+  char assin[384];
+  int pos = snprintf(assin, sizeof(assin), "%d|%u|%u|%04X|%02X|%d|%d|%d",
+                     (int)s.sondado, s.ioe_endereco, s.ioe_mascara, s.ioe_uid, s.ioe_revisao,
+                     (int)s.radio_presente, s.erro_radio, s.erro_estado);
+  for (size_t i = 0; i < n && pos > 0 && pos < (int)sizeof(assin); ++i) {
+    pos += snprintf(assin + pos, sizeof(assin) - (size_t)pos, "|%d", (int)pinos[i].estado);
+  }
+  if (!pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) && !tudo) { return; }
+
+  conteudo_limpo(d, a);
+  int y = CONTEUDO_Y;
+  char valor[96];
+  if (!s.ioe_endereco) {
+    snprintf(valor, sizeof(valor), "M5IOE1 não encontrado · SX1262 não testado");
+  } else if (s.radio_presente) {
+    snprintf(valor, sizeof(valor), "SX1262 respondeu · M5IOE1 0x%02X rev %02X",
+             s.ioe_endereco, s.ioe_revisao);
+  } else {
+    snprintf(valor, sizeof(valor), "M5IOE1 0x%02X · SX1262 não respondeu (%d)",
+             s.ioe_endereco, s.erro_radio);
+  }
+  y = info(d, a, y, "Estado ao vivo", valor,
+           s.radio_presente ? TFT_GREENYELLOW : (s.ioe_endereco ? TFT_ORANGE : TFT_WHITE));
+
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW2 · endereço do M5IOE1 (verde = respondeu)");
+  y += 32;
+  static const uint8_t END[] = { 0x74, 0x73, 0x72, 0x71 };
+  static const char* const AB[] = { "A0 B0", "A1 B0", "A0 B1", "A1 B1" };
+  const int caixa_l = (a.largura - 2 * MARGEM - 24) / 4;
+  for (int i = 0; i < 4; ++i) {
+    const int x = a.x + MARGEM + i * (caixa_l + 8);
+    const bool vivo = (s.ioe_mascara & (1u << (END[i] - 0x71))) != 0;
+    d.fillRoundRect(x, a.y + y, caixa_l, 60, 8,
+                    vivo ? d.color565(35, 105, 45) : d.color565(38, 42, 50));
+    snprintf(valor, sizeof(valor), "%s  0x%02X", AB[i], END[i]);
+    texto(d, x + caixa_l / 2, a.y + y + 30, 20, vivo, TFT_WHITE, valor, middle_center);
+  }
+  y += 84;
+
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW1 · rotas candidatas no M5-Bus");
+  y += 30;
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
+        "BUSY  4/G17 · 8/G45 · 19/G3* · 22/G48");
+  y += 30;
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
+        "NSS   20/G4* · 21/G2 · 23/G47 · 24/G35");
+  y += 42;
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW3 · rota candidata do IRQ");
+  y += 30;
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
+        "IRQ   2/G16* · 10/G52 · 26/G51     (* padrão tentado)");
+  y += 46;
+
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Sonda elétrica · pino M5-Bus / GPIO");
+  y += 30;
+  const int col_l = (a.largura - 2 * MARGEM) / 2;
+  for (size_t i = 0; i < n; ++i) {
+    const int col = i >= (n + 1) / 2;
+    const int lin = col ? (int)i - (int)((n + 1) / 2) : (int)i;
+    snprintf(valor, sizeof(valor), "%2u / G%-2d  %s", pinos[i].mbus, pinos[i].gpio,
+             tab5_lora_pin_estado_nome(pinos[i].estado));
+    texto(d, a.x + MARGEM + col * col_l, a.y + y + lin * 30, 21, false,
+          pinos[i].estado == TAB5_LORA_PIN_FLUTUANTE ? TFT_DARKGREY : TFT_LIGHTGREY, valor);
+  }
+
+  tab5_botao(d, a.x + MARGEM, a.y + LORA_BOTAO_Y,
+             a.largura - 2 * MARGEM, BTN_A, "SONDAR E TENTAR O SX1262", TFT_SKYBLUE);
+  texto(d, a.x + MARGEM, a.y + LORA_BOTAO_Y + BTN_A + 12, 20, false, cor_sub(d),
+        "SDA/SCL são lidos sem mudar os pulls, para preservar o I2C interno.");
+}
+
+static void toque_lora(int tx, int ty)
+{
+  const area_t a = sistema_area();
+  if (!tab5_dentro(tx, ty, MARGEM, LORA_BOTAO_Y, a.largura - 2 * MARGEM, BTN_A)) { return; }
+  tab5_lora_iniciar();
+  sistema_pedir_redesenho();
+}
+
 // ---- Tela ------------------------------------------------------------------
 static void pag_tela(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
@@ -1306,6 +1464,76 @@ static void toque_tela(int tx, int ty)
       sistema_pedir_redesenho_completo();
     }
   }
+}
+
+// ---- Aplicativos -----------------------------------------------------------
+// A lista vem da tabela completa de apps, nunca da home ja filtrada.
+static const int APPS_ITEM_A = 92;
+static const int APPS_LISTA_Y = CONTEUDO_Y + 52;
+
+static int apps_item_altura(int, void*) { return APPS_ITEM_A; }
+
+static void apps_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura, void*)
+{
+  if (i < 0 || i >= SISTEMA_NUM_APPS) { return; }
+  const char* nome = SISTEMA_APPS[i]->nome;
+  const bool ajustes = strcasecmp(nome, "Ajustes") == 0;
+  const bool oculto = !ajustes && nome_em_lista(s_apps_ocultos, nome);
+  d.fillRect(x0, y, largura, APPS_ITEM_A, TFT_BLACK);
+  texto(d, x0 + MARGEM, y + APPS_ITEM_A / 2, 30, true,
+        oculto ? cor_sub(d) : TFT_WHITE, nome, middle_left);
+  const int bl = 230, ba = 60;
+  tab5_botao(d, x0 + largura - MARGEM - bl, y + (APPS_ITEM_A - ba) / 2, bl, ba,
+             ajustes ? "SEMPRE VISÍVEL" : oculto ? "MOSTRAR" : "OCULTAR",
+             ajustes ? TFT_DARKGREY : oculto ? TFT_SKYBLUE : TFT_ORANGE);
+  d.drawFastHLine(x0 + MARGEM, y + APPS_ITEM_A - 1, largura - 2 * MARGEM, cor_linha(d));
+}
+
+static void apps_alternar(int alvo)
+{
+  if (alvo < 0 || alvo >= SISTEMA_NUM_APPS) { return; }
+  // Ajustes fica sempre visivel para a pessoa nao perder o caminho de volta
+  // ate esta pagina.
+  if (strcasecmp(SISTEMA_APPS[alvo]->nome, "Ajustes") == 0) { return; }
+
+  char novos[sizeof(s_apps_ocultos)];
+  size_t k = 0;
+  novos[0] = 0;
+  for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
+    const char* nome = SISTEMA_APPS[i]->nome;
+    if (strcasecmp(nome, "Ajustes") == 0) { continue; }
+    bool oculto = nome_em_lista(s_apps_ocultos, nome);
+    if (i == alvo) { oculto = !oculto; }
+    if (!oculto) { continue; }
+    const size_t n = strlen(nome);
+    if (k + n + 2 > sizeof(novos)) { return; }
+    if (k) { novos[k++] = ','; }
+    memcpy(novos + k, nome, n);
+    k += n;
+    novos[k] = 0;
+  }
+  snprintf(s_apps_ocultos, sizeof(s_apps_ocultos), "%s", novos);
+  ajustes_definir_apps_ocultos(s_apps_ocultos);
+  lista_item_mudou(&s_l_apps, alvo);
+  sistema_home_apps_recarregar();
+}
+
+static void pag_apps(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
+{
+  if (tudo) {
+    conteudo_limpo(d, a);
+    texto(d, a.x + MARGEM, a.y + CONTEUDO_Y + 10, 22, false, cor_sub(d),
+          "Escolha quais aplicativos aparecem na tela inicial.");
+  }
+  const area_t janela = { a.x, a.y + APPS_LISTA_Y, a.largura, a.altura - APPS_LISTA_Y };
+  lista_desenhar(&s_l_apps, d, janela, TFT_BLACK, tudo);
+}
+
+static void toque_apps(int tx, int ty)
+{
+  int dy = 0;
+  const int i = lista_item_tocado(&s_l_apps, tx, ty, &dy);
+  if (i >= 0) { apps_alternar(i); }
 }
 
 // ---- Teclado ---------------------------------------------------------------
@@ -1596,9 +1824,9 @@ static void toque_usb(int tx, int ty)
 typedef void (*pag_desenhar_fn)(lgfx::LovyanGFX&, const area_t&, bool);
 typedef void (*pag_tocar_fn)(int, int);
 static const pag_desenhar_fn PAG_DESENHAR[PAG_N] = {
-  pag_wifi, pag_bt, pag_espnow, pag_mesh, pag_tela, pag_teclado, pag_grove, pag_usb, pag_sobre };
+  pag_wifi, pag_bt, pag_espnow, pag_mesh, pag_lora, pag_tela, pag_apps, pag_teclado, pag_grove, pag_usb, pag_sobre };
 static const pag_tocar_fn PAG_TOCAR[PAG_N] = {
-  toque_wifi, toque_bt, toque_espnow, toque_mesh, toque_tela, toque_teclado, toque_grove, toque_usb, nullptr };
+  toque_wifi, toque_bt, toque_espnow, toque_mesh, toque_lora, toque_tela, toque_apps, toque_teclado, toque_grove, toque_usb, nullptr };
 
 static void abrir_pagina(int p)
 {
@@ -1622,6 +1850,14 @@ static void abrir_pagina(int p)
   } else {
     lista_esconder(&s_l_bt);
   }
+  if (p == PAG_APPS) {
+    ajustes_apps_ocultos(s_apps_ocultos, sizeof(s_apps_ocultos));
+    lista_definir(&s_l_apps, ROLAGEM_INICIO, SISTEMA_NUM_APPS,
+                  apps_item_altura, apps_item_desenhar, nullptr);
+  } else {
+    lista_esconder(&s_l_apps);
+  }
+  if (p == PAG_LORA) { tab5_lora_iniciar(); }
   if (p == PAG_INICIO) { s_ub = s_uv = -1; }
   else { lista_esconder(&s_lista); }
   pintura_pedir(&s_p);
@@ -1632,6 +1868,7 @@ static bool ao_abrir(void)
 {
   s_pag = PAG_INICIO;
   s_ub = s_uv = -1;
+  ajustes_apps_ocultos(s_apps_ocultos, sizeof(s_apps_ocultos));
   memset(s_sub, 0, sizeof(s_sub));
   for (int i = 0; i < PAG_N; ++i) { PAGINAS[i].estado(s_sub[i], sizeof(s_sub[i])); }
   lista_definir(&s_lista, ROLAGEM_INICIO, PAG_N, item_altura, item_desenhar, nullptr);
@@ -1697,6 +1934,8 @@ static void ao_tocar_nivel(int x, int y, bool pressionado)
     if (lista_arrastar(&s_l_bt, x, y, pressionado)) { sistema_pedir_redesenho(); }
   } else if (s_pag == PAG_WIFI && !s_wf_senha) {
     if (lista_arrastar(&s_l_wifi, x, y, pressionado)) { sistema_pedir_redesenho(); }
+  } else if (s_pag == PAG_APPS) {
+    if (lista_arrastar(&s_l_apps, x, y, pressionado)) { sistema_pedir_redesenho(); }
   }
 }
 
@@ -1804,6 +2043,7 @@ static uint32_t periodo_agora(void)
   if (sistema_grove_sondando()) { return 500; }
   switch (s_pag) {
     case PAG_TELA:      return 0;
+    case PAG_APPS:      return 0;
     case PAG_WIFI:      return tab5_wifi_procurando() ? 500 : 1000;
     case PAG_BLUETOOTH: return tab5_ble_varrendo() ? 500 : 1000;
     case PAG_USB: {
