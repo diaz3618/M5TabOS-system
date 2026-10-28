@@ -1,471 +1,477 @@
-# M5tabOS — a nova base de tela (compositor estilo LVGL)
+# M5tabOS — The Display Compositor (LVGL-Style Rendering)
 
-Decidido. Não vamos adotar a LVGL: vamos construir a **nossa**
-base, com os mesmos princípios que fazem a LVGL ser suave, dentro do nosso
-contexto (M5GFX como rasterizador, FreeRTOS, perfis de energia, Tab5).
+Decision made: rather than adopting LVGL, we built **our own** display
+compositor using the exact same rendering principles that make LVGL smooth,
+tailored to our stack (M5GFX as the rasterizer, FreeRTOS, per-app power
+profiles, and the Tab5 hardware).
 
-A regra que orienta tudo daqui em diante:
+The guiding rule from here on out:
 
-> **Problema de tela é problema de SISTEMA.** Se um app precisa de um
-> `fillRect` extra, de um respiro, de um caso especial para não piscar ou não
-> rasgar, a base está errada, não o app. Nenhum puxadinho por app.
+> **Display glitches are SYSTEM bugs.** If an app needs an extra `fillRect`, a
+> delay, or a special case to avoid flickering or tearing, the display layer is
+> broken, not the app. No per-app band-aids.
 
 ---
 
-## 1. Por que a base atual não tem conserto por remendo
+## 1. Why the original direct-to-front-buffer model couldn't be fixed with patches
 
-Hoje o M5GFX escreve **direto na página que o painel está varrendo**. Tudo o
-que existe em volta disso são defesas contra essa decisão:
+Originally, M5GFX drew **directly into the framebuffer that the MIPI-DSI panel
+was actively scanning out**. Nearly every drawing rule in the codebase existed
+as a defense against that single architectural choice:
 
-| remendo de hoje | contra o quê |
+| Legacy workaround | What it was fighting |
 |---|---|
-| pintar por diferença, largura fixa, `pintura_*` | apagar-e-redesenhar aparece como flash |
-| `s_sujo_layout` × `s_sujo_dados`, `sistema_area_foi_limpa()` | o app não sabe quando a tela foi limpa |
-| salvar/restaurar `getTextStyle()` (regra nº 2) | estado global de desenho vazando entre funções |
-| `tab5_tela_limpar` em faixas, `respirar`, `tab5_tela_gastou` | rajada de escrita na PSRAM → underrun → frame azul |
-| `tab5_tela_rolar` + `rolagem_item_preservado` | reaproveitar pixel para rolar mais barato |
-| `ROLAR_RESPIRO_US`, "escrever mais rápido que o feixe" | rasgo na imagem durante a rolagem |
-| `REPINTURA_MIN_MS = 80` | excesso de repinturas por toque |
-| double buffer só para repintura completa | flash preto ao trocar de app |
+| Differential painting, fixed-width strings, `pintura_*` | Erase-then-redraw was visible to the eye as flicker |
+| `s_sujo_layout` vs. `s_sujo_dados`, `sistema_area_foi_limpa()` | Apps couldn't tell when the screen had been wiped behind their back |
+| Saving/restoring `getTextStyle()` (Rule #2) | Global drawing state leaking across functions |
+| Stripped `tab5_tela_limpar`, `respirar` delays, `tab5_tela_gastou` | CPU write bursts to PSRAM → DSI FIFO underrun → solid blue frame |
+| `tab5_tela_rolar` + `rolagem_item_preservado` | Reusing on-screen pixels to make scrolling cheaper |
+| `ROLAR_RESPIRO_US`, "drawing faster than the scanout beam" | Tearing during vertical scroll |
+| `REPINTURA_MIN_MS = 80` | Excessive redraws during continuous touch input |
+| Double buffering limited to full-screen repaints | Black flash when switching apps |
 
-Cada linha dessa tabela foi um bug real, corrigido do jeito certo **para a
-base que tínhamos**. O problema é a base. A primeira tentativa (double buffer
-só na janela das mensagens) mostrou o limite: o flip é de página inteira, e
-sem saber **tudo** o que mudou no frame (barra de escrita, ícone do
-LongFast), a outra página fica velha nesses pontos e pisca.
-
----
-
-## 2. As seis regras (o que a LVGL faz, e o que vamos fazer)
-
-1. **Nunca escrever na página que o painel está varrendo.** Todo desenho vai
-   para a página de trás. A da frente só é lida pelo DMA do DSI.
-2. **Uma lista GLOBAL de áreas sujas por frame.** Qualquer mudança (um texto,
-   a bateria, a rolagem) *invalida* um retângulo. Depois do flip, copiamos
-   para a nova página de trás **só esses retângulos** — é isso que faltou na
-   primeira tentativa, e é o que torna o double buffer barata: o custo é proporcional ao que
-   mudou, não à tela.
-3. **Flip no limite do frame.** O driver do IDF já faz isso (o
-   `cur_fb_index` só é lido quando o DMA reinicia, `esp_lcd_panel_dpi.c:75`).
-   Esperamos `on_frame_buf_complete` antes de tocar na página que saiu.
-4. **Um frame por ciclo.** Toque, dado novo e temporizador só *invalidam*. Um
-   loop de frame junta tudo e desenha uma vez. Nada é desenhado "na hora" do
-   evento. Sem nada sujo, não há frame — custo zero parado.
-5. **Rolar é redesenhar recortado, não deslocar pixel.** A lista muda o
-   deslocamento, invalida a própria área, e o frame seguinte a redesenha na
-   página de trás. Sem fragmento possível, porque nada de antes é reaproveitado.
-6. **Fonte no tamanho exato, com suavização.** Nada de escala fracionária de
-   fonte bitmap (o `TAM_MSG 3.8`). Fontes geradas no tamanho de uso.
+Every row in that table solved a real hardware bug in the only way possible
+**given the foundation we had**. The foundation itself was the problem. Our
+first experiment (double buffering only the message list viewport) exposed the
+limit: hardware page flips swap the entire screen buffer at once, so without
+tracking **everything** that changed during a frame (the compose bar, the
+channel badge, the status bar), the other buffer holds stale pixels in those
+regions and flickers on flip.
 
 ---
 
-## 3. O que o hardware já oferece (verificado no IDF 5.5.5 instalado)
+## 2. The six principles (how LVGL works, and how our compositor works)
 
-- **Dois framebuffers** já alocados (`num_fbs = 2` no Panel_DSI do M5GFX),
-  720×1280 RGB565 = 1,84 MB cada, na PSRAM.
-- **Flip por hardware**: `esp_lcd_panel_draw_bitmap()` com ponteiro dentro de
-  um framebuffer só troca o índice (`esp_lcd_panel_dpi.c:506-524`).
-- **Aviso de frame completo**: `esp_lcd_dpi_panel_register_event_callbacks()`
-  com `on_frame_buf_complete` (e `on_vsync`).
-- **PPA** (`esp_driver_ppa`): `ppa_do_fill`, `ppa_do_blend`,
-  `ppa_do_scale_rotate_mirror` (com escala 1 = cópia de retângulo com passo).
-  Copia e preenche por DMA2D, sem a CPU.
-- **Prioridade no barramento AXI** (`hal/axi_icm_ll.h`): QoS por mestre,
-  incluindo o DW_GDMA, que é o DMA que alimenta o DSI. O próprio driver aponta
-  isso como o remédio do underrun (`esp_lcd_panel_dpi.c:113`). É a **causa
-  raiz** do frame azul: hoje a CPU e o painel disputam a PSRAM em pé de
-  igualdade; com QoS, a leitura do painel ganha.
+1. **Never write to the buffer the panel is scanning out.** All drawing targets
+   the back buffer. The front buffer is read exclusively by the DSI DMA engine.
+2. **A single GLOBAL dirty-rectangle list per frame.** Every visual change (a
+   label update, the battery icon, a scroll step) *invalidates* a rectangle.
+   After a page flip, we copy **only those dirty rectangles** to the new back
+   buffer — that is what was missing in our first attempt, and it is what makes
+   true double buffering fast: the sync cost scales with what changed, not with
+   the full screen size.
+3. **Flip on the frame boundary.** The ESP-IDF DPI driver already does this in
+   hardware (`cur_fb_index` is only latched when the DMA descriptor restarts at
+   VSYNC, `esp_lcd_panel_dpi.c:75`). We wait for `on_frame_buf_complete` before
+   touching the buffer that just rotated off-screen.
+4. **One frame per UI cycle.** Touch events, incoming data, and timers only
+   *invalidate* regions. A single frame step at the end of the UI loop merges
+   all invalidations and renders once. Nothing draws synchronously inside an
+   event handler. When nothing is dirty, no frame is produced — zero idle cost.
+5. **Scrolling means redrawing with a clip rect, or DMA-blitting from the front
+   buffer.** The list updates its scroll offset, invalidates its viewport, and
+   renders cleanly into the back buffer before flipping.
+6. **Pre-rendered anti-aliased fonts at exact pixel heights.** No fractional
+   scaling of bitmap fonts (like the old `TAM_MSG 3.8`). Every font size used in
+   the UI is generated at its native pixel height.
 
 ---
 
-## 4. A arquitetura
+## 3. What the hardware provides out of the box (verified on ESP-IDF 5.5.5)
+
+- **Two hardware framebuffers** already allocated (`num_fbs = 2` in M5GFX's
+  `Panel_DSI`), 720×1280 RGB565 = 1.84 MB each, in PSRAM.
+- **Zero-copy hardware page flip**: calling `esp_lcd_panel_draw_bitmap()` with a
+  pointer targeting one of the panel's own framebuffers simply swaps the active
+  buffer index (`esp_lcd_panel_dpi.c:506-524`).
+- **Frame completion interrupt**: `esp_lcd_dpi_panel_register_event_callbacks()`
+  provides `on_frame_buf_complete` (and `on_vsync`).
+- **PPA / DMA2D** (`esp_driver_ppa` and `esp_async_fbcpy`): `ppa_do_fill`,
+  `ppa_do_blend`, and `ppa_do_scale_rotate_mirror` (at scale 1.0 = strided
+  rectangular blit). Copies and fills memory via hardware DMA without tying up
+  the CPU.
+- **AXI bus QoS priority** (`hal/axi_icm_ll.h`): per-master QoS priorities on
+  the internal AXI interconnect, including `DW_GDMA`, which feeds the MIPI-DSI
+  controller. The ESP-IDF driver itself points to this as the fix for display
+  underruns (`esp_lcd_panel_dpi.c:113`). It addresses the **root cause** of the
+  blue flash: instead of the CPU and display DMA competing as equals for PSRAM
+  bandwidth, display scanout reads get priority.
+
+---
+
+## 4. Architecture
 
 ```
-  eventos (toque, dados, timers)
-        │  só invalidam
-        ▼
- ┌──────────────────────┐
- │  ÁRVORE DE OBJETOS   │  telas, rótulos, botões, listas, imagens, canvas
- │  (kernel/ui_*)       │  mudar propriedade = invalidar a própria área
- └─────────┬────────────┘
-           │ áreas sujas (lista global, fundidas)
-           ▼
- ┌──────────────────────┐
- │  COMPOSITOR          │  1 quadro por ciclo, na tarefa de interface
- │  (kernel/quadro)     │  para cada área suja → fatias na SRAM interna
- └─────────┬────────────┘
-           │ fatia pronta (SRAM) → cópia por DMA2D/PPA
-           ▼
- ┌──────────────────────┐
- │  HAL DE QUADRO       │  página de trás ← fatias
- │  (hal/tab5_frame)   │  flip no limite do quadro
- └─────────┬────────────┘  espera on_frame_buf_complete
-           │               sincroniza as áreas sujas na página que saiu
-           ▼
-        painel DSI (lê a página da frente, com prioridade no AXI)
+   events (touch, data, timers)
+         │  only invalidate
+         ▼
+  ┌──────────────────────┐
+  │  OBJECT TREE / APPS  │  screens, labels, buttons, lists, images, canvas
+  │  (kernel/ui_*)       │  mutating state = invalidating the affected rect
+  └─────────┬────────────┘
+            │ dirty rectangles (global list, merged)
+            ▼
+  ┌──────────────────────┐
+  │  COMPOSITOR          │  1 frame per cycle, on the UI task
+  │  (kernel/compositor) │  tracks dirty rects on the back buffer
+  └─────────┬────────────┘
+            │ cache writeback + DMA2D/PPA sync
+            ▼
+  ┌──────────────────────┐
+  │  FRAME HAL           │  back buffer ← rendered rects
+  │  (hal/tab5_frame)    │  page flip on VSYNC boundary
+  └─────────┬────────────┘  awaits on_frame_buf_complete
+            │               lazily syncs dirty rects onto the new back buffer
+            ▼
+         MIPI-DSI panel (reads the front buffer, prioritized on AXI)
 ```
 
-### 4.1 Renderizar na SRAM, não na PSRAM
+### 4.1 Tile rendering in SRAM vs. direct back-buffer rendering
 
-Esse é o ganho de banda que acaba com a luta contra o frame azul. Hoje um
-balão de mensagem escreve na PSRAM três vezes: o fundo, o balão por cima e o
-texto por cima do balão. Com fatias:
+Initially we explored rendering into small horizontal **tiles** in internal SRAM
+(e.g., 720 × 32 lines × 2 B = 46 KB, double-buffered) and pushing each finished
+tile to PSRAM via DMA, so overdraw (background + bubble + glyph) would happen in
+fast internal SRAM rather than PSRAM.
 
-- o compositor aluga uma **fatia** na SRAM interna (ex.: 720 × 32 linhas ×
-  2 B = 46 KB; duas fatias para alternar);
-- desenha nela tudo o que cai naquela faixa da área suja, na ordem das
-  camadas (sobreposição acontece na SRAM, que é rápida e não disputa com o
-  painel);
-- manda a fatia pronta para a página de trás **uma vez**, por DMA2D, enquanto
-  a CPU já desenha a próxima fatia na outra.
+As documented in the engineering log below (Section 7), once we switched buffer
+copies from the PPA engine to raw **DMA2D** (`esp_async_fbcpy` at 288 MB/s),
+added **PPA hardware fills** for large rectangles, and introduced a **glyph
+cache**, drawing directly into the PSRAM back buffer ("direct mode" in LVGL
+terminology) with lazy dirty-region synchronization proved both faster and
+simpler — freeing 90 KB of precious internal SRAM and 1.84 MB of PSRAM.
 
-A PSRAM passa a ver cada pixel final **uma vez**, em rajadas de DMA
-comportadas, em vez de N escritas da CPU. Somando a QoS do AXI, as faixas, os
-respiros e o `tab5_tela_gastou` deixam de ter motivo para existir.
+### 4.2 Retained-mode UI widgets
 
-O rasterizador continua sendo o M5GFX: cada fatia é um `LGFX_Sprite` com
-`setBuffer()` apontando para a SRAM (verificado: `LGFX_Sprite.hpp:155`). O
-contexto de desenho carrega o deslocamento da fatia, e os objetos desenham
-em coordenadas próprias sem saber disso.
+Instead of every app manually tracking dirty rects and re-implementing scroll
+physics, common patterns live in shared system components (`kernel/list`,
+`kernel/conversation`, `kernel/virtual_keyboard`, `tab5_ui.hpp`), while apps
+that do custom canvas drawing simply draw into `M5.Display` and let the
+compositor's tracker panel record every touched rectangle automatically.
 
-### 4.2 A árvore de objetos (modo retido)
+### 4.3 Input handling
 
-Hoje o app é "imediato": o sistema chama `desenhar()` e o app pinta tudo, com
-as regras de desenho na cabeça. Na nova base o app **declara** a tela uma vez
-(`ao_abrir`) e depois só **muda propriedades**:
+Touch input is sampled centrally by the kernel, which routes gestures to the
+active component or app. Lists handle drag thresholds, momentum, clamping, and
+swallowing taps at the end of a scroll gesture automatically.
 
-```c
-ui_obj_t* tela  = ui_tela_do_app();
-ui_obj_t* bat   = ui_rotulo(tela, 16, 16, "Bateria: --");
-ui_obj_t* lista = ui_lista(tela, ...);         // rolagem, inércia, recorte: do sistema
+### 4.4 Power efficiency
 
-// quando o dado muda (na tarefa de interface):
-ui_rotulo_texto(bat, "Bateria: 87%");            // invalida só o retângulo do rótulo
-```
+When no region is dirty, no frame is presented: the UI task sleeps on the event
+queue. The frame loop only runs at panel refresh rate while an animation is
+active or a finger is dragging on screen; a clock that updates once a minute
+costs one small rectangle copy per minute. Per-app hardware power profiles work
+unchanged.
 
-Cada objeto sabe a própria área, então invalidação é automática. Estilo
-(cor, fonte, raio, borda) é do objeto, não estado global: a regra nº 2
-desaparece. Largura fixa e pintar por diferença desaparecem: o compositor
-redesenha o retângulo inteiro na SRAM, com fundo, sem piscar.
+### 4.5 Incremental migration without a flag day
 
-Objetos previstos: `tela`, `painel` (retângulo com raio e borda), `rotulo`,
-`botao`, `imagem` (PNG/emoji), `lista` (rolável e **virtualizada**: só existem
-os itens visíveis — essencial para o histórico do Mesh), `canvas` (desenho
-livre para Azimutal, Câmera e Cobra).
-
-### 4.3 Entrada
-
-O toque vai para o sistema, que acha o objeto sob o dedo e entrega eventos
-(pressionou, soltou, clicou, arrastou, toque longo). A lista trata o arrasto
-sozinha (limiar, inércia ao soltar, freio nas pontas) e engole o clique de
-quem estava rolando. Some o `ao_tocar`/`ao_tocar_nivel`/`rolagem_foi_arraste`
-em cada app.
-
-### 4.4 Energia
-
-Sem área suja, não há frame: a tarefa de interface dorme na queue de eventos
-como hoje. O loop de frame só roda a 60 Hz enquanto há animação ou dedo na
-tela; um relógio que muda por minuto custa um retângulo por minuto. Os perfis
-de energia por app não mudam.
-
-### 4.5 Migração sem big-bang
-
-Um app ainda não portado roda dentro de um objeto `canvas` com um `M5Canvas`
-próprio na PSRAM: o `desenhar()` antigo pinta nele como sempre, e o
-compositor copia só a parte suja. Isso deixa o sistema inteiro funcionando
-durante a troca, e é o caminho do Cobra (fronteira com a aba do jogo: o
-contrato do app muda do lado de cá, o jogo porta quando a aba dele quiser).
+By subclassing M5GFX's `Panel_Sprite` as a **tracker panel** that intercepts
+every drawing primitive and records its bounding box in physical coordinates,
+every existing `desenhar()` function automatically benefits from hardware
+double-buffering, tear-free page flips, and partial dirty-rectangle sync without
+rewriting all apps at once.
 
 ---
 
-## 5. Etapas
+## 5. Implementation stages
 
-Cada etapa compila, grava e é testada no aparelho antes da próxima.
+Every stage was compiled, flashed, and benchmarked on physical hardware before
+moving to the next.
 
-| # | etapa | entrega | como sabemos que funcionou |
+| # | Stage | Deliverable | Acceptance criteria |
 |---|---|---|---|
-| 0 | **medir** | contador de underrun, tempo de frame, SRAM livre | números de base para comparar |
-| 1 | **HAL de frame** | `hal/tab5_frame`: QoS AXI, flip no limite, `on_frame_buf_complete`, sincronizar áreas, cópia por PPA | tela de teste no console: retângulo animado + rolagem sintética, zero underrun, zero rasgo |
-| 2 | **compositor** | lista de áreas sujas, fusão, fatias na SRAM, loop de frame | a mesma tela de teste passando pelo compositor |
-| 3 | **objetos + entrada** | árvore, estilos, `rotulo/botao/painel/imagem/lista/canvas`, toque, lista com inércia; fontes suaves no tamanho exato | home e barra de status reescritas na base nova |
-| 4 | **Mesh** | mensagens como `lista` virtualizada de balões | a rolagem que hoje deforma, lisa, sem nenhum código de tela no app |
-| 5 | **demais apps** | um por vez; os não portados rodam no `canvas` de ponte | cada app testado sozinho |
-| 6 | **apagar o legado** | `paint.*`, faixas/respiros do `tab5_screen`, `rolagem_deslocar`, `REPINTURA_MIN_MS`, regras de desenho nº 1–4 | o código de tela dos apps vira só declaração |
+| 0 | **Measure** | Underrun counter, frame timing, free internal SRAM | Baseline numbers for comparison |
+| 1 | **Frame HAL** | `hal/tab5_frame`: AXI QoS, VSYNC page flip, `on_frame_buf_complete`, dirty-rect sync, PPA/DMA2D copy | Console test screen: animated rect + synthetic scroll with zero underruns and zero tearing |
+| 2 | **Compositor** | Dirty-rect list with LVGL-style merging, SRAM tile prototype, frame loop | Same test screen running through the compositor |
+| 3 | **Bridge + widgets** | Tracker panel (`Panel_Sprite` subclass), `kernel/list`, `kernel/conversation`, native anti-aliased fonts | Entire OS running through the compositor |
+| 4 | **Mesh app** | Message history migrated to virtualized `kernel/list` with cached bubble layouts | Smooth scrolling with zero tearing |
+| 5 | **Remaining apps** | Migrate lists in Files, Tasks, Azimuthal, Trail; optimize full-screen clears | Every app tested on hardware |
+| 6 | **Delete legacy hacks** | Remove old double-buffer code, strip delays, `rolagem_item_preservado`, `REPINTURA_MIN_MS` | Clean display HAL |
 
 ---
 
-## 6. Perguntas em aberto (a medir, não a chutar)
+## 6. Open questions (answered by measurement in Section 7)
 
-- **SRAM interna livre** com WiFi/esp_hosted ligados: decide o tamanho da
-  fatia (etapa 0).
-- **Nível de QoS** do DW_GDMA que zera o underrun sem estrangular a CPU
-  (etapa 1).
-- **PPA para a cópia fatia → página**, ou `draw_bitmap` com `use_dma2d`: o
-  segundo é mais simples, o primeiro permite preencher e misturar por
-  hardware. Decidir medindo (etapa 1).
-- **Fontes**: VLW suave (o M5GFX já carrega) gerada nos tamanhos de uso por
-  script, como o `generate_emoji.py` já faz com os emoji (etapa 3).
+- **Free internal SRAM** with Wi-Fi and `esp_hosted` active: determines whether
+  SRAM tiles are worth their footprint (Stage 0).
+- **`DW_GDMA` QoS level** that eliminates underruns without starving the CPU
+  (Stage 1).
+- **PPA vs. raw DMA2D (`esp_async_fbcpy`)** for rectangular copies and fills:
+  benchmarked head-to-head on hardware (Stage 1 / Audit).
+- **Fonts**: pre-rendered smooth VLW/bitmap fonts generated at exact target pixel
+  heights by script, matching `generate_emoji.py` (Stage 3).
 
 ---
 
-## 7. Diário
+## 7. Engineering log
 
-**Etapas 0 e 1 no código, aguardando teste no aparelho.**
-- `hal/tab5_frame.{hpp,cpp}`: QoS do DW-GDMA no AXI (liga/desliga), aviso de
-  fim de frame (`on_frame_buf_complete`), cópia de retângulo entre páginas
-  pelo PPA, contador de underrun (vigia no canal 2 da saída da ROM, que o
-  boot deixa livre — conta sem substituir o console).
+**Stages 0 and 1 implemented and benchmarked on hardware.**
+- `hal/tab5_frame.{hpp,cpp}`: `DW-GDMA` AXI QoS toggle, frame-complete callback
+  (`on_frame_buf_complete`), rectangular buffer copy via PPA, and a hardware
+  underrun counter (hooking channel 2 of the ROM UART output, which boot leaves
+  free — counts driver `ESP_DRAM_LOGE` underrun messages without hijacking the
+  serial console).
 - `hal/tab5_screen`: `tab5_tela_igualar_paginas()`, `tab5_tela_apresentar()`
-  (sincroniza cache só das áreas → pede troca → espera o fim do frame →
-  copia as áreas para a página que saiu), `tab5_tela_escrever_na_frente()`.
-- `app_quadro` (descartável): a mesma animação no LEGADO e no NOVO, com QoS
-  ON/OFF, medindo q/s, tempo de desenho, tempo de troca, pior frame e
-  underrun.
+  (flushes cache for dirty rects only → requests flip → awaits frame completion
+  → copies dirty rects to the buffer that rotated off-screen),
+  `tab5_tela_escrever_na_frente()`.
+- `app_quadro` (temporary benchmark app): runs the exact same animation in
+  LEGACY and NEW modes with QoS ON/OFF, measuring FPS, draw time, flip wait
+  time, worst frame, and underrun count.
 
-**Resultado da etapa 1 no aparelho.**
-- Troca sincronizada **funciona**: "sem troca: 0" em todas as rodadas do NOVO.
-- Desenhar a janela inteira direto na PSRAM custa **~34 ms** (legado e novo
-  iguais): teto de ~29 q/s. É o argumento da etapa 2.
-- NOVO em 16–17 q/s porque esperava a troca logo após o pedido e copiava a
-  janela inteira que o frame seguinte redesenharia. Corrigido na etapa 2
-  (espera e sincronia adiadas para o início do frame seguinte).
-- **QoS máximo no DW-GDMA PIORA**: com o painel a 79 MHz a tela piscou azul
-  sem parar (observado em uso). Fica DESLIGADO; não entra na base até ser
-  entendido e medido. Os 35 Hz de uma rodada foram o clock do painel baixado
-  pelos Ajustes, não defeito.
-- Pendente: confirmar se o vigia de underrun conta de verdade (autoteste no
-  boot) — ele marcou 0 durante o que pode ter sido a rodada azul.
+**Stage 1 hardware results.**
+- Synchronized page flipping **works**: "missed flips: 0" across all runs in NEW
+  mode.
+- Drawing the full viewport directly in PSRAM takes **~34 ms** (identical in
+  legacy and new modes), capping full-screen redraws at ~29 FPS.
+- Initial NEW mode ran at 16–17 FPS because it waited for VSYNC immediately
+  after requesting the flip and copied the entire viewport that the next frame
+  was about to overwrite anyway. Fixed in Stage 2 by deferring the flip wait and
+  buffer sync to the start of the *next* frame.
+- **Maximum QoS (`15`) on `DW-GDMA` makes things WORSE**: with the panel at
+  79 MHz, the screen flashed blue continuously. Turned OFF until investigated
+  further. (A 35 Hz reading in one test run turned out to be the panel clock
+  lowered in Settings, not a hardware fault.)
 
-**Etapa 2 no código (`kernel/compositor.{hpp,cpp}`).** Lista de
-áreas sujas com fusão (regra da LVGL), duas fatias na SRAM interna, montagem
-com o M5GFX em coordenadas de tela (sprite com ponteiro recuado), cópia
-fatia → página pelo PPA assíncrono, sincronia adiada que pula o que vai ser
-redesenhado, troca pedida sem esperar. Teste: COMP ROLAR / COMP QUADRADO.
+**Stage 2 in code (`kernel/compositor.{hpp,cpp}`).** Dirty-rectangle list with
+LVGL-style bounding-box merge, dual SRAM tiles, M5GFX rendering in screen
+coordinates (sprite buffer pointer offset), async PPA copy from tile to back
+buffer, deferred sync that skips regions slated to be overwritten in the new
+frame, and non-blocking flip requests. Tested via `COMP ROLAR` / `COMP QUADRADO`.
 
-**Correções depois das piscadas azuis.**
-- O "QoS" do app de teste DUPLICAVA o `hal/tab5_bus` (já ligado no
-  boot: arbitragem 8 + ARQOS 8). "QoS OFF" do teste = estado misto; "QoS ON"
-  = ARQOS 15, que piscou azul sem parar. Duplicata removida; o botão do teste
-  agora liga/desliga o módulo original de verdade.
-- Linha de cache L2: 64B → 128B (ver memória de causas do azul). Principal
-  suspeita da falta de banda.
-- Relógio do painel limitado a 24..80 MHz (Ajustes e console limitam em vez de
-  recusar); o passo de 5 agora alcança 80.
+**Fixes after investigating blue flashes.**
+- The test app's "QoS" toggle was duplicating `hal/tab5_bus` (which was already
+  configured at boot with arbitration priority 8 + `ARQOS 8`). In the test app,
+  "QoS OFF" was actually that balanced boot state, while "QoS ON" cranked
+  `ARQOS` to `15`, which starved the system and caused continuous blue flashes.
+  Removed the duplicate code; the test toggle now switches `hal/tab5_bus` cleanly.
+- L2 cache line size bumped from 64 B → 128 B, significantly improving external
+  memory throughput.
+- Panel pixel clock clamped to 24..80 MHz in Settings and the serial console
+  (clamping instead of rejecting out-of-range steps, so 5 MHz steps reach 80 MHz).
 
-**Etapas 1–2 validadas no aparelho; etapa 3a (a ponte) no código.**
-Resultado do teste: COMP ROLAR "bem suave, nada de rasgo nem fragmento";
-COMP QUADRADO a 63,5 q/s (teto do painel) com 2,4 ms; nenhum azul a 80 MHz.
+**Stages 1–2 validated on hardware; Stage 3a (system-wide bridge) landed.**
+Benchmark results: `COMP ROLAR` is completely smooth with zero tearing or
+artifacts; `COMP QUADRADO` hits 63.5 FPS (the panel's physical refresh rate) at
+2.4 ms/frame with zero blue flashes at 80 MHz.
 
-Etapa 3a — **o sistema inteiro passa pelo compositor**:
-- `kernel/virtual_screen`: canvas 720×1280 na PSRAM que o painel nunca lê, com
-  um **painel rastreador** (subclasse do `Panel_Sprite`) que anota cada
-  retângulo tocado por qualquer primitiva do M5GFX, já convertido para
-  coordenadas físicas (a mesma conta de rotação do `Panel_Sprite`, então o
-  Mesh em paisagem funciona).
-- Kernel (home, barras, apps) desenha na tela virtual; no fim de cada volta
-  do loop, `comp_quadro_imagem()` leva só as áreas anotadas para a página de
-  trás pelo PPA e pede a troca. Ao acordar: tela inteira + espera a troca
-  antes de acender a luz.
-- `tab5_tela_limpar/rolar` escrevem no alvo (tela virtual) e **sem respiro**.
-- Painel recriado (repouso, relógio) → o compositor percebe pela geração do
-  `tab5_screen` e invalida a tela inteira.
-- Azimutal: `pushSprite(px,py)` escrevia no PAI do canvas (M5.Display) —
-  passava por fora; agora `pushSprite(&d, ...)`, sem fatiamento.
-- App Frame: só ROLAR / QUADRADO / QoS.
+Stage 3a — **routing the entire OS through the compositor**:
+- `kernel/virtual_screen`: a 720×1280 shadow canvas in PSRAM that the panel
+  never scans out, paired with a **tracker panel** (a `Panel_Sprite` subclass)
+  that records the bounding box of every M5GFX drawing primitive, automatically
+  transformed into physical panel coordinates (using `Panel_Sprite`'s own
+  rotation math, so landscape apps like Mesh work transparently).
+- The kernel (home screen, bars, apps) draws into the virtual screen; at the end
+  of each UI loop iteration, `comp_quadro_imagem()` blits only the dirty
+  rectangles to the back buffer via PPA and requests a flip. On wake from sleep:
+  renders the full screen and awaits flip completion before turning on the
+  backlight.
+- `tab5_tela_limpar` and `tab5_tela_rolar` now write straight to the target
+  surface **with zero artificial delays**.
+- Whenever the DSI panel is recreated (sleep/wake or pixel clock change), the
+  compositor detects the new panel generation ID from `tab5_screen` and
+  invalidates the entire screen.
+- Azimuthal app fix: `pushSprite(px, py)` was pushing to the canvas's default
+  parent (`M5.Display`), bypassing the compositor; changed to
+  `pushSprite(&d, ...)`.
 
-Legado que ficou sem função mas ainda existe (sai na etapa 6): double buffer
-antiga (`para_tras/mostrar`), `REPINTURA_MIN_MS`, `rolagem_deslocar`,
-`pintura_*`, marcas de "já limpo".
+**Stage 3a validated; legacy cleanup; first standard UI widget.**
+- `hal/tab5_screen` shrank from 811 → 275 lines: removed legacy double
+  buffering, strip delays, `gastou` (kept as an inline no-op for compatibility),
+  and striped cache flushes. Removed `REPINTURA_MIN_MS` and `rolagem_em_arraste`
+  from the kernel, removed the 70 ms wake-up settle delay from `tab5_power`, and
+  removed `comp_encerrar` from the compositor.
+- **`kernel/list`**: standard scrollable list widget (cached per-item heights,
+  exposed-strip partial repaint, scrollbar, and scroll-offset compensation when
+  items are appended to a bottom-anchored list).
+- **Mesh messages view** migrated to `kernel/list` with a **bubble layout cache**
+  (`construir_layout`): each message is measured once when history loads rather
+  than on every scroll step (previously, every frame ran word-wrapping, emoji
+  scanning, 2× `gmtime`, and locked the service mutex for *every* message in
+  history). Dragging no longer forces a full-window repaint.
 
-**Etapa 3a validada; limpeza do
-legado; primeiro componente padrão.**
-- `hal/tab5_screen` 811 → 275 linhas: saíram double buffer antiga, faixas,
-  respiros, `gastou` (vira no-op só por causa do Cobra), sincronização de
-  cache em faixas. `REPINTURA_MIN_MS` e `rolagem_em_arraste` saíram do kernel;
-  o "assentamento" de 70 ms ao acordar saiu do `tab5_power`; `comp_encerrar`
-  saiu do compositor.
-- **`kernel/list`**: lista rolável padrão (altura por item em cache, faixa
-  exposta, barra, compensação de item novo em lista ancorada no fim).
-- **Mesh/mensagens** migrado para a lista, com **cache de balões**
-  (`construir_layout`): cada mensagem é medida uma vez por carga do histórico,
-  não a cada passo de rolagem (antes: quebra de linha, emoji, 2×gmtime e o
-  mutex do serviço, para TODAS as mensagens, a cada frame). O arraste não
-  força mais a janela inteira.
-- Pendentes no Mesh: Conversas e Nós ainda na rolagem antiga (migrar para a
-  lista); mensagem nova ainda dispara repintura completa do app inteiro.
+**Fixes + structural audit.**
+- Mesh: outgoing message timestamp was being recorded as `0` (rendering as
+  `31/12/1969` in UTC−3); now uses system UTC when valid (`MESH_EPOCH_VALIDO`),
+  and undated messages no longer insert a date divider. `AVISO` and `ENV`
+  buttons switched to `TAB5_BOTAO_TEXTO_GRANDE`.
+- Virtual keyboard: native 24 pt bold smooth font (replacing 12 pt bitmap scaled
+  1.5×); inter-key gaps snap to the nearest key; key presses confirm on finger
+  **release** (previously relied on M5Unified's tap detector, which dropped keys
+  if the finger drifted slightly or held too long), keeping tap detection as a
+  fallback for sub-sample taps.
+- Structural audit findings: UI was still waking at 40–50 Hz when idle; Mesh was
+  reading SD card history **on the UI task** on every incoming message; internal
+  I2C lacked a shared lock across M5Unified and ESP-IDF's camera SCCB driver;
+  and apps were polling via `periodo_ms` instead of reacting to events.
 
-**Correções + auditoria.**
-- Mesh: hora do envio era gravada como 0 (virava 31/12/1969 no fuso -3);
-  agora UTC do sistema quando válida (`MESH_EPOCH_VALIDO`), e mensagem sem
-  data não abre divisor. Botão AVISO e ENV com `TAB5_BOTAO_TEXTO_GRANDE`.
-- Teclado virtual: fonte 24pt negrito nativa (era 12pt × 1,5 = serrilhada);
-  o vão entre teclas vai para a tecla mais próxima; a tecla é confirmada na
-  SOLTURA do dedo (antes só pelo clique do M5Unified, que descarta toque com
-  arrasto ou longo), com o clique como rede para toque rápido demais.
-- Auditoria estrutural (ver resposta da sessão): UI acorda a 40–50 Hz mesmo
-  parada (M5.update → I2C do toque); o Mesh lê o histórico do SD NA TAREFA DE
-  INTERFACE a cada mensagem nova; I2C interno só pode ser usado pela UI (sem
-  mutex no M5Unified) e isso força pontes; apps sondam por `periodo_ms` em vez
-  de receber evento.
+**The four structural fixes + Protobuf audit.**
+1. **Event notifications** (`sistema_avisar`, `AVISO_*`,
+   `app_t.avisos/ao_aviso/periodo_agora`): services signal what changed and the
+   open app redraws immediately. Mesh message view now runs with `periodo_ms = 0`
+   (only the Nodes and Mesh tabs, which display live age counters, use a 1 s
+   timer).
+2. **System worker** (`kernel/work`): offloads slow I/O from the UI task and
+   delivers completion via `AVISO_TRABALHO`; closing an app waits for any
+   in-flight job to finish and flushes pending jobs. Migrated Mesh (history and
+   SD card reads, double-buffered) and Files (line counting and page loading).
+3. **UI task sleeps when idle**: while a finger is down or work is pending, it
+   polls at 20 ms with the touch GPIO interrupt disabled; when idle, it enables
+   the touch interrupt and sleeps until the next real timer deadline. Calling
+   `sistema_pedir_redesenho()` from another task wakes the UI task immediately.
+4. **Unified internal I2C locking**: M5GFX locks its I2C bus per transaction,
+   whereas ESP-IDF's camera SCCB driver did not. Using
+   `-Wl,--wrap=sccb_new_i2c_io`, we routed `esp_video`'s SCCB transactions
+   through M5GFX's locked I2C bus (`hal/tab5_sccb.cpp`), allowing us to delete
+   the cross-task camera marshaling bridge. This also made background auto-exposure
+   (IPA/AGC) register writes thread-safe during live capture.
+- Keyboard: release debouncing (2 finger-up samples, 80 ms minimum repeat on the
+  same key).
+- **Protobuf wire format verified against `meshtastic/src/mesh/generated/.../mesh.pb.h`**:
+  `MeshPacket.via_mqtt` is field 14 and `hop_start` is field 15 (our code was
+  reading 13 and 14); `QueueStatus.mesh_packet_id` is a `varint` (was being read
+  as `fixed32`). All other decoder and encoder fields matched.
 
-**As quatro correções estruturais + revisão do protobuf.**
-1. **Avisos** (`sistema_avisar`, `AVISO_*`, `app_t.avisos/ao_aviso/periodo_agora`):
-   serviço diz o que mudou, app redesenha na hora. Mesh: sem período nas
-   mensagens (só Nós/Malha, que mostram idade, têm 1 s).
-2. **Worker de sistema** (`kernel/work`): trabalho lento fora da
-   interface; resultado entregue por `AVISO_TRABALHO`; fechar app espera o
-   trabalho em andamento e descarta a queue. Mesh (histórico e cartão, com dois
-   buffers) e Arquivos (contagem de linhas e página) migrados.
-3. **Interface dorme parada**: dedo ou trabalho pendente → 20 ms com a
-   interrupção do toque desligada; parada → interrupção ligada e sono até o
-   próximo prazo real. `sistema_pedir_redesenho` de outra tarefa acorda a
-   interface.
-4. **I2C interno numa trava só**: o M5GFX já trava a porta por transação; o
-   SCCB da câmera (driver do IDF) não. `-Wl,--wrap=sccb_new_i2c_io` entrega ao
-   esp_video um SCCB feito de transações do M5GFX (`hal/tab5_sccb.cpp`). Ponte
-   da câmera removida. Isso também cobre o controle automático de exposição
-   (IPA/AGC), que escrevia no sensor durante a captura sem trava.
-- Teclado: debounce na soltura (2 amostras sem dedo, 80 ms entre letras).
-- **Protobuf conferido contra `meshtastic/src/mesh/generated/.../mesh.pb.h`**:
-  `MeshPacket.via_mqtt` é o campo 14 e `hop_start` o 15 (o código lia 13 e 14);
-  `QueueStatus.mesh_packet_id` é varint (era lido como fixed32). O resto do
-  decodificador e todo o codificador (ToRadio, heartbeat, want_config) batem.
+**Tasks app: profiling promoted to a system service.** `services/tab5_monitor`
+samples continuously at 1 Hz, records high/low watermarks with timestamps, keeps
+a 5-minute rolling history, triggers diagnostic events, and logs per-minute
+summaries and events to the SD card. The Tasks app is now just a viewer window.
 
-**Tarefas: medição virou serviço.** `services/tab5_monitor`
-mede sempre (1 Hz), guarda picos/mínimos com hora, histórico de 5 min e
-eventos de gatilhos; grava eventos e um resumo por minuto no cartão. O app é
-só a janela e, com o compositor, simplesmente redesenha tudo a cada segundo.
+**Power app overhauled.** Reads the kernel's cached sensor sample (eliminating a
+duplicate I2C read), uses native 18 pt / 12 pt smooth fonts, plots a full 24-hour
+rolling window loaded via the system worker (leaving gaps when powered off),
+shows signed current with a zero reference line, power in watts, and integrated
+daily energy (mAh discharged/charged, Wh). Logs to
+`Sistema/energia/energia-YYYY-MM-DD.csv` (`ENE3` format with real timestamps) in
+batches of 5. Added an `UNDERRUN` monitor trigger.
 
-**App Energia revisado.** Painel lê a medida do kernel (sem 2ª
-leitura I2C), fontes nativas 18pt/12pt, "HOJE" (arquivo do dia, pelo
-worker, eixo 0–24h, buraco onde desligado) no lugar do histórico sem
-prazo, corrente com sinal + linha do zero, potência em W, consumo do dia
-integrado (mAh gastos/carregados, Wh). Redesenho por região. Registro:
-`Sistema/energia/energia-AAAA-MM-DD.csv` (ENE3, hora real), lote de 5; `tarefas.csv`
-saiu (o monitor cobre). Monitor ganhou gatilho de UNDERRUN com o app aberto.
+**Consolidating scrollable lists across the OS.**
+- `kernel/list` became the **sole** scrollable list implementation across all
+  apps: added touch handling (`lista_arrastar`, `lista_item_tocado` with
+  `LISTA_ARRASTE`), single-item invalidation (`lista_item_mudou`), top padding,
+  and `lista_esconder`. Migrated Mesh (messages, conversations, nodes), Files,
+  Tasks, Azimuthal (days), and Trail (sessions — replacing manual PREV/NEXT
+  pagination buttons). No app calls `rolagem_*` directly anymore;
+  `kernel/scroll` is purely an internal engine for `kernel/list` and the kernel.
+- Raised directory/item caps in PSRAM (since `readdir` returns entries in
+  creation order, small caps hid newly created files): Files 24 → 512 (sorted,
+  folders first, newest files first), Azimuthal 24 → 400 days, Trail 60 → 1000
+  sessions.
+- Compositor cleanup: removed the unused SRAM tile path (freeing 90 KB of
+  internal SRAM held since boot) and removed redundant full-buffer page copies
+  on panel creation (saving 1.8 MB of PSRAM traffic on boot and wake).
+- Enabled `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` and marked large static
+  buffers with `EXT_RAM_BSS_ATTR` (Mesh node table, log drain buffer, monitor
+  event history), freeing ~45 KB of internal SRAM.
+- Deleted the temporary `app_quadro` benchmark app, `tab5_power_tela`,
+  `notif_esta_silenciada`, `pintura_mudou_f`, and `rolagem_item_preservado`.
 
-**Revisão de retalhos e o padrão de lista.**
-- `kernel/list` virou a ÚNICA forma de lista rolável: ganhou o toque
-  (`lista_arrastar`, `lista_item_tocado` com `LISTA_ARRASTE`), a atualização
-  de um item só (`lista_item_mudou`), respiro no topo e `lista_esconder`.
-  Migradas: Mesh (mensagens, conversas, nós), Arquivos, Tarefas, Azimutal
-  (dias) e Trilha (sessões — as páginas ANTERIOR/PRÓXIMA saíram). Nenhum app
-  chama `rolagem_*` direto; `kernel/scroll` é o motor da lista e do kernel.
-- Limites que escondiam os arquivos NOVOS (readdir devolve na ordem de
-  criação): Arquivos 24→512 (ordenado, pastas primeiro, arquivos do mais novo),
-  Azimutal 24→400 dias, Trilha 60→1000 sessões — tudo na PSRAM.
-- Compositor: saiu o caminho de fatias na SRAM (só o app de teste usava e
-  segurava 90 KB da SRAM interna desde o boot) e o "igualar páginas" a cada
-  painel novo (1,8 MB a mais de cópia na PSRAM no boot e no acordar).
-  `tab5_quadro_copiar` é a única cópia (bloqueante).
-- `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY` + `EXT_RAM_BSS_ATTR` nos
-  estáticos grandes (nós do Mesh, dreno do log, eventos do monitor...):
-  ~45 KB a menos na SRAM interna.
-- Removidos: app Quadro (banco de prova, cumpriu a etapa 6),
-  `tab5_power_tela` (apagava o painel por fora do repouso),
-  `notif_esta_silenciada`, `pintura_mudou_f`, `rolagem_item_preservado`.
-- Piscada azul: cor do underrun da ponte = MAGENTA (diagnóstico), relógio do
-  frame e erros do DSI host viram eventos do monitor e aparecem no `tela`.
+**Performance audit; Steps 0 and 1.**
+At this point each pixel still crossed PSRAM up to 5 times (CPU draw to virtual
+screen, PPA blit to back buffer, front-to-back sync on the next frame), and
+scrolling still used a CPU `copyRect` on the virtual screen. Optimization plan:
+0 measure → 1 frame pacing + smarter rect merging → 2 direct mode (draw straight
+to the back buffer without a virtual screen) with DMA2D front-to-back scroll →
+3 eliminate sprites in Radar and diff-render Tasks → 4 adaptive refresh rate.
+- **Instrumentation** (`comp_estat`): tracks frame count, drawn vs. synced pixel
+  counts, PPA/DMA time, flip wait time, draw time, and total loop duration
+  (bucketed histogram: `<4`, `<8`, `<12`, `<16`, `<33`, `>=33` ms), plus CPU
+  scroll time. Console commands: `tela medir` starts a capture window, `tela`
+  prints results. Monitor logs `quadros-YYYY-MM-DD.csv` once per active minute.
+- **Frame pacing:** in fast mode, a loop iteration that presents a frame waits
+  for VSYNC completion and starts the next iteration immediately, instead of
+  sleeping an extra 20 ms after presenting (which had capped frame rate at ~30
+  FPS with beat-frequency judder against the ~63 Hz panel).
+- **Rect merging:** 32 dirty-rect slots; when full, merges only the pair that
+  introduces the smallest wasted area (previously collapsed everything into a
+  single bounding box, often dirtying the entire screen).
+- **First benchmark (scrolling, panel at 47.4 Hz):** mean frame loop was 120 ms,
+  with 157 of 159 frames taking >33 ms. The culprit was the PPA copy at 88 ms
+  per frame (~32 MB/s effective throughput) — our "hardware accelerator" was the
+  bottleneck.
+- **`tela banco` memory copy benchmark** (720×1024 while panel is scanning out):
+  PPA achieved 92 MB/s, raw DMA2D (`esp_async_fbcpy`) hit **288 MB/s**, AXI GDMA
+  hit 206 MB/s, and CPU `memcpy` hit 118 MB/s. Switched page-to-page blits from
+  PPA to **DMA2D** (keeping PPA only as a fallback). Destination cache uses
+  writeback+invalidate because invalidate-only requires 128-byte alignment on
+  both edges.
+- **Second benchmark (with DMA2D copy):** copy time dropped from 88 → **11.4 ms**
+  per frame, and total frame loop dropped from 120 → **40.8 ms**. CPU drawing
+  (26.9 ms, including CPU scroll copies) became the largest remaining cost.
 
-**Auditoria de custo; passos 0 e 1.**
-O pixel ainda passa 5 vezes pela PSRAM (CPU na tela virtual, PPA para a
-página de trás, sincronia no quadro seguinte); a rolagem ainda desloca pela
-CPU (`copyRect` na tela virtual). Plano: 0 medir → 1 ritmo + fusão →
-2 modo direto (desenhar na página de trás, sem tela virtual) com rolagem
-pelo PPA da frente para trás → 3 Radar sem sprites, Tarefas por diferença →
-4 taxa de atualização adaptativa (experimento medido).
-- **Medida** (`comp_estat`): quadros, pixels de quadro e de sincronia, tempo
-  de PPA, de espera da troca, de desenho e da volta inteira (histograma por
-  faixa: <4, <8, <12, <16, <33, >=33 ms), rolagem pela CPU. Console:
-  `tela medir` abre a janela, `tela` mostra. Monitor: `quadros-AAAA-MM-DD.csv`
-  por minuto (só minuto com quadro).
-- **Ritmo:** no modo rápido a volta que apresentou espera a troca e recomeça
-  na hora, em vez de dormir 20 ms depois do trabalho (~30 q/s com trepidação
-  contra o painel de ~63 Hz).
-- **Fusão:** 32 áreas; lista cheia funde só o par de menor desperdício (antes
-  virava um retângulo envolvente, às vezes a tela inteira).
-- **Primeira medida (rolagem, painel 47,4 Hz):** volta com quadro média
-  120 ms, 157 de 159 acima de 33 ms. A cópia pelo PPA era 88 ms por quadro
-  (~32 MB/s em uso): o gargalo, não o atalho.
-- **`tela banco`** (720x1024, painel varrendo): PPA 92 MB/s, DMA2D puro
-  (`esp_async_fbcpy`) 288 MB/s, GDMA AXI 206 MB/s, CPU 118 MB/s. A cópia
-  entre páginas passou para o DMA2D (PPA só de reserva). Cache do destino:
-  devolver+invalidar, porque "só invalidar" exige bordas de 128 B.
-- **Segunda medida (cópia por DMA2D):** cópia 88 → 11,4 ms por quadro, volta
-  120 → 40,8 ms. Desenho (26,9 ms, rolagem da CPU inclusa) virou o maior custo.
-
-**Passo 2: modo direto (o "direct mode" da LVGL com duas páginas).**
-- A tela virtual saiu (−1,84 MB de PSRAM). O rastreador escreve na página de
-  trás; a primeira escrita da volta ABRE o quadro (`comp_abrir`: espera a
-  troca anterior e sincroniza frente → trás), `comp_apresentar` devolve o
-  cache das linhas desenhadas e pede a troca. Troca de página só pelo
-  ponteiro do sprite (`setBuffer` zeraria a janela no meio da escrita).
-- Rolagem: `copyRect` vira cópia por DMA2D da FRENTE (deslocada) para trás,
-  quando a origem não foi desenhada neste quadro; antes de abrir, a janela é
-  prometida (`comp_cobrir`) e a sincronia não a copia à toa. Senão, CPU.
-- Painel novo (boot, relógio, acordar) = páginas sem nada nosso:
-  `comp_painel_novo()` faz o core redesenhar tudo. Desenho sem painel cai
-  numa lixeira alocada só se acontecer (com log).
-- Câmera: superfície de DMA própria, alocada no primeiro pedido e devolvida
-  ao fechar o app; levada à página por DMA2D no `desenhar`.
-- Troca do relógio do painel pelo console agora roda na tarefa de interface
-  (`sistema_trocar_relogio_painel`): destruir as páginas de outra tarefa no
-  meio de uma passada de desenho seria escrever em memória liberada.
-- Histograma da volta em PERÍODOS do painel medido (1, 2, 3, 4+), não em ms
-  fixos. CSV novo: `quadros2-AAAA-MM-DD.csv`.
-- **Terceira medida (modo direto):** volta 40,8 → 23,0 ms, 75% dos quadros
-  numa varredura só; desenho 26,9 → 14,0; rolagem 6,9 → 2,2 ms (DMA). Mas a
-  sincronia virou 2/3 da cópia (336 MB contra 154 da rolagem): os apps
-  desenham o cabeçalho ANTES da lista, o quadro abria e sincronizava a
-  janela inteira, e só depois a rolagem a sobrescrevia.
-- **Sincronia preguiçosa por área:** ao abrir, as áreas do quadro anterior
-  ficam pendentes; cada uma vem da frente só quando algo escreve ou LÊ nela
-  (`comp_preparar`, chamado pelo rastreador, inclusive no `readRect`), e o
-  resto ao apresentar. Cópia por DMA que cobre uma pendente inteira (rolagem,
-  superfície) a descarta sem copiar.
-- Desenho medido separado: passada completa × parcial.
-- **Quarta medida (muitas aberturas de app):** passada completa 123,5 ms,
-  parcial 14,0 ms - o custo agora é abrir app. Sincronia ainda alta: a fusão
-  junta o cabeçalho e a janela da lista num retângulo pendente só, e tocar o
-  cabeçalho trazia a janela inteira.
-- **Pendentes recortadas:** só a interseção com o que vai ser tocado vem da
-  frente; o resto continua pendente em até 4 pedaços. `fillRect` é escrita
-  opaca: descarta a pendente que cobre em vez de copiá-la (a limpeza da área
-  útil numa abertura de app deixa de copiar 1,6 MB para pintar por cima).
-- Log `desenho completo de <app>: N ms` acima de 40 ms, para achar quem pesa.
-- **Passada completa por app** (tabela no `tela`): "limpar" 20-25 ms em todo
-  app (CPU escrevendo 1,6 MB de preto); "conteúdo" segue o volume de texto
-  (Camera 6 ms, Arquivos 40, home 57, Mesh 55, Ajustes 77, Tarefas 116).
-- **Preenchimento por hardware:** `fillRect` de 16 K px ou mais vai para o
-  motor FILL do PPA (só escrita; o driver devolve+invalida o cache das linhas
-  antes). Autoconferência na primeira cor com bytes diferentes; se não bater,
-  desliga e volta à CPU. `tela banco` compara PPA-fill × CPU-fill.
-- **Medida com o PPA-fill:** "limpar" 20-25 → ~8 ms em todos os apps (banco
-  feito em repouso, a 40 MHz: só a proporção vale - PPA-fill 3,6x a CPU).
-  Arquivos com pior caso de 2,3 s: a foto (1,4 MB) era lida do cartão linha a
-  linha DENTRO do desenhar(), e relida a cada redesenho completo. Agora o
-  worker lê uma vez para um buffer na PSRAM (já na ordem da tela) e o
-  desenhar() só pinta; o buffer é solto ao voltar para a lista ou fechar.
-- **Medida com a tela acesa:** PPA-fill 4,2 ms contra CPU-fill 14,1 ms
-  (720x1024). Arquivos: pior 2.271 → 92 ms. Passada completa média 61 ms;
-  o que sobra é texto (Ajustes 61, ESP-NOW 55, home 54 de "conteúdo").
-- **Por que texto custa:** o `VLWfont::drawChar` do M5GFX faz um
-  `writeFillRect` 1x1 por pixel de borda suavizada, mais um por linha de
-  fundo - ~200 chamadas por letra de 30 px, cada uma passando pelo rastreador.
-- **Cache de glifos** (`tab5_glyphs`, `FonteRapida` no lugar do `VLWfont`):
-  a letra é desenhada uma vez pelo próprio M5GFX num rascunho RGB565 e
-  guardada por (fonte, letra, cor, fundo); depois, um `pushImage` por letra.
-  Só texto com fundo, tamanho 1, destino de 16 bits e letra que não invade a
-  anterior - o resto segue o caminho original. 512 KB de PSRAM, recomeça do
-  zero se encher. Estatística no `tela`.
-- **Época das páginas** (`g_tab5_tela_epoca`): o caminho de cada escrita
-  confere "a página ainda existe?" com uma comparação, em vez de consultar o
-  painel a cada pixel.
-- **Medida com arena de 1 MB:** cache de glifos 79% (97% sem contar espaços,
-  que já são baratos); recusas: espaço 3202, invade 435, outro 75; não
-  recomeçou. Passada completa 40 ms, parcial 4,5, volta 17,9.
-- **Tarefas por campo (passo C):** a janela apagava a área inteira e
-  redesenhava tudo a cada amostra (1 Hz). Agora cada linha de texto é um
-  campo que guarda o que está na tela e só repinta quando muda; a tabela,
-  por linha (assinatura do texto + `lista_item_mudou`); o gráfico, o miolo,
-  uma vez por amostra; títulos, moldura e botão só na passada completa.
+**Step 2: Direct mode (LVGL-style dual-buffer direct rendering).**
+- Deleted the virtual shadow screen (**−1.84 MB of PSRAM**). The tracker panel
+  now draws straight into the back buffer; the first draw call of a UI iteration
+  **opens** the frame (`comp_abrir`: awaits the previous flip and syncs dirty
+  regions from front → back), and `comp_apresentar` flushes the CPU cache for
+  drawn scanlines and requests the page flip. Page swapping updates only the
+  sprite's raw buffer pointer (calling `setBuffer` would zero-clear the buffer).
+- **Hardware-accelerated scrolling:** `copyRect` now performs a **DMA2D blit from
+  the FRONT buffer** (at the old offset) directly into the back buffer (at the
+  new offset) whenever the source region hasn't been drawn to yet in the current
+  frame; before opening the frame, the scrolled destination is marked covered
+  (`comp_cobrir`) so front-to-back sync doesn't waste time copying pixels that
+  the scroll blit is about to overwrite.
+- Fresh panel (boot, clock change, wake from sleep) = uninitialized buffers:
+  `comp_painel_novo()` triggers a full redraw. Any stray draw call while the
+  panel is torn down during sleep is redirected to a lazily allocated scratch
+  buffer and logged.
+- Camera: uses its own DMA surface allocated on first use and freed when the
+  Camera app closes, blitted to the back buffer via DMA2D inside `desenhar`.
+- Changing the panel clock from the serial console now executes on the UI task
+  (`sistema_trocar_relogio_painel`) so another task can never destroy the
+  framebuffers mid-draw.
+- Loop histogram buckets changed from fixed milliseconds to multiples of the
+  measured panel refresh period (`1`, `2`, `3`, `4+` VSYNCs), logged to
+  `quadros2-YYYY-MM-DD.csv`.
+- **Third benchmark (direct mode):** frame loop dropped from 40.8 → **23.0 ms**,
+  with 75% of frames completing within a single panel refresh; draw time dropped
+  from 26.9 → **14.0 ms**; scroll blits dropped from 6.9 → **2.2 ms** (DMA2D).
+  However, front-to-back sync still accounted for 2/3 of all DMA traffic
+  (336 MB vs. 154 MB for scrolling) because apps drew their header *before*
+  scrolling their list — opening the frame early and syncing the entire list
+  viewport right before the scroll blit overwrote it.
+- **Lazy per-region front-to-back sync:** opening a frame now marks the previous
+  frame's dirty rectangles as *pending*; a pending region is only copied from the
+  front buffer when something is about to draw or read inside it
+  (`comp_preparar`, called by the tracker panel including on `readRect`), and
+  any untouched pending regions are synced right before flip. Any opaque DMA
+  blit that completely covers a pending region (such as a list scroll or camera
+  frame) discards that pending region without copying a single byte.
+- **Clipped pending regions:** touching part of a pending rectangle now copies
+  only the intersecting sub-rectangle from the front buffer and splits the
+  remainder into up to 4 smaller pending rectangles. Opaque `fillRect` calls
+  likewise clip and discard the covered portion of any pending region instead of
+  syncing it first (so clearing the app viewport when opening an app no longer
+  copies 1.6 MB from the front buffer just to paint black over it).
+- Added a slow-frame log (`desenho completo de <app>: N ms` whenever a full
+  redraw exceeds 40 ms) and a per-app breakdown table in `tela`: clearing took
+  20–25 ms in every app (CPU writing 1.6 MB of black), while content rendering
+  scaled with text volume (Camera 6 ms, Files 40 ms, home 57 ms, Mesh 55 ms,
+  Settings 77 ms, Tasks 116 ms).
+- **Hardware PPA fills:** any `fillRect` of 16K pixels or larger is routed to
+  the PPA hardware `FILL` engine (after flushing/invalidating cache lines). A
+  self-test on the first non-uniform color verifies byte order and falls back to
+  CPU if anything mismatches. `tela banco` benchmarks PPA-fill vs. CPU-fill.
+- **Benchmark with PPA-fill + async image loading:** viewport clear dropped from
+  20–25 ms → **~8 ms** across all apps (4.2 ms vs. 14.1 ms for 720×1024 with the
+  screen awake — 3.4× faster than CPU). Fixed a 2.3 s worst-case stall in Files
+  where 1.4 MB BMP photos were being read from the SD card line-by-line *inside*
+  `desenhar()` on every full repaint: the system worker now loads the image once
+  into a PSRAM buffer in screen byte order, and `desenhar()` simply blits it
+  (dropping Files' worst-case redraw from 2,271 ms → **92 ms**). Mean full-screen
+  redraw across the OS dropped to 61 ms, with the remainder dominated by text
+  rendering.
+- **Why smooth text was expensive:** M5GFX's `VLWfont::drawChar` issues an
+  individual 1×1 `writeFillRect` call for every anti-aliased edge pixel plus one
+  per background span — roughly 200 virtual calls per 30 px character, each
+  passing through the tracker panel.
+- **Glyph cache** (`tab5_glyphs`, `FonteRapida` subclassing `VLWfont`): each
+  glyph is rasterized once by M5GFX into a tiny RGB565 scratch buffer and cached
+  by `(font, codepoint, fg_color, bg_color)` in a 1 MB PSRAM arena; subsequent
+  draws emit a single `pushImage` per character. Applies to opaque-background
+  text at scale 1 on 16-bit targets for glyphs that don't overhang the previous
+  character; everything else transparently falls back to `VLWfont::drawChar`.
+  Hit rate and stats are reported in `tela`.
+- **Framebuffer epoch counter** (`g_tab5_tela_epoca`): every draw call checks
+  whether the panel buffers still exist via a single integer comparison instead
+  of querying the panel driver on every pixel.
+- **Benchmark with 1 MB glyph cache:** 79% overall hit rate (**97% excluding
+  spaces**, which are already cheap single-rect fills), zero arena resets. Mean
+  full redraw dropped from 61 → **40 ms**, partial redraw to **4.5 ms**, and
+  mean frame loop to **17.9 ms**.
+- **Per-field diff rendering in Tasks (Step C):** previously, the Tasks app
+  cleared its entire viewport and redrew every string at 1 Hz. Now each text
+  line caches what is currently on screen and only repaints when its string
+  changes; the task table diffs per row (`lista_item_mudou`); the chart updates
+  only its inner plot area once per sample; and static headers, borders, and
+  buttons draw only on a full repaint.

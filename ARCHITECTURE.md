@@ -1,429 +1,436 @@
-# M5tabOS — kernel e shell
+# M5tabOS — Kernel and Shell Architecture
 
-Documento de arquitetura. Descreve o que **existe hoje**, o que **falta para
-chamar de kernel**, e um plano em etapas. Cada etapa é independente: dá para
-parar em qualquer uma e o sistema continua de pé.
+An architectural overview describing **what exists today**, **what is still
+missing to call it a true kernel**, and an incremental roadmap. Every stage is
+self-contained: we can stop after any stage and leave the system in a clean,
+working state.
 
-Escrito depois de medir. Onde há número, ele veio do código ou do `sdkconfig`,
-com o arquivo e a linha. Onde não medi, está dito que não medi.
+Written after measuring on real hardware. Every number cited here comes from the
+source code, `sdkconfig`, or live profiling, with file and line references.
+Wherever something hasn't been measured yet, this document says so explicitly.
 
 ---
 
-## 1. Onde estamos
+## 1. Where we stand today
 
-O sistema já tem um kernel — ele só não está reunido num lugar.
+The system already has a kernel — it just wasn't gathered into one place at the
+start.
 
-**Já é kernel, e está bem:**
+**Already kernel-grade and in good shape:**
 
-| peça | arquivo | o que faz |
+| Subsystem | File | Responsibility |
 |---|---|---|
-| ciclo de vida dos apps | `app_task.cpp` (84 l.) | cria e destrói a tarefa de cada app |
-| energia | `tab5_power.cpp` (1248 l.) | perfis, INA226, repouso, teto de clock |
-| notificações | `notification.cpp` | serviço do sistema para apps e serviços: registro idempotente por nome, estado por fonte, 4 níveis, destaque único na barra - ver WRITING_APPS.md §8.2 |
-| preferências | `settings.cpp` (183 l.) | persistência em NVS (brilho, volume, wifi, grove, tela, relógio, casa) |
-| partes de fundo | `kernel/background.cpp` | trabalho de app que sobrevive à janela: tarefa, pastilha, perfil somado, parada limpa (1º cliente: Trilha, `app_trilha/trilha_background.cpp`) |
-| log persistente | `tab5_log.cpp` (183 l.) | hook do vprintf, buffer, descarga diária no cartão |
-| orçamento de pintura | `paint.cpp` | limita repintura por frame |
-| trava preguiçosa | `tab5_mutex.hpp` | mutex criado sob demanda - usado por 4 módulos que antes reescreviam a mesma lógica |
-| drivers | `tab5_screen`, `tab5_sd`, `tab5_grove`, `tab5_keyboard`, `tab5_camera` | um dono por periférico |
+| App lifecycle | `app_task.cpp` (84 lines) | Creates and cleanly tears down per-app FreeRTOS tasks |
+| Power management | `tab5_power.cpp` (1248 lines) | Hardware profiles, INA226 telemetry, sleep teardown, CPU clock ceiling |
+| Notifications | `notification.cpp` | System-wide notification service for apps and services: idempotent registration by name, per-source state, 4 severity levels, top-priority highlight in the status bar — see [WRITING_APPS.md](WRITING_APPS.md) §8.2 |
+| Settings | `settings.cpp` (183 lines) | NVS persistence (brightness, volume, Wi-Fi, Grove power, display, clock, home coordinates) |
+| Background jobs | `kernel/background.cpp` | App work that outlives the window: dedicated task, status bar pill, merged power profile, clean stop handshake (first consumer: Trail app, `app_trilha/trilha_background.cpp`) |
+| Persistent logging | `tab5_log.cpp` (183 lines) | `vprintf` hook, ring buffer, daily flush to SD card |
+| Paint tracking | `paint.cpp` | Dirty-value tracking per frame |
+| Lazy mutex | `tab5_mutex.hpp` | On-demand atomic mutex initialization — shared by 4 modules that previously duplicated this pattern |
+| Hardware drivers | `tab5_screen`, `tab5_sd`, `tab5_grove`, `tab5_keyboard`, `tab5_camera` | Single-owner hardware abstraction modules |
 
-**ETAPA 1 FEITA.** `sistema.cpp` chegou a 2457 linhas fazendo
-oito coisas diferentes (agenda o desenho, roteia o toque, desenha a home,
-desenha a barra de status, gerencia o ciclo de vida dos apps, aplica
-política de energia, corrige a calibração do toque, e — desde mais cedo no
-mesmo dia — faz o marshaling de chamadas HAL entre tarefas para a câmera) e
-foi partido em dois, **sem mudar uma linha de lógica** (a única exceção,
-documentada em `kernel/internal.hpp`, é uma chamada trocada por sua
-equivalente pública):
+**STAGE 1 COMPLETE.** `sistema.cpp` had grown to 2,457 lines doing eight
+distinct jobs (frame scheduling, touch routing, home screen rendering, status
+bar rendering, app lifecycle management, power policy enforcement, touch
+calibration correction, and — added earlier that same day — cross-task HAL call
+marshaling for the camera). It was split in two **without changing a single line
+of logic** (the sole exception, documented in `kernel/internal.hpp`, was
+replacing one internal call with its public equivalent):
 
-| arquivo | linhas | responsabilidades | itens acima |
+| File | Lines | Responsibilities | Items from list above |
 |---|---|---|---|
-| `kernel/core.cpp` | 1571 | o motor - agenda de desenho, ciclo de vida dos apps, política de energia, ponte da câmera | 1, 5, 6, 8 |
-| `kernel/shell.cpp` | 960 | a aparência - home, barra de status, roteamento de toque, calibração | 2, 3, 4, 7 |
-| `kernel/internal.hpp` | 78 | a ponte privada entre os dois - nunca incluída por um app | — |
+| `kernel/core.cpp` | 1571 | The engine — frame loop, app lifecycle, power policy, camera bridge | 1, 5, 6, 8 |
+| `kernel/shell.cpp` | 960 | The look and feel — home screen, status bar, touch routing, calibration | 2, 3, 4, 7 |
+| `kernel/internal.hpp` | 78 | Private bridge between core and shell — never included by apps | — |
 
-`sistema.cpp` foi renomeado para `sistema.cpp.old` até o comportamento ser
-confirmado em hardware - confirmado em várias sessões de teste, o arquivo foi
-removido de vez. As ~24 referências a "sistema.cpp" que
-sobravam em comentários de outros arquivos (apontando para código que agora
-mora em `core.cpp`/`shell.cpp`/`internal.hpp`) foram corrigidas no mesmo dia -
-as poucas que restam citando "sistema.cpp" são história de verdade (descrevem
-o arquivo como ele era ANTES da Etapa 1), não ponteiros esquecidos.
+`sistema.cpp` was temporarily kept as `sistema.cpp.old` until hardware testing
+confirmed identical behavior across several sessions, after which it was
+deleted. Roughly 24 comments in other files that still pointed to `sistema.cpp`
+(for code now living in `core.cpp`, `shell.cpp`, or `internal.hpp`) were updated
+the same day; the handful of remaining references to `sistema.cpp` are genuine
+historical notes describing how the system worked *before* Stage 1.
 
-O item 8 (a ponte da câmera) ficou dentro de `core.cpp` por ser ciclo de
-vida/HAL, não desenho. A pergunta que tinha ficado em aberto - "e se um som
-precisar tocar de uma tarefa de fundo, o padrão de ponte se repete?" - já
-tem resposta: **não.** O som apareceu como terceiro caso
-(investigando por que a trava de PM `i2s_driver` nunca soltava, ver 2.2.1) e
-pediu uma forma completamente diferente da ponte - ver 1.1, abaixo. Continuam
-existindo só as duas cópias específicas da câmera; a lição não foi "faltou
-generalizar a ponte", foi "nem todo recurso shared quer ser
-shared da mesma forma".
+Item 8 (the camera bridge) stayed inside `core.cpp` because it deals with
+lifecycle and HAL ownership rather than UI chrome. The open question at the time
+— *"if a background task ever needs to play a sound, will we need the same
+bridge pattern?"* — now has a definitive answer: **no.** Audio turned out to be
+our third shared-hardware case (discovered while investigating why the
+`i2s_driver` PM lock was never released; see §2.2.1) and needed a completely
+different ownership model — see §1.1 below. Only the two camera-specific bridge
+functions remain; the takeaway wasn't "we should have generalized the bridge,"
+but rather "not every shared resource wants to be shared the same way."
 
-### 1.1 Recursos que dormem por conta própria — três formas, não uma
+### 1.1 Self-idling resources — three patterns, not one
 
-Catalogadas ao decidir o que fazer com o alto-falante. Não é
-uma abstração nova para construir - é o nome do que **já existe**, espalhado
-pelo código, e a pergunta certa antes de escrever qualquer serviço novo de
-segundo plano: qual das três (ou nenhuma) esse recurso precisa?
+We cataloged these patterns while deciding how to manage the speaker codec. This
+isn't a new C++ abstraction to build — it's the taxonomy of what **already
+exists** across the codebase, and the right question to ask before writing any
+new background service: which of these three ownership patterns (if any) does
+this hardware resource need?
 
-| padrão | quem usa hoje | formato do uso |
+| Pattern | Current users | Usage profile |
 |---|---|---|
-| **timeout de ociosidade** | alto-falante (`kernel/core.cpp`, `s_speaker_ocioso_desde`) | rajadas curtas, ninguém guarda o recurso aberto - liga sozinho no primeiro uso, desliga sozinho depois de alguns segundos quieto |
-| **contagem de empréstimo** | cartão SD (`tab5_sd_montar()`/`tab5_sd_desmontar()`, referência contada) | sessão explícita, vários pedem ao mesmo tempo, só solta quando o último devolve |
-| **dono único** | Grove (`tab5_grove_dono()`), ponte da câmera | só um consumidor por vez faz sentido, a posse passa de um para outro explicitamente |
+| **Idle timeout** | Speaker (`kernel/core.cpp`, `s_speaker_ocioso_desde`) | Short bursts where no caller holds an open session — powers on automatically on first use, powers down after a few seconds of silence |
+| **Reference-counted loan** | SD card (`tab5_sd_montar()` / `tab5_sd_desmontar()`) | Explicit sessions where multiple callers may overlap; hardware stays powered until the last caller releases it |
+| **Single exclusive owner** | Grove port (`tab5_grove_dono()`), camera bridge | Only one consumer makes sense at a time; ownership is explicitly claimed and handed off |
 
-Existe uma quarta resposta, tão válida quanto as três: **não fazer nada.** O
-IMU (`tab5_imu_medir()`, 1×/s, acordado ou em repouso - `kernel/core.cpp`) não
-segue nenhum dos três de propósito: uma transação I²C por segundo é barata o
-bastante para não valer o rastreio de "quem está usando agora". Generalizar
-cedo demais teria forçado essa mesma complexidade num lugar que não precisa
-dela.
+There is also a fourth, equally valid answer: **do nothing.** The IMU
+(`tab5_imu_medir()`, polled at 1 Hz whether awake or asleep in `kernel/core.cpp`)
+deliberately uses none of the three: one I²C read per second is cheap enough
+that tracking "who needs the IMU right now" would add complexity for zero
+measurable savings. Prematurely generalizing resource management would have
+forced that complexity onto a peripheral that doesn't need it.
 
-Quando a Etapa 2 trouxer serviços de verdade em segundo plano, a pergunta
-"qual desses quatro" entra no design de cada um - em vez de inventar um
-mecanismo genérico sem um quarto caso real para validar o formato.
+As Stage 2 introduces more true background services, choosing among these four
+patterns becomes an explicit part of each service's design — rather than
+inventing a one-size-fits-all framework before having enough real-world cases to
+justify it.
 
 ---
 
-## 2. O que falta para ser kernel
+## 2. What is still missing to call it a true kernel
 
-### 2.1 Não existe queue de eventos — e é isso que impede a autonomia
+### 2.1 No event queue — and how polling hurts battery life
 
-Hoje **tudo é sondado**. Os serviços levantam bandeiras (`s_sujo_dados`,
-`s_msgs_sujo`, contadores) e a interface lê essas bandeiras de tempo em tempo:
+Originally, **everything was polled**. Services raised dirty flags
+(`s_sujo_dados`, `s_msgs_sujo`, counters) and the UI task woke up on a fixed
+timer to check them:
 
 ```
-PERIODO_UI    = 20 ms   sistema.cpp:48    em uso
-PERIODO_OCIOSO = 50 ms  sistema.cpp:58    3 s sem toque
-PERIODO_ZZZ   = 80 ms   sistema.cpp:75    tela apagada
+PERIODO_UI     = 20 ms   sistema.cpp:48    active use
+PERIODO_OCIOSO = 50 ms   sistema.cpp:58    3 s without touch
+PERIODO_ZZZ    = 80 ms   sistema.cpp:75    screen asleep
 ```
 
-Repare na última linha. **Com a tela apagada, a interface ainda acorda 12,5
-vezes por segundo** para perguntar se aconteceu alguma coisa. Na esmagadora
-maioria das vezes, não aconteceu.
+Look closely at that last line. **With the screen completely off, the UI task
+still woke up 12.5 times per second** just to ask if anything had happened. The
+vast majority of the time, nothing had.
 
-Uma tarefa que acorda 12 vezes por segundo impede o processador de dormir de
-verdade. Não importa o quão curto seja o trabalho: o custo é o *acordar*.
+A task waking up 12.5 times a second prevents the CPU from ever entering deep
+idle states. It doesn't matter how fast the check is — the energy cost comes
+from *waking up*.
 
-O formato certo é o inverso: a interface **bloqueia numa queue** e alguém a
-acorda quando há motivo.
+The right design flips this around: the UI task **blocks on a queue**, and
+producers wake it only when there is actual work to do.
 
-> Verifiquei uma coisa antes de escrever isso, porque mudaria o diagnóstico: o
-> toque tem pino de interrupção, **GPIO 23**, e o M5GFX já o usa para não fazer
-> leitura I²C quando não há dedo (`Touch_GT911.cpp:174`). Ou seja, a sondagem
-> ociosa hoje é mais barata do que parecia. O desperdício não está no I²C
-> — está no acordar. Mas significa também que o pino já está configurado e a
-> etapa 2 abaixo tem onde se apoiar.
+> I verified one crucial detail before writing this, because it would change the
+> diagnosis: the GT911 touch controller has an interrupt pin on **GPIO 23**, and
+> M5GFX already checks its logic level to skip the I²C read when no finger is
+> present (`Touch_GT911.cpp:174`). That means idle touch polling was cheaper
+> than it looked on paper — the waste wasn't I²C bus traffic, it was the FreeRTOS
+> task wakeup itself. Better yet, it meant the GPIO pin was already wired and
+> configured, giving Stage 2 a ready-made hardware interrupt source.
 
-### 2.2 A máquina de economia existe e **está desligada**
+### 2.2 Power management hardware support exists — and **is turned off**
 
-Esta é a descoberta que mais importa:
+This was the single most important finding of the audit:
 
 ```
 sdkconfig:2951        # CONFIG_FREERTOS_USE_TICKLESS_IDLE is not set
-sdkconfig.defaults:88 # CONFIG_FREERTOS_USE_TICKLESS_IDLE=y     ← comentado
+sdkconfig.defaults:88 # CONFIG_FREERTOS_USE_TICKLESS_IDLE=y     ← commented out
 ```
 
-Sem *tickless idle*, o tique do FreeRTOS a 1000 Hz (`CONFIG_FREERTOS_HZ=1000`)
-acorda os dois cores **mil vezes por segundo, para sempre**. E como
-consequência:
+Without *tickless idle*, the 1000 Hz FreeRTOS tick timer (`CONFIG_FREERTOS_HZ=1000`)
+interrupts both CPU cores **one thousand times per second, forever**. As a
+direct consequence:
 
-- `esp_pm_configure()` recebe `light_sleep_enable` (`tab5_power.cpp:84`), mas
-  ele **não tem efeito nenhum** — não há janela ociosa longa o bastante.
-- Nenhum perfil chega a pedir: `light_sleep_ocioso` é `false` no padrão
-  (`tab5_power.hpp:109`) e **ninguém atribui outro valor**.
+- `esp_pm_configure()` is passed `light_sleep_enable` (`tab5_power.cpp:84`),
+  which **has zero effect** because the OS never sees an idle window long enough
+  to enter light sleep.
+- No power profile ever enables it anyway: `light_sleep_ocioso` defaults to
+  `false` (`tab5_power.hpp:109`) and **nothing in the codebase ever sets it to
+  `true`**.
 
-Traduzindo: o suporte a light sleep no `tab5_power` é **código morto hoje**.
-Escrevemos a peça e nunca ligamos a chave.
+In short: the light-sleep code in `tab5_power` is **dead code today**. We wrote
+the mechanism and never flipped the switch.
 
-### 2.2.1 As travas de PM — e por que a notícia é melhor do que parece
+### 2.2.1 PM locks — and why the news is better than it looks
 
-Fui verificar quem, além do tique, impede o processador de dormir. No IDF a
-economia toda passa por **travas de PM**: um driver que precisa de clock estável
-cria uma trava na inicialização e a segura. Enquanto houver uma trava viva, o
-sistema não desce para o modo que ela proíbe — sem aviso nenhum.
+Next, I checked what else besides the RTOS tick prevents the SoC from sleeping.
+In ESP-IDF, dynamic power management is governed by **PM locks**: any driver
+that requires a stable clock or peripheral bus acquires a lock on init and holds
+it. As long as a single lock is held, the system silently refuses to enter any
+sleep state forbidden by that lock.
 
-O painel MIPI-DSI segura **duas**, e as duas são adquiridas na criação e
-liberadas só no destrutor (`esp_lcd_panel_dpi.c` 291→405,
-`esp_lcd_mipi_dsi_bus.c` 72→151):
+The MIPI-DSI display driver holds **two** locks, acquired when the panel is
+created and released only when the panel is destroyed (`esp_lcd_panel_dpi.c`
+291→405, `esp_lcd_mipi_dsi_bus.c` 72→151):
 
 ```
-dsi_dpi   CPU_FREQ_MAX     prende a CPU em 360 MHz
-dsi_phy   NO_LIGHT_SLEEP   proíbe light sleep
+dsi_dpi   CPU_FREQ_MAX     pins the CPU at 360 MHz
+dsi_phy   NO_LIGHT_SLEEP   blocks light sleep
 ```
 
-Isto seria fatal — com o painel vivo, nem tickless idle nem `esp_pm` mudariam
-coisa alguma. **Mas já está resolvido**: `DESMONTAR_DSI_NO_REPOUSO = true`
-(`tab5_power.cpp`) destrói o painel ao entrar em repouso, e com ele as duas
-travas caem. Isso foi medido com `esp_pm_dump_locks()`, depois de
-duas tentativas mais baratas terem sido testadas e reprovadas (`set_pattern` e
-baixar o clock com o fluxo ligado — os dois estão documentados no fonte).
+Normally this would be a showstopper — as long as the display driver is alive,
+neither tickless idle nor `esp_pm` can do anything. **Fortunately, we already
+solved this**: `DESMONTAR_DSI_NO_REPOUSO = true` (`tab5_power.cpp`) completely
+destroys the DSI panel when entering sleep, dropping both locks. We verified
+this with `esp_pm_dump_locks()` after two lighter-weight alternatives failed on
+hardware (`set_pattern` and lowering the DPI pixel clock while keeping the video
+stream running — both documented in the source comments).
 
-Ou seja: **o obstáculo mais difícil da etapa 3 já foi derrubado meses atrás.**
-A etapa 3 é mais promissora do que a seção acima faz parecer.
+In other words: **the hardest blocker for Stage 3 was already solved months
+ago.** Stage 3 is much closer to working than §2.2 makes it sound.
 
-**O suspeito que sobra** é o UART. O driver cria `ESP_PM_APB_FREQ_MAX` enquanto
-estiver instalado (`uart.c:1922`), e APB_FREQ_MAX **também** impede o light
-sleep, porque dormir pararia o APB. O Grove do Meshtastic mantém um UART
-instalado o tempo todo.
+**The remaining culprit** is the UART driver. ESP-IDF's UART driver holds an
+`ESP_PM_APB_FREQ_MAX` lock for as long as the driver is installed
+(`uart.c:1922`), and `APB_FREQ_MAX` **also** prevents light sleep because
+sleeping would halt the APB clock. When Meshtastic is configured for the Grove
+port, that UART driver stays installed permanently.
 
-Aí está a tensão real da etapa 3, e ela não é técnica, é de projeto: **não dá
-para dormir e escutar o rádio ao mesmo tempo.** Ou o Meshtastic perde mensagens
-enquanto o tablet dorme, ou o tablet não dorme. Existe meio-termo no hardware
-(acordar pelo bit de início do UART), mas é uma decisão de projeto em aberto.
+That exposes the real tension in Stage 3, which is a product decision rather
+than a coding bug: **you cannot sleep the APB bus and listen to a continuous
+UART at the same time.** Either Meshtastic drops incoming serial packets while
+the tablet sleeps, or the tablet stays awake. Hardware offers a middle ground
+(UART start-bit wakeup from light sleep, at the cost of losing the first byte),
+which remains an open design question.
 
-**Atualização — uma trava nova, achada e corrigida; outra,
-explicada.**
+**Update — one new PM lock found and fixed; another explained.**
 
-Rodar `energia travas 40` com a tela genuinamente apagada (confirmado pelo
-log: `repouso apos 30 s`, `DSI desmontado`, clock `360 -> 40 MHz`) revelou uma
-trava que a lista acima não previa: `i2s_driver` (`APB_FREQ_MAX`), presa
-desde o primeiro `tone()`/`playWav()` de qualquer sessão, **para sempre** -
-tocando som ou não. Causa: no ESP32-P4 (codec ES8388 externo por I2S "de
-verdade", sem o DAC interno da família ESP32 clássica), a biblioteca
-M5Unified só chama `i2s_stop()` no ramo ocioso da `spk_task` dentro de um
-`#if M5UNIFIED_I2S_ADC_DAC` que nunca é compilado para este chip
+Running `energia travas 40` with the screen genuinely asleep (confirmed in the
+log: `repouso apos 30 s`, `DSI desmontado`, clock `360 -> 40 MHz`) uncovered a
+lock we hadn't anticipated: `i2s_driver` (`APB_FREQ_MAX`), held **forever**
+after the very first `tone()` or `playWav()` call of a boot session, whether
+audio was playing or not. Root cause: on the ESP32-P4 (which uses an external
+ES8388 codec over standard I2S rather than the classic ESP32 internal DAC),
+M5Unified only calls `i2s_stop()` in `spk_task`'s idle branch inside an
+`#if M5UNIFIED_I2S_ADC_DAC` block that is never compiled for this chip
 (`managed_components/m5stack__m5unified/src/utility/Speaker_Class.cpp:615`).
-Não vale remendar um componente vendorizado - perde-se na próxima
-atualização. A correção ficou do nosso lado, pela API pública:
-`M5.Speaker.end()` chamado por um watchdog de ociosidade em `kernel/core.cpp`
-(primeiro uso real do padrão "timeout de ociosidade" da seção 1.1). Confirmado
-com `energia travas 40` de novo: a trava não aparece mais na lista depois do
-prazo de ociosidade passar.
+Patching a vendored component isn't worth the maintenance burden across upgrades,
+so we fixed it on our side via the public API: an idle watchdog in
+`kernel/core.cpp` calls `M5.Speaker.end()` after a few seconds of silence (our
+first production use of the "idle timeout" pattern from §1.1). Verified again
+with `energia travas 40`: the lock disappears cleanly once the timeout expires.
 
-A trava `rtos0` (`CPU_FREQ_MAX`, core 0) segue presa mesmo depois desse
-conserto - e essa é esperada, não é bug. É a trava interna do próprio
-`esp_pm` (`s_rtos_lock_handle`, `pm_impl.c`) que só solta quando a tarefa
-IDLE daquele core roda, e é repega no instante de qualquer interrupção -
-ou seja, é o termômetro de quão realmente ocioso o core 0 está. Com `log`
-consumindo 10,3% de CPU ali (medido com `tarefas`) mais o `esp_timer` do
-`energy_log.cpp` acordando a cada ~15s, o core 0 nunca fica parado por
-trechos longos o bastante. É a mesma sondagem descrita em 2.1, vista agora
-pelo lado da trava em vez do período de espera - confirma, não substitui, o
-motivo de a Etapa 2 vir antes da Etapa 3.
+One lock still shows up as held in that dump — `rtos0` (`CPU_FREQ_MAX` on core
+0) — and that one is expected, not a bug. It is `esp_pm`'s own internal RTOS
+lock (`s_rtos_lock_handle` in `pm_impl.c`), which is released only while a
+core's `IDLE` task is running and re-acquired the instant any interrupt fires.
+It is effectively a live gauge of how busy core 0 is. With `log` consuming 10.3%
+of core 0 (measured via `tarefas`) plus `energy_log.cpp`'s `esp_timer` firing
+every ~15 s, core 0 never stays idle for long uninterrupted stretches. That is
+the exact same polling issue described in §2.1 seen from the PM lock side,
+reinforcing why Stage 2 comes before Stage 3.
 
-### 2.3 Prioridades e cores foram decididos um de cada vez
+### 2.3 Task priorities and core affinities grew organically
 
 ```
-ui         prio 4   pilha 8192    núcleo 1     sistema.cpp:2455   fixa (única pinada)
-gps        prio 3   pilha 4096    qualquer     tab5_gps.cpp:265
-mesh       prio 3   pilha 4096    qualquer     tab5_mesh.cpp:2645
-wifi       prio 3   pilha 4096    qualquer     tab5_wifi.cpp:550
-cam        prio 3   pilha 8192    qualquer     tab5_camera.cpp:406   só enquanto o app Câmera está aberto
-trilha     prio 2   pilha 4096    qualquer     tab5_trilha.cpp:197   serviço, sobrevive ao app fechar
-NMEAParse  prio 2   pilha 4096    qualquer     app_azimutal.cpp:367  só com o Azimutal aberto
-console    prio 1   pilha 12288   qualquer     console.cpp:2196
-registro   prio 1   pilha 4096    qualquer     energy_log.cpp:271
-log        prio 1   pilha 6144    qualquer     tab5_log.cpp:179
-tarefas    prio 1   pilha 4096    qualquer     app_tasks.cpp:240   só com o app Tarefas aberto
+ui          prio 4   stack 8192    core 1   sistema.cpp:2455   fixed (only pinned task)
+gps         prio 3   stack 4096    any      tab5_gps.cpp:265
+mesh        prio 3   stack 4096    any      tab5_mesh.cpp:2645
+wifi        prio 3   stack 4096    any      tab5_wifi.cpp:550
+cam         prio 3   stack 8192    any      tab5_camera.cpp:406   only while Camera app is open
+trilha      prio 2   stack 4096    any      tab5_trilha.cpp:197   service, outlives app window
+NMEAParse   prio 2   stack 4096    any      app_azimutal.cpp:367  only while Azimutal app is open
+console     prio 1   stack 12288   any      console.cpp:2196
+registro    prio 1   stack 4096    any      energy_log.cpp:271
+log         prio 1   stack 6144    any      tab5_log.cpp:179
+tarefas     prio 1   stack 4096    any      app_tasks.cpp:240     only while Tasks app is open
 sd_monta/
-desmonta   prio 1   pilha 4096    qualquer     sistema.cpp:1361/1427/1505   curta, uma vez por abertura de app
-grove_sonda prio 1  pilha 4096    qualquer     sistema.cpp:1672      curta, uma sondagem
+desmonta    prio 1   stack 4096    any      sistema.cpp:1361/1427/1505   short-lived, once per app open
+grove_sonda prio 1   stack 4096    any      sistema.cpp:1672      short-lived, single probe
 ```
 
-Atualizada - a primeira versão da lista tinha 5 linhas; hoje tem 12. Todo
-serviço novo (trilha, log, câmera) entrou nas prioridades já estabelecidas
-(3 para rádio/sensor em tempo real, 2 para trabalho de fundo sem pressa, 1
-para plumbing do kernel) sem precisar inventar uma faixa nova - o esquema de
-original aguentou o crescimento.
+Updated table — the original version of this list had 5 rows; today it has 12.
+Every new service (trail, log, camera) slotted cleanly into the existing priority
+tiers (priority 3 for real-time radio/sensor I/O, 2 for unhurried background
+processing, 1 for kernel plumbing) without needing new tiers.
 
-Por prioridade está coerente: a interface (4) preempta os serviços (3), então
-nenhum serviço interrompe um frame no meio. Isso está certo.
+The priority hierarchy itself is sound: the UI task (4) preempts all services
+(3), so background I/O never stalls a frame mid-render.
 
-O que **não** foi decidido, foi herdado: `tskNO_AFFINITY` em todos os serviços.
-Eles flutuam entre os cores. Fixá-los no core 0 deixaria o core 1 só para
-a interface — o que ajuda quando quisermos desligar um core inteiro no
-repouso.
+What was **not** deliberately chosen is core affinity: every service uses
+`tskNO_AFFINITY` and floats freely between cores 0 and 1. Pinning all background
+services to core 0 would leave core 1 dedicated exclusively to the UI — helpful
+if we ever want to power down an entire core during sleep.
 
-**Não vou fazer isso agora.** O ganho é plausível e não foi medido, e otimizar
-sem medir é exatamente o erro que já nos custou tempo aqui.
+**We are not changing affinities right now.** The benefit is plausible but
+unmeasured, and optimizing without measuring first is the exact mistake that has
+cost us time before.
 
 ---
 
-## 3. O instrumento de medida já existe
+## 3. The measurement tools are already built in
 
-Antes de mexer, vale medir — e dá para medir hoje:
+Before changing anything, we should measure — and the instrumentation is already
+compiled in:
 
 ```
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64=y
 ```
 
-O comando `tarefas` (e o app Tarefas) já mostram **CPU% real por tarefa**, por
-delta do `ulRunTimeCounter` — não é estimativa.
+The `tarefas` console command (and the Tasks app) already report **true per-task
+CPU%** computed from `ulRunTimeCounter` deltas — not an approximation.
 
-São **duas** medidas, e elas respondem perguntas diferentes.
+There are **two** key measurements, and they answer different questions:
 
-**1. Quanto há a ganhar** — deixe a tela apagar e rode `tarefas`. Olhe a linha
-do **IDLE**: essa porcentagem é o teto do que o light sleep pode economizar. Se
-estiver em 97%, há muito a ganhar. Se estiver em 60%, alguém está trabalhando no
-escuro e o conserto é outro — achar quem.
+**1. How much headroom exists** — let the screen go to sleep and run `tarefas`
+from the serial console. Check the **IDLE** row: that percentage is the
+theoretical ceiling of what light sleep can save. If IDLE sits at 97%, there is
+a lot of battery life on the table. If it sits at 60%, something is burning CPU
+in the dark and the fix is finding the culprit first.
 
-**2. Se o caminho está livre** — `energia travas 30` (comando novo). Ele espera
-30 s para a tela apagar e só então despeja a tabela de travas de PM com
-`esp_pm_dump_locks()`. Não toque na tela durante a espera.
+**2. Whether the path to sleep is clear** — run `energia travas 30`. This waits
+30 seconds for the display to enter sleep and then dumps the active PM locks via
+`esp_pm_dump_locks()`. Do not touch the screen while waiting.
 
-O que ler no despejo:
+How to read the dump:
 
-- **vazio, ou só travas soltas** → caminho livre, a etapa 3 vale a tentativa;
-- **`dsi_dpi` ou `dsi_phy` presos** → o desmonte da tela não aconteceu, e é
-  isso que tem que ser investigado antes de qualquer outra coisa;
-- **`uart_driver` preso** → é o Grove do Meshtastic, e aí a decisão de projeto
-  da seção 2.2.1 vem antes do código.
+- **Empty, or all locks released (`0`)** → the path is clear; Stage 3 is ready
+  to try;
+- **`dsi_dpi` or `dsi_phy` still held** → display teardown didn't run, which
+  must be investigated before anything else;
+- **`uart_driver` held** → that's the Meshtastic Grove UART, bringing us back to
+  the product trade-off in §2.2.1.
 
-A segunda medida é a que importa mais. A primeira diz quanto se ganharia; a
-segunda diz se dá para ganhar.
+The second measurement is the decisive one: the first tells us how much we
+*could* save, while the second tells us whether the OS will *allow* it.
 
 ---
 
-## 4. O plano, em etapas
+## 4. The staged plan
 
-### Etapa 1 — fronteira sem mudar comportamento ✅ FEITA
+### Stage 1 — Clean module boundaries with zero behavior change ✅ DONE
 
-Partir `sistema.cpp` em dois, **sem alterar uma linha de lógica**:
+Split `sistema.cpp` in two **without altering a single line of logic**:
 
 ```
-kernel/core.cpp    agenda de desenho, ciclo de vida dos apps, política de energia
-kernel/shell.cpp   home, barra de status, navegação, roteamento de toque, calibração
+kernel/core.cpp    frame scheduler, app lifecycle, power policy
+kernel/shell.cpp   home screen, status bar, navigation bar, touch routing, calibration
 ```
 
-(Nomes em inglês, os termos padrão de SO: `core.cpp` é o miolo do kernel, e
-"shell" é a camada
-visual em volta dos apps - ver o aviso grande em `kernel/internal.hpp` para
-a distinção com o shell de linha de comando do `console.cpp`.)
+(Using standard OS terminology: `core.cpp` is the kernel proper, while `shell.cpp`
+is the visual shell wrapping applications — see the header comment in
+`kernel/internal.hpp` distinguishing this UI shell from the interactive serial
+CLI in `console.cpp`.)
 
-Ganho: zero em desempenho, muito em conseguir enxergar - confirmado, o
-binário final ficou a ~96 bytes de diferença do anterior (só a indireção
-extra de algumas chamadas cruzadas). Um arquivo de 2457 linhas com oito
-responsabilidades e estáticas compartilhadas é onde os bugs moram. A costura
-entre os dois é `kernel/internal.hpp`: poucas variáveis `extern` e algumas
-funções que cruzam de um lado para o outro, nunca exposto a um app.
+Performance gain: zero. Maintainability gain: huge — verified on build, the
+resulting binary size differed by only ~96 bytes (cross-translation-unit call
+indirection). A 2,457-line file mixing eight responsibilities and shared file-scope
+statics was a breeding ground for subtle bugs. The seam between the two files is
+`kernel/internal.hpp`, exposing only a handful of `extern` variables and
+internal helpers that are never visible to apps.
 
-### Etapa 2 — a queue de eventos (é aqui que está o ganho)
+### Stage 2 — The event queue (where the real power savings live)
 
-**PRIMEIRA FATIA FEITA.** Uma queue única, criada em
-`sistema_iniciar()` e consumida no fim de `vTaskInterface()`:
+**SLICE 1 COMPLETE.** A single event queue created in `sistema_iniciar()` and
+awaited at the bottom of `vTaskInterface()`:
 
 ```c
 typedef enum {
-  EV_TOQUE,     // da ISR do GPIO 23 - so "acorde e confira M5.Touch de novo"
-  EV_SERVICO,   // sistema_acordar_interface() - quem publicou algo novo
+  EV_TOQUE,     // from GPIO 23 ISR - just "wake up and poll M5.Touch again"
+  EV_SERVICO,   // sistema_acordar_interface() - a service published new state
 } evento_t;
 ```
 
-O loop da interface deixou de ser `vTaskDelay(periodo)` e passou a ser
-`xQueueReceive(fila, &ev, periodo)` - o conteúdo/motivo do retorno é
-ignorado de propósito nesta fatia: as próprias linhas seguintes do loop já
-conferem `M5.Touch` e todas as bandeiras sozinhas, exatamente como sempre
-fizeram. **Nenhuma lógica de decisão existente mudou** - só a forma de
-esperar.
+The bottom of the UI loop changed from `vTaskDelay(periodo)` to
+`xQueueReceive(fila, &ev, periodo)`. In this first slice, the dequeued event
+value itself is intentionally ignored: the very next iteration of the loop
+already checks `M5.Touch` and all dirty flags just as it always did. **No
+existing decision logic changed** — only how the task waits between iterations.
 
-O que muda na prática, medido e não só esperado:
+What changed in practice, measured on hardware:
 
-- **Em uso e ocioso com a tela acesa:** comportamento IDÊNTICO a antes -
-  mesmo `PERIODO_UI`/`PERIODO_OCIOSO`, só trocando `vTaskDelay` por
-  `xQueueReceive` com o mesmo valor. A ISR do toque fica **desligada** nesses
-  dois estados (ver risco 2 abaixo) - zero mudança observável.
-- **Tela apagada (repouso):** o teto deixou de ser `PERIODO_ZZZ=80ms` fixo e
-  virou "quanto falta para o próximo prazo real que o loop já respeitava" -
-  o menor entre a amostragem de sensores (1000ms), a barra/beep (`BARRA_MS`)
-  e a vigia do Grove (`VIGIA_MS`, só quando ela de fato avança). Na prática
-  o loop passa a acordar sozinho por volta de **1x/s em vez de 12,5x/s** -
-  uma ISR de verdade no pino de toque (GPIO 23, que não tinha nenhuma até
-  hoje - só um nível lido de forma síncrona, ver `Touch_GT911.cpp:174`)
-  acorda a queue na hora certa se um dedo tocar antes disso.
-- **Um serviço publicando enquanto o aparelho dorme:** `notification.cpp`
-  virou o primeiro produtor ativo (`sistema_acordar_interface()`, chamado
-  de dentro de `notif_publicar()` só quando algo muda de verdade - a mesma
-  guarda que já existia para `notif_versao()`). Mesh e Trilha ganham isto de
-  graça, sem saber que a queue existe: uma mensagem chegando com a tela
-  apagada não espera mais o próximo prazo de ~1s para o beep tocar.
+- **Active and idle with the screen on:** behavior is **identical** to before —
+  the exact same `PERIODO_UI` / `PERIODO_OCIOSO` timeouts, simply waiting on
+  `xQueueReceive` instead of `vTaskDelay`. The GPIO touch ISR stays **disabled**
+  in both of these states (see Risk 2 below), so there is zero observable
+  difference while the screen is on.
+- **Screen asleep (sleep mode):** the sleep timeout is no longer a fixed
+  `PERIODO_ZZZ = 80 ms`; instead, it computes the exact time remaining until the
+  next scheduled periodic job the loop already ran — the minimum of sensor
+  sampling (1000 ms), status bar / beep updates (`BARRA_MS`), and the Grove
+  probe watchdog (`VIGIA_MS`, only when active). In practice, the sleeping UI
+  loop now wakes up on its own roughly **once per second instead of 12.5 times
+  per second**, while a real hardware GPIO ISR on the touch interrupt pin
+  (GPIO 23, which previously had no ISR attached — only synchronous level reads
+  in `Touch_GT911.cpp:174`) wakes the queue immediately the instant a finger
+  touches the glass.
+- **A service publishing while the tablet is asleep:** `notification.cpp` became
+  the first active event producer, calling `sistema_acordar_interface()` inside
+  `notif_publicar()` whenever notification state actually changes (guarded by
+  the same check that increments `notif_versao()`). Mesh and Trail get instant
+  wakeups for free without knowing the queue exists: an incoming message with
+  the screen off no longer waits up to ~1 s for the next poll tick before
+  sounding the notification beep.
 
-**Ficou de fora desta fatia, de propósito:**
+**Intentionally left out of Slice 1:**
 
-- **Mesh/GPS/Trilha não tocam na queue diretamente.** Não precisam - os três
-  já avisam pela via de `notif_publicar()`, e ganham o benefício acima sem
-  mudar uma linha própria. Convertê-los diretamente multiplicaria arquivos
-  tocados sem ganho adicional.
-- **`PERIODO_OCIOSO` (acordado, sem toque há 3s) continua fixo em 25ms**,
-  não virou prazo-adaptativo. Daria para fazer com a mesma conta de prazos
-  já escrita, mas exigiria também ligar/desligar a interrupção de toque
-  exatamente nos limites de um arraste em andamento - o GT911 pulsa o pino
-  a cada 5-20ms enquanto há dedo na tela, e a ISR ligada nesse estado faria
-  a queue nunca esvaziar, quebrando o próprio limite de velocidade que
-  `PERIODO_UI`/`PERIODO_OCIOSO` existem para impor. O ganho ali (40Hz→~16Hz)
-  é pequeno perto do repouso (12,5Hz→~1Hz) e não valeu a complexidade extra
-  agora.
+- **Mesh, GPS, and Trail do not push to the queue directly.** They don't need
+  to — all three already notify the user via `notif_publicar()`, so they inherit
+  instant sleep wakeups without touching a single line of their own code.
+- **`PERIODO_OCIOSO` (screen on, no touch for 3 s) stays fixed at 25 ms** rather
+  than becoming deadline-driven. Making it deadline-driven would require
+  enabling and disabling the touch GPIO interrupt around active drag gestures —
+  because the GT911 pulses its INT pin every 5–20 ms while a finger is held
+  down, leaving the ISR enabled while awake would flood the queue and defeat the
+  frame-pacing throttle that `PERIODO_UI` / `PERIODO_OCIOSO` enforce. The
+  potential savings while awake (40 Hz → ~16 Hz while the display backlight is
+  drawing hundreds of milliwatts anyway) are tiny compared to sleep mode
+  (12.5 Hz → ~1 Hz) and weren't worth the extra state-machine complexity.
 
-**Dois riscos achados na revisão do desenho, antes de escrever a primeira
-linha** (um agente de plano validou o desenho e achou os dois - nenhum é
-hipotético):
+**Two real bugs caught during design review before writing a single line of
+code:**
 
-1. *Loop girando sem parar.* O prazo da vigia do Grove só avança quando
-   `ajustes_grove() && !s_grove_resondar`. Sem essa guarda no cálculo do
-   mínimo, Grove desligado (configuração normal) ou uma re-sondagem em
-   andamento deixariam esse prazo preso em zero para sempre - a queue nunca
-   bloquearia, e o core giraria a ~100% no exato estado que deveria
-   dormir. Corrigido: o prazo do Grove só entra na conta quando as duas
-   condições valem; caso contrário é excluído do `min()`, não tratado como
-   "já venceu".
-2. *A ISR não pode alimentar a mesma queue em todo estado.* Ver o item
-   "PERIODO_OCIOSO" acima - a interrupção nasce desligada e só é ligada
-   (`gpio_intr_enable`) no instante em que `tab5_power_repouso()` tem
-   sucesso, desligada (`gpio_intr_disable`) no instante em que
-   `tab5_power_retomar()` é chamado.
+1. *Unbounded busy-spin loop.* The Grove probe timer only advances when
+   `ajustes_grove() && !s_grove_resondar`. Without checking that condition when
+   computing the next deadline, having Grove 5V turned off (the default) or a
+   re-probe in progress would leave that deadline stuck at 0 ms forever —
+   causing `xQueueReceive` to return immediately on every iteration and spinning
+   core 1 at 100% CPU during sleep. Fix: the Grove deadline is only included in
+   the `min()` calculation when both conditions hold.
+2. *The touch ISR must not feed the queue while the screen is awake.* As noted
+   above under `PERIODO_OCIOSO`, the GPIO interrupt starts disabled and is only
+   enabled (`gpio_intr_enable`) once `tab5_power_repouso()` succeeds, then
+   disabled again (`gpio_intr_disable`) the moment `tab5_power_retomar()` is
+   called.
 
-**Falta para chamar de "Etapa 2" completa** (a próxima fatia, não decidida
-ainda): converter Mesh/GPS/Trilha em produtores diretos se algum dia
-precisarem acordar a interface por um motivo que não passe por
-`notif_publicar()`, e decidir se `PERIODO_OCIOSO` vale a complexidade do
-enable/disable fino durante um arraste.
+**What remains before calling Stage 2 complete** (future work, not yet needed):
+having Mesh/GPS/Trail wake the UI directly if they ever need to trigger an
+update that doesn't go through `notif_publicar()`, and deciding whether adaptive
+deadlines while the screen is awake are worth the finer-grained ISR toggling.
 
-### Etapa 3 — tickless idle e light sleep
+### Stage 3 — Tickless idle and automatic light sleep
 
-Ligar `CONFIG_FREERTOS_USE_TICKLESS_IDLE` e fazer o perfil de repouso pedir
-`light_sleep_ocioso = true`.
+Enable `CONFIG_FREERTOS_USE_TICKLESS_IDLE` and set `light_sleep_ocioso = true`
+in the sleep power profile.
 
-**Só faz sentido depois da etapa 2.** Com a primeira fatia feita,
-o repouso já acorda por volta de 1x/s em vez de 12,5x/s - a janela para
-tentar `CONFIG_FREERTOS_USE_TICKLESS_IDLE` existe agora de um jeito que não
-existia antes. Ainda vale medir de novo (`tarefas`/`energia travas`) antes de
-ligar a chave: o ganho da queue de eventos é teórico até ser confirmado em
-hardware, e os obstáculos abaixo (UART do Grove, SDIO do esp_hosted) não
-mudaram nada com esta fatia.
+**This only makes sense after Stage 2.** With Slice 1 in place, sleep mode now
+wakes up ~1×/s instead of 12.5×/s — creating idle windows long enough for
+`CONFIG_FREERTOS_USE_TICKLESS_IDLE` to actually do its job. We should still
+re-run `tarefas` and `energia travas` on hardware before flipping the Kconfig
+switch, and the hardware blockers below remain unchanged:
 
-**Os obstáculos honestos**, em ordem de quanto preocupam:
+**Honest blockers**, ordered by severity:
 
-1. **O UART do Grove** (seção 2.2.1). É decisão de projeto antes de ser código:
-   dormir custa mensagens do Meshtastic. Rode `energia travas 30` para ver se
-   ele aparece mesmo na lista.
-2. **O SDIO do esp_hosted.** Link ativo com light sleep é combinação delicada.
-   Vale dizer que o próprio esp_hosted traz um exemplo pronto para isto
-   (`examples/power_save/host+cp/…`), o que sugere que é caminho previsto e não
-   terreno virgem. Mas não dá para testar com o C6 mudo.
-3. **O painel DSI.** Já resolvido — ver 2.2.1. Fica aqui só para registrar que
-   foi verificado, não esquecido.
+1. **The Grove UART** (§2.2.1). A product trade-off before it is a code change:
+   entering light sleep risks dropping incoming bytes on a wired Meshtastic
+   link. Run `energia travas 30` to see when `uart_driver` holds a lock.
+2. **esp_hosted SDIO.** Combining an active SDIO slave link with host light
+   sleep is delicate. Upstream `esp_hosted` does include a reference example for
+   this (`examples/power_save/host+cp/…`), suggesting it is a supported path,
+   but it requires careful testing to ensure the C6 link doesn't lock up on
+   resume.
+3. **The MIPI-DSI panel.** Already solved (§2.2.1); listed here only for
+   completeness.
 
 ---
 
-## 5. Resumo em três linhas
+## 5. Three-line summary
 
-1. O kernel já existe espalhado e está razoável; o que não existe é **queue de
-   eventos**, e é ela que trava a autonomia.
-2. `sistema.cpp` misturava core e shell em 2457 linhas — a Etapa 1 já separou
-   (ver `kernel/core.cpp`/`kernel/shell.cpp`). Não acelerou nada,
-   mas agora é seguro mexer na costura para a Etapa 2.
-3. A economia de energia está **escrita e desligada** (`sdkconfig:2951`) — mas
-   o obstáculo mais difícil (as travas do painel DSI) já foi derrubado em
-   . Antes de ligar: `tarefas` para o teto do ganho, e
-   `energia travas 30` para ver se o caminho está livre.
+1. The kernel already exists across well-defined modules; what was missing was
+   an **event-driven wakeup queue** so the UI task stops polling during sleep.
+2. `sistema.cpp` mixed kernel core and UI shell across 2,457 lines — Stage 1
+   split them cleanly into `kernel/core.cpp` and `kernel/shell.cpp`, making the
+   Stage 2 queue integration straightforward.
+3. Automatic light sleep is **implemented in code but disabled in `sdkconfig`**
+   (`sdkconfig:2951`) — yet the hardest blocker (MIPI-DSI PM locks) was already
+   eliminated by tearing down the panel on sleep. Before enabling it, use
+   `tarefas` to measure idle headroom and `energia travas 30` to verify no locks
+   remain held.
 
-**Ordem recomendada:** medir → ~~etapa 2~~ → ~~etapa 1~~ (feita) → etapa 3.
-Etapa 1 acabou saindo antes da 2 (por conveniência, não por prioridade de
-ganho) - não muda a lógica original: o ganho de verdade ainda está na
-Etapa 2, e ela segue sendo o próximo passo de código depois de medir.
-
-Etapa 2 antes da 1 porque o ganho está nela, e a 1 é higiene. Se um dia
-tivermos que parar no meio, é melhor parar com o sistema econômico e o código
-bagunçado do que com o código arrumado e o sistema comendo bateria.
+**Recommended order:** measure → ~~Stage 2~~ → ~~Stage 1~~ (done) → Stage 3.
+Stage 1 landed before Stage 2 out of convenience, without changing the core
+thesis: the real battery savings come from Stage 2 and Stage 3.

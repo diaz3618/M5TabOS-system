@@ -1,603 +1,729 @@
-# Mudanças
+# Changelog
 
-O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
-e as versões seguem [SemVer](https://semver.org/lang/pt-BR/). A versão do
-firmware mora em `version.txt`. As regras de qual número subir, e como
-lançar uma versão (`tools/release.sh`), estão em `VERSIONING.md`.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/). The
+firmware version is stored in `version.txt`. Rules for version increments and
+cutting releases (`tools/release.sh`) are documented in `VERSIONING.md`.
 
-## [Não lançado]
+## [Unreleased]
 
-### Adicionado
-- Versionamento: `tools/release.sh patch|minor|major` lança uma versão
-  (version.txt, seção no CHANGELOG, commit e tag), com as regras em
-  `VERSIONING.md`. O número no binário diz de onde o build saiu
-  (`0.7.0+66.16a4d6d` = 66 commits depois da 0.7.0), e o build para se o
-  `version.txt` ficar abaixo da última versão lançada.
-- Mesh > Nó > Localização: compartilhar a localização liga e desliga (é a
-  precisão da posição no canal principal do nó: não compartilhar, exata ou
-  aproximada de ~90 m a ~6 km), enviar também ao se mover (smart broadcast),
-  GPS do próprio nó (ligado/desligado; "a placa não tem GPS" quando não tem),
-  e o GPS do Tab5 para o nó, junto da posição fixa e do intervalo de envio.
-- Modo pendrive: o cartão SD aparece no computador como um disco USB pelo
-  USB-C, em segundo plano — o Tab5 segue usável. Liga e devolve em
-  Ajustes > USB; enquanto durar, a barra mostra "Cartão no computador".
-  Ejetar no computador devolve o cartão sozinho; devolver no Tab5 sem o
-  computador ter ejetado pede confirmação. Durante o pendrive o cabo não é
-  console nem gravação, a CPU fica no clock máximo e, com o disco montado, a
-  tela não apaga.
-- Diário de gravações na flash interna (partição `reserva`, 2 MB): com o
-  cartão no computador, o que o sistema grava (log, conversas, energia,
-  nós do Mesh, redes Wi-Fi) vai para o diário e chega ao cartão na volta, na
-  ordem em que aconteceu — inclusive depois de um reinício no meio. Se o
-  computador mudou um arquivo que o Tab5 também reescreveu, o do computador
-  fica e o do Tab5 vai para `<nome>.tab5`. A barra avisa quando o diário
-  passa de 90%; a página USB mostra o que se perdeu. **Exige regravar com
-  `./flash.sh`** (tabela de partições nova; os ajustes ficam).
-- Ajustes > USB: ligar o pendrive sozinho ao conectar num computador
-  (desligado de fábrica; com um app aberto ou a tela bloqueada, só avisa).
-- `tab5_sd_acrescentar()` e `tab5_sd_substituir()` — as portas de gravação
-  do sistema —, `tab5_sd_emprestar()`/`tab5_sd_devolver()`
+### Added
+- Versioning: `tools/release.sh patch|minor|major` cuts a release (`version.txt`,
+  CHANGELOG section, git commit, and tag) following the rules in
+  `VERSIONING.md`. The version string embedded in the binary identifies the
+  exact commit it was built from (`0.7.0+66.16a4d6d` = 66 commits past `0.7.0`),
+  and the build fails if `version.txt` ever falls behind the latest git tag.
+- Mesh > Node > Location: toggle location sharing on/off (controls position
+  precision on the node's primary channel: disabled, exact, or approximate from
+  ~90 m to ~6 km), smart position broadcast on movement, the node's own GPS mode
+  (enabled/disabled, or "board has no GPS" when unsupported), and forwarding the
+  Tab5's GPS fix to the node, alongside fixed position and broadcast interval.
+- USB mass-storage (thumb-drive) mode: exposes the SD card to a connected
+  computer as a USB drive over USB-C in the background while the Tab5 stays
+  usable. Enable and reclaim the card in Settings > USB; while active, the
+  status bar displays "Card on computer". Ejecting the drive on the computer
+  returns the card to the Tab5 automatically; reclaiming it on the Tab5 before
+  the computer ejects prompts for confirmation. While USB mass storage is
+  active, the USB-C port is unavailable for serial console or flashing, the CPU
+  runs at maximum clock, and the screen stays awake while the host has the
+  volume mounted.
+- Internal flash write journal (`reserva` partition, 2 MB): while the SD card is
+  loaned to a computer over USB, all system writes (logs, chat history, energy
+  telemetry, Mesh nodes, Wi-Fi credentials) are recorded to the flash journal
+  and replayed onto the SD card in exact chronological order when it returns —
+  even across a reboot. If the computer modified a file that the Tab5 also
+  replaced in full, the computer's version wins and the Tab5's version is saved
+  alongside it as `<name>.tab5`. The status bar warns if the journal exceeds 90%
+  capacity, and the USB page reports any dropped records. **Requires a full
+  reflashing via `./flash.sh`** (new partition table; NVS settings are
+  preserved).
+- Settings > USB: option to start USB mass-storage mode automatically when
+  plugged into a computer (disabled by default; if an app is open or the screen
+  is locked when plugged in, it shows a notification instead of interrupting).
+- `tab5_sd_acrescentar()` and `tab5_sd_substituir()` — the system's journaled SD
+  write APIs — plus `tab5_sd_emprestar()` / `tab5_sd_devolver()`
   (`hal/tab5_sd.hpp`), `app_t.exige_sd`, `sistema_manter_acordado()`,
-  `sistema_bloqueado()` e `sistema_app_exige_sd()` (`kernel/app.h`).
-- Central de avisos: tocar a barra de status abre uma lista com todos os
-  apps que estão avisando (nome, resumo, contagem, cor da gravidade); tocar
-  uma linha abre o app. Fecha tocando fora, na barra, com Esc ou deslizando
-  para cima. A barra ganha um ponto colorido por app além do destaque, e a
-  tela de bloqueio lista até 4 apps em vez de um só.
-- `notif_listar()` e `notif_associar_app()` em `services/notification.h`.
-- Mesh: rede americana em paralelo. Um segundo cliente MQTT
-  (`mqtt.meshtastic.org`, raiz `msh/US`, LongFast de fábrica) roda junto do
-  enlace de sempre — no modo internet, com o nó no cabo/Bluetooth e com o
-  proxy. As mensagens vão para a conversa "LongFast EUA", embaixo de um traço
-  "EUA" na coluna de conversas; os nós ficam marcados com a rede e a página
-  de nós ganha os botões BRASIL / EUA, com o liga/desliga da rede americana
-  (desligada de fábrica). Os EUA têm teto de 96 nós na tabela, não apitam
-  nem entram na barra de status, e nó americano não tem CONVERSAR (só canal,
-  sem PKI).
-- Conversas: a hora de cada mensagem embaixo do balão, do lado de quem falou
-  (Mesh e ESP-NOW).
+  `sistema_bloqueado()`, and `sistema_app_exige_sd()` (`kernel/app.h`).
+- Notification center: tapping the status bar opens a dropdown listing all apps
+  with active notifications (name, summary, count, severity color); tapping a
+  row launches the corresponding app. Dismiss by tapping outside, tapping the
+  bar again, pressing Esc, or swiping up. The status bar now shows a colored dot
+  for each additional notifying source alongside the top-priority highlight, and
+  the lock screen lists up to 4 notifying apps instead of just one.
+- `notif_listar()` and `notif_associar_app()` in `services/notification.h`.
+- Mesh: parallel US mesh feed. A second MQTT client (`mqtt.meshtastic.org`,
+  root topic `msh/US`, default `LongFast` channel) runs alongside the primary
+  link — whether in internet-only mode, connected to a node over Grove/Bluetooth,
+  or acting as an MQTT proxy. Incoming messages land in a dedicated "LongFast
+  EUA" conversation beneath an "EUA" divider in the conversation list; nodes are
+  tagged with their network origin, and the Nodes tab gains BRAZIL / USA filter
+  buttons with an on/off toggle for the US feed (disabled by default). US nodes
+  are capped at 96 entries in the table, never trigger notification beeps or
+  status bar alerts, and do not offer direct messaging (channel-only, no PKI).
+- Conversations: displays the timestamp beneath each message bubble, aligned to
+  the sender's side (Mesh and ESP-NOW).
 
-### Mudado
-- A hora subiu para o canto esquerdo da barra de cima (menos na tela de
-  bloqueio, que já mostra a hora grande); a temperatura do P4 desceu para a
-  faixa de baixo, com a média desde o boot. O termômetro enche e muda de cor
-  (azul, verde, amarelo, laranja, vermelho) conforme a temperatura.
-- O botão da faixa de baixo troca a palavra "INÍCIO" por um círculo, o
-  símbolo de tela inicial.
-- Mesh > Nó em grupos: a página abre numa lista curta (Nome e papel,
-  Localização, Rádio LoRa, Conexões e internet, Avisos e telemetria,
-  Manutenção), cada grupo com um resumo; tocar abre as opções dele juntas e
-  VOLTAR sobe. O pendente vale para a página toda — mudar coisas em grupos
-  diferentes ainda grava numa transação só (o nó reinicia uma vez).
-- O GPS do Tab5 com o nó do outro lado vai **só para o nó**, como faz o app
-  do celular: o nó a difunde no ritmo e com a precisão dele. Antes ia em
-  difusão de 3 saltos e o nó repetia a mesma posição no ritmo dele — duas
-  vezes o tempo de ar. Com posição fixa ou o GPS do nó ligado, o Tab5 não
-  manda nada (o nó ignoraria ou atropelaria). Pela internet, sem nó, o Tab5
-  respeita a precisão do canal que o nó deixou (0 = não manda).
-- "Posição do GPS para a malha" saiu de Ajustes > Mesh: agora fica só em
-  Mesh > Nó > Localização (dois lugares para a mesma coisa).
-- Pôr ou tirar a posição fixa pede ao nó só a configuração de volta
-  (want_config 69420), não a NodeDB inteira; firmware antigo manda tudo,
-  como antes.
-- Desligar o MQTT do nó leva o proxy (internet do Tab5) junto — o espelho
-  da regra que já existia ao ligar o proxy.
-- Arquivos e Câmera não abrem com o cartão no computador: o sistema mostra o
-  motivo no lugar do app e abre sozinho quando o cartão volta
-  (`app_t.exige_sd`), e o pendrive não começa com um deles aberto.
-- Toda gravação de dados passa pelas portas do sistema (`hal/tab5_sd.hpp`);
-  `tab5_sd_abrir()` fica para ler e para arquivo novo grande. Os serviços que
-  reescrevem um arquivo inteiro (redes Wi-Fi, redes do nó, conversas
-  apagadas, NodeDB) só o fazem depois de tê-lo lido — sem cartão, a mudança
-  vale até reiniciar em vez de apagar o que estava guardado.
-- Trocar um arquivo inteiro sobrevive a queda de energia no meio: quem for
-  ler completa a troca interrompida (o conteúdo novo estava no `.tmp`).
-- `sistema_manter_acordado()` acende a tela se o pedido chegar com ela
-  apagada (o computador montando o disco com o Tab5 em repouso).
-- A navegação travada (`sistema_travar_navegacao`) passa a valer também para
-  a barra de status (não abre a central de avisos) e para pedidos de fora de
-  trocar de app (`sistema_simular_abrir`, console).
-- Emoji guardados com paleta (1 byte por pixel + as cores de cada um) em vez
-  de RGB565 cru: de ~1,49MB para ~0,91MB de flash, com a mesma imagem pixel a
-  pixel. O fundo transparente passa a ser o índice 0 da paleta, não mais a
-  cor magenta.
-- Emoji em texto menor que 24px encolhe para a altura da linha, em vez de
-  invadir as linhas vizinhas.
-- Teclado virtual no padrão do celular. Shift vale para UMA letra e solta
-  sozinho; dois toques seguidos travam (caps lock), e a seta mostra o estado
-  (contorno / cheia / cheia com barra). Na conversa a maiúscula arma sozinha
-  no começo do texto e depois de ". ", "! " e "? " (senha, PIN e nome não).
-  Shift e apagar foram para as pontas da fileira do "zxcv", como no Android,
-  e no lugar do apagar entrou a tecla "?123": duas páginas de símbolos com
-  parênteses, chaves, colchetes, `< > \ | ~ ^` e os acentos do português
-  (á à â ã é ê í ó ô õ ú ç, maiúsculos com o shift). Espaço ou acento numa
-  página de símbolos volta às letras. Vírgula e ponto não viram mais "?" e
-  "!" com o shift, e a fileira dos números fica sempre números.
-- Teclado virtual: um `tecvirt_editar()` só para os campos simples (senha do
-  Wi-Fi, nome e Wi-Fi do nó) no lugar de três cópias do "põe no fim / tira o
-  último"; o apagar deles tira o caractere UTF-8 inteiro, não um byte.
-- Um codec Protobuf só (`services/mesh_pb.hpp`) no lugar de três cópias
-  (`tab5_mesh`, `tab5_mesh_admin`, `tab5_mesh_mqtt`). A escrita confere o
-  limite do buffer: o que não cabe é recusado, em vez de montado com
-  ponteiro solto e bytes mágicos. Texto, admin e posição saem pelo mesmo
-  envelope; o teste no Mac (`testes/rodar_mesh_pb.sh`, com ASan/UBSan)
-  confere que os bytes são idênticos aos de antes.
-- Parada de tarefa de serviço num mecanismo só (`kernel/service_stop.hpp`): GPS,
-  Mesh e o enlace Bluetooth do Mesh esperam a saída num semáforo em vez de
-  perguntar a cada 10 ms. No GPS as bandeiras nem eram `volatile`.
-- Ouvinte de evento (`hal/tab5_listener.hpp`) para a varredura BLE, o farejo
-  e o CSI: remover o ouvinte espera a chamada em voo. O Radar deixa de
-  dormir 40 ms "para dar tempo" ao fechar.
-- Troca de relógio do painel pedida pelo console: espera num semáforo em vez
-  de perguntar a cada 10 ms.
-- "Relógio acertado?" num lugar só (`tab5_hora_epoch()`), no lugar de doze
-  cópias do mesmo número com quatro nomes.
-- Ponte MQTT: os quadros para o serviço são montados direto no quadro
-  estático da fila (a tarefa do cliente dos EUA tem 3,5 KB de pilha); o
-  ToRadio é lido por uma função só nas duas saídas (Brasil e EUA).
-- RAM interna: as pilhas das 6 tarefas do esp_hosted (`sdio_*`, `eh_rpc_*`)
-  foram para a PSRAM (`CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM`). Eram 24 KB
-  presos para ~8 KB de uso medido. Com WiFi + MQTT no ar, a RAM livre foi de
-  202 para 227 KB, o mínimo de 157 para 182 KB e o maior bloco de 77 para
-  102 KB. Com a tela acesa, a foto do monitor e os underruns não mudaram
-  (~2,3 ms no pior caso, zero piscadas). Em repouso, durante varredura BLE,
-  o pior caso subiu de ~25 para ~50 ms, mas o painel está desligado.
-- `mem extrato` ganhou a coluna "mínimo" (o pico temporário dentro de cada
-  etapa, que o delta esconde) e `tarefas` mostra a duração da foto do
-  monitor (última e pior).
-- Mesh: a cópia da NodeDB do Tab5 (31 KB de PSRAM) só existe enquanto grava
-  ou lê o `nodedb.bin`; os nomes dos nós dos EUA não vão para o `nos.txt`; o
-  cliente MQTT dos EUA usa buffers de 768/512 bytes e pilha de 3,5 KB (RAM
-  interna).
-- Mesh: emprestar a internet do Tab5 ao nó (MQTT Client Proxy do
-  Meshtastic), na página Nó do app Mesh, linha "internet do Tab5 (proxy)",
-  junto do "MQTT do nó" e com as mesmas regras da página: o toque deixa
-  pendente, GRAVAR NO NÓ grava (ligar o proxy leva o MQTT junto, na mesma
-  transação) e a linha mostra o que o nó confirmou, com o estado da ponte ao
-  lado. O nó publica e assina pelo enlace com o Tab5 (Bluetooth ou cabo) e o
-  Tab5 leva ao servidor pelo Wi-Fi: o nó vira gateway completo sem ligar o
-  Wi-Fi dele, e o Grove fica livre para o GPS. O Tab5 só carrega bytes - quem
-  cifra é o nó, então a mensagem direta com PKI também passa - e usa o
-  servidor configurado no nó.
-- Radar enxerga WiFi: o farejo do C6 entra como segunda fonte de alvos ao lado
-  do BLE (roteadores, celulares procurando rede, aparelhos conectados), no
-  mesmo ajuste de cosseno, na mesma busca quente/frio e com filtro próprio
-  (TODOS / SÓ TAGS / SÓ WiFi). O farejo fica no canal em que o rádio já está.
-- Radar mostra movimento pelo CSI: o serviço `tab5_csi` mede quanto o canal
-  entre o roteador e o Tab5 varia (parado / leve / forte), aprende o "parado"
-  de cada lugar e suspende a medida enquanto o próprio Tab5 se mexe.
-- Serviço `tab5_csi`, dono único da mensagem de CSI (o peer_data guarda um
-  ouvinte por mensagem): pede ao C6 só o CSI do roteador, pinga o roteador a
-  20 Hz como fonte e custa zero parado. O `radio csi` do console passa por ele
-  e mostra a medida de movimento.
-- Firmware do C6 (contrato v3): a gravação passa a levar de uma vez tudo que
-  depende do rádio, cada recurso ligado sob pedido do P4 e dormente até lá —
-  ESP-NOW (texto, dois dialetos) e canal, farejador promiscuo em lotes, tubo
-  cru de ESP-NOW, INFO, mais CSI, FTM e 802.15.4. Como regravar o C6 é físico
-  (Downloader), as próximas evoluções acontecem do lado do P4 sem reabrir o
-  aparelho. Cada capacidade anuncia um bit em `caps` (só acende se o módulo foi
-  compilado), e o P4 esconde o que a gravação não trouxe.
-- Serviço `tab5_sniffer` e comando `farejo` no console: o C6 ouve em modo
-  promiscuo, resume por MAC e manda em lotes; o P4 guarda a tabela só enquanto
-  ligado (na PSRAM, numa vaga do pool) e o C6 desliga sozinho se o P4 parar de
-  renovar. `farejo info` mostra as capacidades de rádio do C6 gravado.
-- Console serial reorganizado: os comandos moram numa tabela única, e o
-  `help` é gerado dela, em sete grupos (Sistema, Tela, Cartão, Rede,
-  Meshtastic, Bancada, Testes), com todas as formas de cada comando e
-  exemplos. `help <comando>` explica para que serve; `help tudo` mostra tudo. Comando errado sugere os
-  parecidos.
-- Console: `estado` (antigo `servicos`, agora com versão, tempo ligado e RAM);
-  `wifi` sozinho mostra o estado, mais `wifi redes`, `wifi gravar`,
-  `wifi conectar` e `wifi esquecer`; `log` aceita nomes de nível
-  (`log eh_sdio debug`) e mostra o nível atual; `ler <arq> [linhas]`;
-  caminhos do cartão relativos a `/sdcard`; `mesh nos` e `mesh enviar`;
-  `grove cru <baud>`; `tela prioridade alta|padrao`; `mem tudo`.
-  Os nomes antigos (`servicos`, `redes`, `nos`, `enviar`, `grove <baud>`,
-  `tela on|off`) continuam aceitos.
-- Mesh: escolha entre três vias em Ajustes > Meshtastic (Cabo Grove,
-  Bluetooth, Internet). O Grove tem prioridade: quando a sondagem acha o C6L no
-  cabo, o Mesh passa para ele sozinho, de qualquer via; depois disso a escolha
-  manual vale até o próximo achado.
-- Mesh, página Nós: todos os canais ativos do nó no topo, como botões (o que
-  não está na coluna aparece com "+" e volta ao ser tocado); tocar num nó abre
-  o cartão dele - id, MAC (quando o nó envia), modelo, SNR, saltos, bateria e
-  tensão, visto, posição com distância e rumo - com CONVERSAR e VOLTAR.
-- Mesh: página "Nó" (engrenagem no trilho) para configurar o nó Meshtastic
-  pelo Tab5, sem PC nem celular: nomes, papel, saltos, potência, intervalos de
-  posição/apresentação/telemetria, MQTT e Bluetooth do nó. As mudanças ficam
-  pendentes (amarelo) e "GRAVAR NO NÓ" manda tudo numa transação
-  (`begin/commit_edit_settings`) - o nó grava e reinicia uma vez, e a tela
-  mostra o que ele confirmou no dump seguinte. Ações imediatas: posição fixa
-  pelo GPS do Tab5, acertar a hora do nó, reiniciar (com confirmação). Mostra
-  também firmware, placa, região/modem, nós guardados (rádio · Tab5),
-  reinícios e o último aviso do firmware (`ClientNotification`). O som das
-  notificações saiu da página Malha para esta.
-- Mesh: `services/tab5_mesh_admin` - set_config/set_module_config reenviam a
-  seção crua do dump com os campos novos no fim (o protobuf fica com a última
-  ocorrência), sem modelar o protobuf inteiro. Seções com senha ou chave
-  (network, power, security) e o módulo serial nunca são reenviados.
-- Mesh: NodeDB do Tab5 no cartão (`nodedb.bin`, PSRAM, 256 nós), carregada ao
-  subir o serviço e gravada a cada 10 min e ao parar: o Tab5 lembra mais nós
-  do que o teto do rádio (100 no C6L até a 2.7).
-- `tools/test_mesh_admin.py`: decodifica com os protobufs oficiais os
-  bytes que o M5tabOS monta (admin, texto, canais).
-- Mesh: favoritos (estrela). No cartão do nó, FAVORITAR marca; a tabela mostra
-  a estrela e põe os favoritos logo abaixo do nosso nó, na ordem em que foram
-  marcados, sempre presentes e nunca despejados. São os favoritos do próprio
-  Meshtastic: a marca vai ao nó (AdminMessage `set_favorite_node` /
-  `remove_favorite_node`, admin local) e aparece no cliente web; o
-  `is_favorite` do dump atualiza a lista daqui. Sem o rádio (modo internet) a
-  mudança fica pendente e vai no próximo dump. Lista guardada na NVS.
-- Mesh: marca cinza de "ouvida pela malha" na mensagem direta - o vizinho
-  repetiu, o destinatário ainda não confirmou. O visto verde fica para o ACK do
-  próprio destinatário.
-- Home em páginas: com mais apps do que cabem na tela (12 hoje), arrastar para o
-  lado troca de página e bolinhas embaixo mostram a atual. `TAB5_HOME_LINHAS_MAX`
-  (kernel/internal.hpp) limita as linhas por página.
-- Tela de bloqueio (Ajustes > Tela, desligada de fábrica): ao acordar mostra
-  hora, data e o aviso em destaque; deslizar para cima desbloqueia e volta ao
-  que estava aberto. Enquanto bloqueado, nada chega ao app por baixo.
-- Mesh pela internet (MQTT) quando o nó não está conectado: com Wi-Fi e sem o
-  C6L, as mensagens de canal chegam e saem pelo servidor MQTT. Sem servidor
-  aprendido do nó, usa o do Mesh Brasil (`platform.meshbrasil.com`, raiz
-  `meshdev`, canal LongFast com a chave padrão); a região do rádio não entra
-  no tópico. Assina também as sub-raízes (`meshdev/<país>/<região>/...`) e os relatórios
-  de mapa, que viram nome e posição de nós. Canais, chaves e servidor são
-  aprendidos do nó quando ele está conectado.
-- Ajustes > Meshtastic: botão LIGAR/DESLIGAR da internet e linha de estado
-  (servidor e raiz em uso). O nó no Grove tem prioridade: com ele, a internet
-  nunca roda, mesmo com o Wi-Fi ligado.
-- `tools/teste_mqtt_vivo.py`: escuta o servidor real e decifra com o
-  mesmo algoritmo, para conferir tópico e criptografia fora do aparelho.
-- Ajustes > Wi-Fi: lista das redes em volta, senha digitada na tela, várias
-  redes guardadas (cifradas) e conexão automática na conhecida mais forte.
-- Ajustes > Bluetooth: tocar num nó Meshtastic conecta o Mesh a ele, e a
-  página mostra o estado da conexão; nós reconhecidos também pelo nome.
-- Hora pela internet (NTP) quando o Wi-Fi está conectado. Ordem de confiança:
-  internet, GPS (só com fix), Mesh (só tráfego ao vivo); uma fonte pior não
-  desfaz o acerto de uma melhor.
-- Ajustes > Bluetooth reconhece rastreadores (rede Find My/AirTag, Tile,
-  SmartTag, Google) e beacons (iBeacon, Eddystone), e mostra a distância
-  estimada pelo sinal. Ajustes > Wi-Fi mostra a distância estimada de cada rede.
-- Log: a hora acertada aparece no horário local, com o fuso, e diz em palavras
-  quanto o relógio estava errado ("o relógio estava 1 s atrasado"). Antes saía
-  em UTC ("18:19:01Z") com "relogio mudou +1s".
-- Log: mensagens de boot e de ajustes reescritas para serem lidas sem o fonte -
-  ligado/desligado no lugar de "=0/=1", o perfil de energia lista só o que
-  está ligado, endereços de memória e nomes internos (peer_data, AXI, fb0,
-  app_main) trocados pelo que importa para quem lê.
-- Teclado virtual é um componente do sistema (`tecvirt_t`): conversa, senha do
-  Wi-Fi e PIN usam o mesmo, com retorno da tecla e vários dedos. Desceu até a
-  barra de baixo (sem a faixa morta; a navegação travada entrega o toque na
-  fileira de comando), a letra sai uma amostra antes, e no Ajustes cada letra
-  repinta só o campo em vez da página e do teclado inteiros.
-- Toque por nível recebe a mesma correção vertical do clique (10 px).
-- RAM interna: ~80 KB de variáveis estáticas dos apps e serviços (monitor,
-  Trilha, Radar, MQTT, Mesh, ESP-NOW, tabelas de fonte) e o `.bss` do lwIP
-  saem da SRAM para a PSRAM via `main/linker.lf`. O buffer do log (12 KB), o
-  vetor de linhas da segunda página da tela e o retrato de tarefas do monitor
-  também.
-- Pilhas redimensionadas pelo pico medido em `pilhas-*.csv`: console 12→8 KB,
-  WiFi e ESP-NOW 8→6 KB, MQTT 6→4 KB. A do `sys_evt` sobe de 2,3 para 3 KB
-  (chegava a 600 bytes livres).
-- mbedTLS aloca na PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`): uma sessão TLS
-  não tira mais ~40 KB da interna de uma vez.
-- Console: `mem` mostra o extrato da RAM interna (quanto cada etapa do boot e
-  cada rádio consumiu) e o mapa de fragmentação por região do heap.
-- Ajustes > Meshtastic: a assinatura de repintura vira um hash da página
-  inteira; os estados longos (internet, proxy) no fim passavam do limite de
-  comparação e a tela não acompanhava a mudança.
-- Energia reformulado no molde das telas de bateria dos celulares. No topo, a
-  porcentagem grande com o estado (na bateria / carregando / na tomada) e a
-  estimativa pela média dos últimos 30 min ("dura ~6 h 30 min neste ritmo",
-  "cheia em ~1 h 20 min"). Abaixo, um índice de seis cartões (bateria,
-  corrente, potência, tensão, temperatura e gasto das 24 h); tocar num cartão
-  escolhe o gráfico. Saem o título, a linha do registro (só aparece se houver
-  falha de gravação), os MHz da CPU e a legenda de sinal.
-- Energia, gráfico de nível: eixo com números redondos em cada linha da grade
-  (antes só o mínimo e o máximo medidos, no canto), área preenchida, horas de
-  carga tingidas de verde atrás da curva e um vértice por coluna de pixel (a
-  média suaviza o ruído da corrente). Na corrente o preenchimento vai até o
-  zero: verde acima, laranja abaixo. Tocar põe um cursor com a hora e o valor.
-  O período 24 H é uma janela móvel (da hora cheia de 23 h atrás até agora,
-  lendo os arquivos de ontem e de hoje) no lugar do HOJE de 0 a 24 h, que
-  ficava vazio logo depois da meia-noite.
-- Energia, gráfico novo de gasto por hora: barras de mAh nas últimas 24 h,
-  separando tela acesa de repouso, com uma faixa verde nas horas em que houve
-  carga e o mesmo eixo de tempo do gráfico de nível. Tocar numa barra mostra o
-  detalhe da hora; sem seleção, os totais das 24 h.
+### Changed
+- Moved the clock to the top-left corner of the status bar (except on the lock
+  screen, which already displays a large clock); moved the ESP32-P4 die
+  temperature down to the navigation bar alongside the running average since
+  boot. The thermometer icon fills and changes color (blue, green, yellow,
+  orange, red) with temperature.
+- Replaced the word "HOME" on the bottom navigation bar button with a home
+  circle icon.
+- Mesh > Node settings organized into collapsible groups: the tab now opens to a
+  compact category list (Name & Role, Location, LoRa Radio, Connections &
+  Internet, Notifications & Telemetry, Maintenance), each showing a one-line
+  summary; tapping a group opens its settings, and BACK returns to the group
+  list. Pending edits apply across the entire Node tab — modifying settings in
+  multiple groups still commits everything in a single transaction (rebooting
+  the node only once).
+- When a node is connected, the Tab5's GPS fix is sent **only to the local
+  node** (matching the official mobile apps), letting the node broadcast its
+  position at its own configured interval and precision. Previously, the Tab5
+  also transmitted a 3-hop broadcast packet over the mesh, causing duplicate
+  airtime when the node broadcast the same coordinates on its own schedule. When
+  the node has a fixed position or its own internal GPS enabled, the Tab5 does
+  not send GPS updates (which the node would ignore or overwrite). In
+  internet-only mode (no node attached), the Tab5 honors the position precision
+  learned from the node's primary channel (`0` = do not send).
+- Removed the duplicate "Send GPS position to mesh" toggle from Settings >
+  Meshtastic; it now lives exclusively under Mesh > Node > Location.
+- Setting or clearing a fixed position now requests only the configuration dump
+  back from the node (`want_config_id` 69420) rather than re-downloading the
+  entire NodeDB; older firmware versions still send the full dump as before.
+- Disabling the node's MQTT module now automatically disables the MQTT Client
+  Proxy (Tab5 internet sharing) as well — mirroring the rule that enabling the
+  proxy automatically enables MQTT.
+- Files and Camera refuse to open while the SD card is mounted on a computer:
+  the system displays an explanation screen in place of the app and opens the
+  app automatically as soon as the card returns (`app_t.exige_sd`), and USB
+  mass-storage mode will not start while either app is open.
+- All persistent data writes now go through the system SD write APIs
+  (`hal/tab5_sd.hpp`), leaving `tab5_sd_abrir()` for reads and large new binary
+  files. Services that rewrite an entire file (Wi-Fi networks, node Wi-Fi
+  networks, deleted conversations, NodeDB) only do so if they successfully read
+  the existing file first — if the card was absent at boot, runtime changes live
+  in RAM until reboot instead of wiping the saved file when the card returns.
+- Atomic whole-file replacement (`tab5_sd_substituir`) now survives power loss
+  mid-swap: the next reader automatically completes any interrupted `.tmp`
+  rename.
+- `sistema_manter_acordado()` now wakes the display if called while the screen
+  is asleep (e.g., when a computer mounts the USB drive while the Tab5 is
+  sleeping).
+- Navigation lock (`sistema_travar_navegacao`) now also blocks opening the
+  notification center from the status bar and rejects external app-switch
+  requests (`sistema_simular_abrir`, serial console).
+- Stored Twemoji bitmaps as 8-bit palettized images (1 byte per pixel + per-emoji
+  color table) instead of raw RGB565, shrinking flash usage from ~1.49 MB to
+  ~0.91 MB with pixel-identical rendering. Transparency now uses palette index 0
+  instead of a magic magenta key color.
+- Emoji rendered inline in text smaller than 24 px now scale down to match the
+  line height instead of overflowing into adjacent lines.
+- Mobile-style virtual keyboard layout and behavior. Tapping Shift arms uppercase
+  for a SINGLE letter and releases automatically; double-tapping locks Caps Lock,
+  with the Shift arrow icon indicating the state (outline / filled / filled with
+  underline). In chat conversations, auto-capitalization arms automatically at
+  the start of a message and after `". "`, `"! "`, and `"? "` (disabled for
+  password, PIN, and name fields). Moved Shift and Backspace to the outer edges
+  of the `"zxcv"` row like on Android, placing the `"?123"` key where Backspace
+  used to be: two symbol pages featuring parentheses, braces, brackets,
+  `< > \ | ~ ^`, and Portuguese accented characters (`á à â ã é ê í ó ô õ ú ç`,
+  uppercase when shifted). Typing a space or accented letter on a symbol page
+  returns to the letter layout automatically. Comma and period no longer turn
+  into `?` and `!` when shifted, and the top number row stays numbers on all
+  pages.
+- Virtual keyboard: unified single-line field editing into `tecvirt_editar()`
+  (used by Wi-Fi passwords, node names, and node Wi-Fi credentials) instead of
+  three separate "append / pop last" implementations, and made Backspace delete
+  a full UTF-8 codepoint rather than a single byte.
+- Consolidated three separate Protobuf codecs (`tab5_mesh`, `tab5_mesh_admin`,
+  `tab5_mesh_mqtt`) into a single bounds-checked header (`services/mesh_pb.hpp`).
+  Encoders verify buffer capacity on every write and reject oversized payloads
+  cleanly instead of writing past the end via raw pointers. Text, admin, and
+  position packets share a single envelope builder, verified byte-for-byte on
+  macOS via `testes/rodar_mesh_pb.sh` under ASan/UBSan.
+- Unified service task shutdown across the OS (`kernel/service_stop.hpp`): GPS,
+  Mesh, and the Mesh BLE transport now await task exit on a semaphore instead of
+  polling every 10 ms (and in GPS, the stop flags weren't even `volatile`).
+- Added a thread-safe single-listener wrapper (`hal/tab5_listener.hpp`) for BLE
+  scanning, promiscuous Wi-Fi sniffing, and CSI: unregistering a listener waits
+  for any in-flight callback to finish, allowing the Radar app to drop its
+  40 ms "just in case" sleep on close.
+- Changing the display pixel clock from the serial console now waits on a
+  completion semaphore instead of polling every 10 ms.
+- Consolidated "is the system clock valid?" checks into `tab5_hora_epoch()`,
+  replacing twelve copies of the same magic timestamp scattered under four
+  different constant names.
+- MQTT bridge: incoming frames destined for the Mesh service are now assembled
+  directly into the static queue item buffer (fitting comfortably within the US
+  MQTT task's 3.5 KB stack), and outgoing `ToRadio` packets are parsed by a
+  single shared helper across both the Brazil and US clients.
+- Internal SRAM optimization: moved the stacks of all 6 `esp_hosted` tasks
+  (`sdio_*`, `eh_rpc_*`) into PSRAM (`CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM`).
+  They had been reserving 24 KB of internal SRAM for ~8 KB of measured peak
+  usage. With Wi-Fi + MQTT active, free internal SRAM rose from 202 → 227 KB,
+  minimum free from 157 → 182 KB, and largest contiguous block from 77 → 102 KB.
+  With the screen on, monitor snapshot time and display underruns were unchanged
+  (~2.3 ms worst case, zero flashes). During sleep with an active BLE scan,
+  worst-case snapshot time rose from ~25 → ~50 ms while the display panel is
+  powered off.
+- `mem extrato` gained a "minimum" column (showing the transient low-water mark
+  inside each boot stage that net deltas hide), and `tarefas` now reports the
+  duration of the monitor snapshot itself (last and worst).
+- Mesh memory footprint: the Tab5's 31 KB PSRAM shadow copy of the NodeDB is now
+  allocated only while actively reading or writing `nodedb.bin`; US node names
+  are no longer appended to `nos.txt`; and the US MQTT client uses compact
+  768/512-byte buffers with a 3.5 KB internal SRAM stack.
+- Mesh: share the Tab5's internet connection with a connected node (Meshtastic
+  MQTT Client Proxy) via the "Tab5 internet (proxy)" row on the Mesh app's Node
+  tab, right next to "Node MQTT" and following the same transactional editing
+  flow: tapping stages the change, tapping SAVE TO NODE commits both proxy and
+  MQTT in a single transaction, and the row displays the node's confirmed state
+  alongside live bridge status. The node publishes and subscribes over its link
+  with the Tab5 (Bluetooth or Grove serial) while the Tab5 forwards traffic to
+  the MQTT broker over Wi-Fi — turning the node into a full gateway without
+  enabling the node's own Wi-Fi radio and keeping the Grove port free for GPS.
+  Because the Tab5 merely shuttles encrypted envelopes, end-to-end PKI direct
+  messages pass through intact using whatever broker is configured on the node.
+- Radar now sees Wi-Fi devices: promiscuous sniffing on the C6 feeds a second
+  target stream alongside BLE (access points, phones probing for networks,
+  associated stations) into the same cosine-fit directional solver and hot/cold
+  proximity tracker, with a dedicated filter button (`ALL` / `TAGS ONLY` /
+  `Wi-Fi ONLY`). Sniffing stays on the radio's current channel.
+- Radar now detects room motion via Wi-Fi CSI: the `tab5_csi` service measures
+  channel variation between the Wi-Fi router and the Tab5 (still / light /
+  strong), learns each location's stillness baseline automatically, and pauses
+  detection whenever the IMU senses the Tab5 itself moving.
+- Added the `tab5_csi` service as the sole owner of `C6_MSG_CSI` (since
+  `peer_data` supports one callback per message ID): requests router-only CSI
+  from the C6, pings the gateway at 20 Hz as an OFDM illumination source, and
+  has zero overhead when idle. The console `radio csi` command now routes
+  through `tab5_csi` and displays live motion readings.
+- C6 firmware (protocol contract v3): a single C6 flash now bundles every
+  radio-dependent feature, each staying dormant until requested by the P4 —
+  ESP-NOW (text in two dialects) and channel control, batched promiscuous
+  sniffer, raw ESP-NOW pipe, `INFO`, plus Wi-Fi CSI, 802.11mc FTM, and 802.15.4.
+  Because reflashing the C6 requires an external hardware programmer, packing
+  all radio primitives into contract v3 lets future features evolve exclusively
+  on the P4 side without reopening the tablet. Each capability sets a bit in
+  `caps` (only when compiled in and supported by the silicon), and the P4 hides
+  UI controls for capabilities absent from the flashed C6 build.
+- Added the `tab5_sniffer` service and `farejo` console command: the C6 listens
+  in promiscuous mode, aggregates frames by source MAC, and sends 100 ms batches;
+  the P4 allocates the MAC table in PSRAM (from the shared pool) only while
+  active, and the C6 shuts sniffing off automatically if the P4 stops renewing
+  its lease. `farejo info` displays the flashed C6's radio capabilities.
+- Reorganized the serial console: all commands now live in a single declarative
+  table that generates `help` across seven categories (System, Display, SD Card,
+  Network, Meshtastic, Bench, Tests) with full usage syntax and examples.
+  `help <command>` prints detailed help for a specific command; `help tudo`
+  prints every command at once; mistyped commands suggest the closest matches.
+- Console enhancements: `estado` (replacing `servicos`, now including firmware
+  version, uptime, and free RAM); `wifi` alone prints status, joined by
+  `wifi redes`, `wifi gravar`, `wifi conectar`, and `wifi esquecer`; `log`
+  accepts log-level names (`log eh_sdio debug`) and prints the current level;
+  `ler <file> [lines]`; SD card paths default to `/sdcard`; `mesh nos` and
+  `mesh enviar`; `grove cru <baud>`; `tela prioridade alta|padrao`; `mem tudo`.
+  Legacy command aliases (`servicos`, `redes`, `nos`, `enviar`, `grove <baud>`,
+  `tela on|off`) remain supported.
+- Mesh: choose among three transports in Settings > Meshtastic (Grove Cable,
+  Bluetooth, Internet). Grove has automatic priority: whenever the background
+  probe detects a Unit C6L plugged into the Grove port, Mesh switches to it
+  automatically from any transport; manual selection remains in effect until the
+  next cable plug event.
+- Mesh, Nodes tab: displays all active channels from the node as buttons along
+  the top (channels hidden from the conversation sidebar show a `"+"` and can be
+  restored with a tap); tapping any node in the table opens its detail card —
+  node ID, MAC address (when reported), hardware model, SNR, hop count, battery
+  level and voltage, last-seen age, and GPS coordinates with distance and
+  cardinal bearing from the Tab5 — plus `CHAT` and `BACK` buttons.
+- Mesh: added the "Node" configuration tab (gear icon in the sidebar) to
+  configure an attached Meshtastic node directly from the Tab5 without a PC or
+  phone: long/short names, device role, hop limit, TX power, broadcast intervals
+  (position, NodeInfo, telemetry), MQTT, and Bluetooth settings. Edits are
+  staged in yellow and committed in a single `begin/commit_edit_settings`
+  transaction when tapping `SAVE TO NODE` — the node writes to flash, reboots
+  once, and the UI reflects the newly confirmed values from the post-reboot
+  dump. Immediate actions: set fixed position from Tab5 GPS, sync node clock,
+  and reboot node (with confirmation). Also displays firmware version, board
+  model, LoRa region/preset, stored node counts (radio · Tab5), reboot counter,
+  and the latest firmware `ClientNotification` warning. Moved the notification
+  sound toggle from the Mesh status tab to this tab.
+- Mesh: `services/tab5_mesh_admin` — `set_config` and `set_module_config`
+  re-send the raw protobuf bytes captured from the node's config dump with the
+  modified scalar fields appended at the end (per Protobuf rules, the last
+  occurrence wins), avoiding the need to model the entire Meshtastic schema.
+  Sensitive sections (`network`, `power`, `security`) and the `serial` module
+  are never re-sent raw.
+- Mesh: persistent Tab5 NodeDB on the SD card (`nodedb.bin`, 256 nodes in
+  PSRAM), loaded when the service starts and flushed every 10 minutes and on
+  service shutdown — allowing the Tab5 to remember more nodes than the attached
+  radio's internal limit (100 on the Unit C6L up to firmware 2.7).
+- `tools/test_mesh_admin.py`: validates the raw protobuf packets assembled by
+  M5tabOS (admin, text, channels) against the official Meshtastic Python
+  protobuf definitions.
+- Mesh: favorite nodes (star). Tapping `FAVORITE` on a node's detail card stars
+  it; the node table displays the star and pins favorites directly below our own
+  node in the order they were starred, keeping them permanently in the table
+  without eviction. Favorites are synced with native Meshtastic (`AdminMessage`
+  `set_favorite_node` / `remove_favorite_node` over local admin) so they appear
+  in the web client, and incoming `is_favorite` flags from the node's dump sync
+  back to the Tab5. In internet-only mode (no radio attached), changes are
+  staged in NVS and pushed to the node on the next connection dump.
+- Mesh: added a gray "heard by mesh" checkmark on outgoing direct messages —
+  indicating a neighbor rebroadcast the packet, while the green checkmark
+  remains reserved for an explicit ACK from the destination node itself.
+- Paginated home screen: when more apps are installed than fit on one screen
+  (12 currently), swiping horizontally switches pages, with page indicator dots
+  at the bottom. `TAB5_HOME_LINHAS_MAX` (`kernel/internal.hpp`) sets the maximum
+  rows per page.
+- Lock screen (Settings > Display, disabled by default): waking from sleep
+  shows a large clock, date, and top notifications; swiping up unlocks and
+  returns to whatever was open. While locked, touch, key, and event delivery to
+  the underlying app are suppressed.
+- Serverless Mesh over the internet (MQTT) when no radio node is connected: with
+  Wi-Fi connected and no Unit C6L attached, channel messages are sent and
+  received directly through an MQTT broker. If no broker has been learned from a
+  node yet, it defaults to Mesh Brasil (`platform.meshbrasil.com`, root topic
+  `meshdev`, `LongFast` channel with the default PSK), omitting the radio region
+  from the topic path. Also subscribes to sub-roots
+  (`meshdev/<country>/<region>/...`) and `MAP_REPORT` packets to populate node
+  names and positions. Once a node is connected, its channels, PSKs, and broker
+  settings are learned and cached automatically.
+- Settings > Meshtastic: added an Internet ON/OFF toggle and live status line
+  (active broker and root topic). A wired Grove node always takes priority:
+  while plugged in, the standalone internet client stays off even when Wi-Fi is
+  connected.
+- `tools/teste_mqtt_vivo.py`: desktop test script that connects to the live MQTT
+  broker and decrypts traffic using the exact same algorithm to verify topics
+  and crypto outside the tablet.
+- Settings > Wi-Fi: scans nearby networks, prompts for passwords via the
+  on-screen keyboard, stores multiple networks (encrypted on SD), and
+  auto-connects to the strongest known network.
+- Settings > Bluetooth: tapping a discovered Meshtastic node connects the Mesh
+  service to it and displays live connection status; nodes are also recognized
+  by name pattern when service UUIDs aren't advertised.
+- Automatic NTP time sync over Wi-Fi. Time source priority hierarchy: NTP
+  (internet), GPS (with valid fix), Mesh (live traffic only); a lower-priority
+  source never overwrites a clock already disciplined by a higher-priority one.
+- Settings > Bluetooth now identifies consumer trackers (Apple Find My / AirTag,
+  Tile, Samsung SmartTag, Google Find My Device) and beacons (iBeacon,
+  Eddystone) and estimates distance from RSSI. Settings > Wi-Fi also shows
+  estimated distance for each access point.
+- Logging: clock adjustments now log in local time with the time zone and state
+  the drift in plain language (e.g., "clock was 1 s behind") instead of raw UTC
+  deltas.
+- Logging: rewrote boot and settings log messages to be readable without
+  consulting the source code — using "on/off" instead of `=0/=1`, listing only
+  active rails in power profile logs, and replacing raw pointer addresses and
+  internal symbol names (`peer_data`, `AXI`, `fb0`, `app_main`) with clear
+  descriptions.
+- Promoted the virtual keyboard to a shared system widget (`tecvirt_t`): chat
+  conversations, Wi-Fi password entry, and BLE PIN prompts all share the same
+  implementation with visual key-press feedback and multitouch tracking. Extended
+  it down to the bottom edge of the screen (locking navigation so bottom-row taps
+  never hit Home), reduced key latency by one touch sample, and optimized
+  Settings so typing a character repaints only the input box rather than the
+  entire page and keyboard.
+- Applied the same 10 px vertical touch offset correction to level-polled touch
+  (`ao_tocar_nivel`) as tap events.
+- Internal SRAM savings: moved ~80 KB of static arrays in apps and services
+  (monitor, Trail, Radar, MQTT, Mesh, ESP-NOW, font tables) plus lwIP's `.bss`
+  segment from internal SRAM to PSRAM via `main/linker.lf`, along with the 12 KB
+  log ring buffer, the secondary display line vector, and the monitor task
+  snapshot array.
+- Right-sized task stacks based on measured high-water marks in `pilhas-*.csv`:
+  console 12 → 8 KB, Wi-Fi and ESP-NOW 8 → 6 KB, MQTT 6 → 4 KB; increased
+  `sys_evt` from 2.3 → 3 KB (had dipped to 600 bytes free).
+- Configured mbedTLS to allocate from PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`),
+  so opening a TLS session no longer consumes ~40 KB of internal SRAM at once.
+- Console: `mem` now prints an internal SRAM ledger (showing how much internal
+  memory each boot stage and radio subsystem consumed) alongside a heap
+  fragmentation map per memory region.
+- Settings > Meshtastic: replaced the fixed-length repaint state array with a
+  hash of the entire page state, fixing a bug where status strings at the bottom
+  of the page (internet, proxy) fell past the comparison limit and failed to
+  trigger a redraw.
+- Redesigned the Power app around modern smartphone battery screens. The top
+  header shows the large battery percentage, charging state (on battery /
+  charging / plugged in), and a runtime/charge estimate based on the 30-minute
+  rolling average ("lasts ~6 h 30 min at this rate", "full in ~1 h 20 min").
+  Below it sits a six-card metric grid (battery %, current, power, voltage, die
+  temperature, and 24-hour energy usage); tapping any card switches the chart
+  below it. Removed the redundant title, SD log status line (now shown only on
+  write failure), CPU MHz readout, and sign legend.
+- Power app, level chart: added round-number Y-axis labels on every grid line
+  (replacing the old min/max corner labels), filled area under the curve, green
+  background shading during charging hours, and one vertex per pixel column
+  (averaging samples within each column to smooth current noise). On the current
+  chart, the fill extends to the zero line (green above zero, orange below).
+  Tapping the chart places an inspection cursor showing the exact timestamp and
+  value. Changed the 24 H view from a midnight-to-midnight "TODAY" window (which
+  was empty right after midnight) to a rolling 24-hour window spanning yesterday's
+  and today's CSV files.
+- Power app, new hourly energy usage chart: plots hourly mAh bars over the last
+  24 hours broken down into screen-on vs. sleep consumption, with green bands on
+  charging hours and the same rolling time axis. Tapping a bar inspects that
+  hour's breakdown; with no bar selected, it displays the 24-hour totals.
 
-### Corrigido
-- Cartão: "caronas esgotadas" no boot. Cinco serviços gravam pela tarefa do
-  cartão e só cabiam quatro; o último (as redes Wi-Fi do nó do Mesh, na
-  ordem de hoje) nunca gravava.
-- Mesh: mensagem direta para um nó desligado, com o C6L na internet, ganhava
-  o check cinza ("outro nó ouviu") e nunca mostrava o X. Era a confirmação de
-  que o pacote chegou ao servidor MQTT, tomada por confirmação de rádio.
-- Wi-Fi não voltava sozinho ao chegar em casa: depois de desistir longe do
-  roteador, a queda gerada pela própria parada do rádio trocava o estado
-  FALHOU por DESLIGADO, e a retomada automática (que só olhava FALHOU) nunca
-  mais procurava — só a procura de Ajustes > Wi-Fi reconectava. Agora a
-  queda não apaga o motivo, a retomada age sempre que o Wi-Fi está ligado em
-  Ajustes e sem rede, e acender a tela procura na hora. Um "conectando" sem
-  resposta do C6 por 60 s também passa a desistir (e a retomada assume), e o
-  `varrer` do console devolve a conexão no fim.
-- CSI e Farejo: ligar logo depois de desligar podia criar duas tarefas
-  (CSI) ou deixar o farejo desligado e sem tabela depois de "ligar" ter
-  respondido sim. Os dois passam a usar a parada do kernel (`service_stop.hpp`).
-- Mesh: canais e NodeDB não são mais gravados no laço do rádio (um cartão
-  lento fazia perder quadros do nó); vão de carona na tarefa do cartão.
-- Partes de fundo (Trilha, Azimutal): parar espera a saída num semáforo, sem
-  o laço de 10 ms na interface; a máquina de estados própria deu lugar à
-  mesma parada dos serviços.
-- Energia e desempenho: a interface acorda por notificação de tarefa (não
-  mais por fila); o teclado só é lido pelo I2C quando o pino de interrupção
-  avisa (depois de provar que avisa); o GPS dorme na fila de eventos da UART;
-  o ESP-NOW dorme 30 s sem enlace com o C6; Ajustes redesenha no ritmo de
-  cada página; o papel de parede da home fica pronto enquanto se está nela.
-- Memória: o Bluetooth não tem mais tarefa permanente (−4 KB de RAM
-  interna); ligar/desligar usa uma vaga do pool.
-- `tab5_dentro()` e `tab5_agora_ms()` no lugar das cópias nos apps.
-- `sdkconfig.defaults`: `CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES=2`
-  (num sdkconfig antigo o código funciona igual; para ganhar a separação,
-  `idf.py menuconfig` ou apagar o `sdkconfig`).
-- Mesh: parar o serviço apagava o mutex principal enquanto a barra da home
-  e o app Mesh podiam estar segurando ou esperando por ele (toda troca de
-  via e toda re-sondagem do Grove). Agora o mutex nasce uma vez e fica.
-- Wi-Fi: a reconexão depois de uma queda dormia 1 s DENTRO da tarefa de
-  eventos do sistema, congelando todos os eventos (IP, esp_hosted). A
-  espera foi para a tarefa do Wi-Fi.
-- Wi-Fi: ESP-NOW, CSI e Farejo alteravam a mesma máscara de "receptor
-  ligado" sem operação atômica e podiam apagar o pedido um do outro.
-- Texto cortado para caber agora corta por caractere (UTF-8) em todo o
-  sistema: uma função só (`tab5_cortar_ao_caber`) no lugar de uma dúzia de
-  cópias — três cortavam por byte e desenhavam lixo em palavras com acento
-  (barra de status, faixa da home, nomes no Arquivos).
-- Mutex criado sob demanda (`tab5_mutex_travar`) não tem mais corrida na
-  primeira chamada; GPS, IMU, MQTT e Azimutal passam a usar ele.
-- Pedidos do console para abrir/fechar app esperam o app terminar de abrir
-  (antes chamavam `ao_fechar` de um app que nunca abriu).
-- Energia: com a tela apagada, o IMU não é mais lido por I2C a cada segundo,
-  o monitor amostra a cada 10 s e não espera quadro de painel desmontado, a
-  tabela de travas de PM sai só no primeiro repouso, e a potência é
-  calculada (V×I) em vez de lida do INA226.
-- Ajustes: arrastar brilho/volume grava na flash só o valor final (1 s depois),
-  e não a cada quadro do arraste.
-- Memória: a "lixeira" de desenho (1,8 MB de PSRAM) é solta quando o painel
-  volta; histórico do monitor e buffers de ordem da home saíram da RAM
-  interna.
-- Pendrive, cabo puxado sem ejetar: a sessão segue (o computador pode ter
-  algo do cartão em cache), mas com o barramento parado por mais de 2 s a
-  tela volta a apagar e a CPU sai do clock máximo — antes ficavam assim para
-  sempre, na bateria. Ligado sem computador no cabo, o clock máximo sai
-  depois de 10 s; volta quando o computador configurar o disco.
-- Pendrive, ao devolver: se a tarefa do USB não parasse em 2 s, o cartão
-  voltava ao Tab5 com ela ainda podendo estar no meio de uma leitura ou
-  escrita (memória liberada em uso). Agora a volta espera ela parar.
-- Pendrive: "devolver" pedido enquanto ele ainda preparava era descartado
-  em silêncio; agora fica guardado e a sessão devolve assim que o USB sobe.
-- A foto do cartão no empréstimo (48 KB de PSRAM) é solta quando o cartão
-  volta, ou quando o empréstimo desiste — ficava presa até o reinício.
-- Diário: aplicar um registro não põe mais 512 B de nomes na pilha de quem
-  lê o cartão (os nomes vão no mesmo bloco da PSRAM que o registro).
-- Vigia do cabo: com "ligar sozinho" desligado (o de fábrica) olha a cada
-  1 s em vez de 250 ms.
-- Wi-Fi volta sozinho para uma rede conhecida. Depois de 5 tentativas sem
-  sucesso (fora de alcance, roteador reiniciando) o rádio desistia e nunca
-  mais tentava, e a procura pela tela via a rede conhecida e desligava o
-  rádio de novo. Agora, com o Wi-Fi ligado em Ajustes, ele procura de novo
-  sozinho (30 s, 1, 2, 4 e depois a cada 5 min) e conecta na conhecida mais
-  forte que aparecer; a procura pela tela também conecta.
-- Mesh: se a tarefa do serviço não pudesse ser criada, a UART e o Grove
-  ficavam com o Mesh até reiniciar. Agora são devolvidos.
-- Ponte MQTT: os clientes do Brasil e dos EUA decifravam e montavam pacotes
-  nos MESMOS buffers estáticos, cada um na sua tarefa, ao mesmo tempo — um
-  podia sobrescrever o pacote do outro no meio. Cada cliente tem o seu par.
-- Ponte MQTT: um quadro que não coubesse no buffer podia sair cortado em
-  alguns caminhos (o tamanho era calculado mesmo com a escrita falhando).
-- Aviso sumindo da barra sem abrir o app: com a tela bloqueada (ou acordando
-  do repouso direto no bloqueio) o kernel entregava os avisos ao app que
-  estava por trás, e o ESP-NOW marcava as mensagens como lidas sem ninguém
-  ver. App encoberto não recebe mais aviso, toque nem tecla.
-- Mesh: parar e subir o serviço (troca de via, Wi-Fi caindo no modo
-  internet, Bluetooth caindo, C6L achado no cabo) zerava as não lidas e
-  apagava o aviso. As não lidas de cada conversa ficam guardadas até serem
-  lidas, e registrar a fonte de novo não zera mais o estado dela.
-- Mensagens vindas da ponte do Telegram (e de qualquer celular) apareciam em
-  quadrados: todo caractere fora da fonte que não é emoji vira o retângulo
-  da M5GFX. O texto agora passa por `tab5_unicode` antes de desenhar — letra
-  "estilizada" (𝗻𝗲𝗴𝗿𝗶𝘁𝗼, 𝓈𝒸𝓇𝒾𝓅𝓉) vira letra, bandeira vira "BR", tom de
-  pele e caracteres invisíveis somem, acento combinado se junta, cirílico e
-  grego são transliterados, e o que sobra vira "?". Testado no Mac:
-  `testes/rodar_unicode.sh`.
-- Mensagem com quebra de linha era cortada no histórico do cartão (uma
-  mensagem por linha): a quebra vira espaço no recebimento.
-- Mesh: enviar duas mensagens seguidas congelava a tela até 2,1 s (o limite
-  de texto do nó era esperado na tarefa de interface). O texto vai para uma
-  fila e a tarefa do serviço respeita o limite; a recusa que já dá para saber
-  (Bluetooth fora, internet com direta, EUA desconectado) continua na hora.
-- Mesh pelo cabo: a leitura da serial esperava 200 ms por quadro mesmo com
-  ele já chegado (pedia 256 bytes). Acorda no primeiro byte e lê o resto.
-- Mesh pelo Bluetooth: a leitura parava a cada 64 mensagens e só voltava no
-  próximo aviso do nó ou em 5 s — o dump de uma malha grande andava aos
-  soluços. Continua na volta seguinte; e o serviço esvazia o que chegou em vez
-  de um quadro por volta.
-- Mesh pela internet: fila esvaziada de 16 em 16 (era 1 por volta), descida
-  do proxy de 8 em 8 (era 4), cópias do mesmo pacote de vários gateways
-  descartadas antes de decifrar, e o aviso de fila cheia diz qual fila, uma
-  vez a cada 10 s.
-- Mesh: a tabela de nós era reordenada a cada linha desenhada quando chegava
-  tráfego; agora no máximo a cada 250 ms, e o aviso de "nós mudaram" para a
-  tela a no máximo 4/s (1/s vindo dos EUA).
-- Mesh: anel de mensagens já vistas de 64 para 256 (a cópia atrasada pela
-  ponte não entra de novo com o tráfego dos EUA passando junto).
-- Mesh, página Nó: mudar o MQTT ou o proxy do nó pelo Bluetooth não gravava
-  nem reiniciava o nó. O firmware desliga o Bluetooth assim que recebe a
-  seção MQTT, mesmo no meio da transação, e o commit nunca chegava - a
-  transação ficava aberta (o firmware não a expira) e o nó sem Bluetooth até
-  ser reiniciado na mão. Pelo Bluetooth a seção MQTT agora vai sozinha, fora
-  da transação: o nó valida, grava e reinicia por conta própria. Com outras
-  mudanças pendentes junto, a página pede para gravá-las antes. Pelo cabo
-  nada muda. A página também mostra o motivo quando uma gravação é recusada.
-- Mesh e ESP-NOW abriam deitados com o aparelho em pé. Na abertura, uma
-  leitura do IMU zerada ou velha (o cache é de 1 s; no modo de economia do
-  BMI270 o primeiro dado demora) caía na zona morta, e o padrão era deitado.
-  Agora a abertura lê o IMU até ter uma gravidade plausível, decide pelo eixo
-  que domina (sem a histerese, que só faz sentido com o app já aberto) e, sem
-  decisão clara, abre na posição em que a tela já está. Com o app aberto, o
-  limite para girar desceu de 30° para ~24° de inclinação: segurando o
-  aparelho recostado, um app aberto deitado não se corrigia.
-- CSI recusado pelo C6 com `ESP_FAIL`: o esp_hosted inicia o Wi-Fi do C6 com a
-  config que o P4 manda, e o P4 mandava `csi_enable = 0`; o driver confere
-  esse campo antes de tudo ("CSI not enabled in menuconfig!"). O P4 agora
-  inicia o Wi-Fi com o CSI habilitado — não exige regravar o C6. O C6 liga o
-  CSI por um caminho só e passa a aceitar também HE SU (802.11ax). Detalhes e
-  prova em [RADIO_C6.md](RADIO_C6.md).
-- 802.15.4 deixava o Wi-Fi associado mas sem passar dados, por duas causas.
-  Ligado: faltava a coexistência Wi-Fi/802.15.4 (`esp_coex_wifi_i154_enable`),
-  como fazem os exemplos oficiais de Thread e Zigbee no C6. Ao desligar: o
-  `esp_ieee802154_disable` corta o clock do MAC no meio de uma recepção; o C6
-  passa a desligar por `esp_ieee802154_sleep` (o caminho do OpenThread). O
-  `radio 154` pinga o roteador antes, durante e depois.
-- CSI vinha raro e cortado: o beacon de 2,4 GHz (11b) não gera CSI, então o
-  `radio csi` pinga o roteador a 10 Hz como fonte, como o esp-csi; o record
-  deixou de ser cortado em 256 B (teto de 1024) e passou a trazer o formato
-  do quadro e a flag de primeira palavra inválida do hardware do C6.
-- FTM: o "status 255" era o C6 recusando iniciar a sessão. O motivo agora vem
-  no relatório: `ESP_ERR_NOT_SUPPORTED`, porque o ESP-IDF desliga o FTM
-  initiator nos ESP32-C6 v0.0/v0.1 (errata do silício). O C6 só anuncia a
-  capacidade FTM quando a revisão permite, e o `farejo info` mostra a revisão.
-- CSI: o limite de taxa anda por cadência, e não descarta mais quadros que
-  chegam com atraso variável.
-- C6: a saída para o P4 virou um ring buffer de tamanho variável (records de
-  7 B a ~1 KB sem cópia na pilha da tarefa de Wi-Fi), e o INFO mostra as
-  mensagens descartadas e o estado do 802.15.4.
-- Console: `espnow enviar` mandava só a primeira palavra da mensagem.
-- Console: listagens longas (`mesh` com centenas de nós vindos pelo MQTT,
-  `ble`, `lista`, `cartao`) prendiam o núcleo 0 por mais de 5 s e disparavam
-  o watchdog da IDLE0. Agora cedem a CPU a cada 8 itens.
-- Mesh, páginas "Nó" e Nós: rastros no topo e na base da lista ao rolar.
-  Linha que ainda não tinha aparecido tinha assinatura vazia e "mudava" em
-  toda passada; como a marca de redesenho é um intervalo, cada amostra do
-  arraste redesenhava todas as linhas visíveis por cima do que a rolagem
-  tinha acabado de deslocar. Agora só linha já desenhada é comparada, e cada
-  linha da página "Nó" pinta o próprio fundo.
-- Console `tela rolar cpu|dma`: compara a rolagem por DMA (da página da
-  frente) com a cópia pela CPU, sem regravar.
-- Mesh: dois textos com menos de 2 s de intervalo - o firmware descarta o
-  segundo (rate limit da porta TEXT no PhoneAPI; na 2.7 sem erro, a mensagem
-  virava "sem resposta"). O envio agora espera o que falta.
-- Mesh: cabeçalho e corpo do quadro serial iam em duas escritas, e a tarefa
-  do Mesh (batimento) e a interface (texto, favorito, admin) escrevem na UART;
-  um quadro podia cair no meio do outro e os dois se perdiam. Agora um quadro
-  por vez (trava de transmissão).
-- Mesh: a configuração do canal 0 (o primário, LongFast) era ignorada e canal
-  desabilitado era lido como ativo. `index` e `role` do Channel são proto3 e
-  somem do fio quando valem zero; o leitor partia de -1 e PRIMARY. Um LongFast
-  apagado não tinha como ser reaberto e canal desligado continuava na coluna.
-- Mesh: canais desabilitados no nó saem da coluna (o histórico fica no cartão)
-  e a configuração dos canais fica guardada na NVS, valendo também sem o nó.
-- Mesh: apresentação (NODEINFO_APP) e posição (POSITION_APP) de nós ao vivo
-  passaram a ser lidas. Antes nome, modelo, MAC e posição só vinham no dump de
-  configuração: nó que aparecia depois ficava pelo id em hexa.
-- Mesh: o nome mostrado segue curto → longo → id; o id só aparece quando não
-  há nome legível. A coluna de conversas mostra o nome longo numa 2ª linha.
-- Mesh: a coluna de conversas tem ordem explícita (canais, depois diretas da
-  mais recente) e o app segue a conversa aberta pela chave. Uma conversa nova
-  numa vaga anterior deslocava os índices e a tela mostrava e enviava para a
-  conversa vizinha.
-- Mesh: texto longo não saía. Acima de 233 bytes o nó descartava sem
-  resposta, e entre ~220 e 233 recusava com TOO_LARGE (o pacote inteiro não
-  passa de 255 bytes: cabeçalho, bitfield e, na direta, +12 da cifra PKI). O
-  teto agora é 200 bytes, o mesmo dos clientes oficiais; a barra de escrita
-  para nele e o envio corta na fronteira de caractere.
-- Mesh: mensagem que só aparecia na tela quando chegava a seguinte. O gravador
-  do cartão troca de buffer antes de escrever, e quem pedia para ler nesse
-  intervalo via "nada pendente" e lia sem a linha; `tab5_sd_gravar_pendentes`
-  agora espera a gravação em andamento. E o contador de mensagens só sobe
-  depois de a linha estar no gravador.
-- Mesh: mensagem própria reentregue durante o dump virava "sem resposta" e
-  sobrescrevia no cartão o desfecho verdadeiro.
-- Mesh: o anel de ids vistos não é mais zerado ao trocar de via - a mesma
-  mensagem pelo rádio e pela ponte MQTT entrava duas vezes.
-- Mesh, Malha: uso do canal, airtime e uptime mostram "-" sem telemetria do
-  nó (era "0"), nós online contados localmente sem LocalStats, enlace com a
-  via, e o nosso nó pelo nome.
-- Mesh: tabela de nós com o nosso no topo (em branco), depois os ouvidos pelo
-  ar com SNR (em amarelo) FIXOS na ordem em que apareceram - não descem quando
-  outro nó fala -, depois o resto (MQTT em azul, sem SNR em cinza) do ouvido
-  mais recentemente ao mais antigo. A tabela cheia despeja primeiro os não
-  fixos. Linhas de 44 px com um fio de pouco contraste entre elas.
-- Mesh: nó de rádio que não aparecia na tabela com o MQTT ligado no C6L. A
-  tabela tinha 32 vagas e o downlink do MQTT as girava em segundos; o despejo
-  olhava só o avistamento local, e os nós do dump (avistamento 0) giravam
-  numa vaga só. Agora: 256 vagas na PSRAM, cache de nomes de 1024, despejo
-  pela idade completa e primeiro os da internet, e o lugar fixo (ouvido pelo
-  ar) dado na chegada do pacote - protege do despejo mesmo com a tela fechada.
-- Mesh: botões de canal na mesma fonte da tabela, com o número do canal
-  ("ch0 LongFast") e o rótulo "canais".
-- Mesh pela internet: mensagem direta saía cifrada com a chave do canal e
-  aparecia para todos no LongFast; agora é recusada (falta a chave pública).
-- Mesh pela internet: `via_mqtt` e `hop_start` eram gravados nos campos 13 e 14
-  do pacote em vez de 14 e 15.
-- Teclado virtual: cada dedo tem a sua tecla e a letra sai na soltura
-  daquele dedo - digitando rápido, a letra anterior se perdia quando o dedo
-  seguinte descia antes de o anterior subir. Sem o intervalo mínimo de 80 ms
-  entre letras (comia a segunda letra de "ss").
-- Barra de escrita: mostra as duas últimas linhas do rascunho (da terceira em
-  diante o texto não aparecia), com cursor no fim; a quebra de linha usa a
-  largura real (o limite de 64 bytes cortava a linha no meio e o fim sumia).
-- Brilho mínimo mais baixo (0,9% do PWM, era 4%) e barra de brilho na escala
-  do olho: a metade de baixo da barra agora tem degraus finos. Novo comando de
-  console `brilho <1-255> [hz]` para testar o backlight sem gravar.
-- Mensagem enviada ficava no dia errado: o relógio era acertado pelo
-  last_heard dos nós (hora do passado). Agora só tráfego ao vivo acerta o
-  relógio, e mensagens carimbadas antes de um acerto grande são corrigidas.
-- nos.txt crescia com os mesmos nós a cada boot em que o cartão não montava a
-  tempo; agora só grava depois de ler, e é compactado quando tem sobra.
-- Câmera com "zoom": o modo 1280x720 do sensor é uma janela no centro (80% x
-  60% do campo). O sensor passou para 1600x1200; a foto sai com o quadro
-  inteiro (1200x1600) e o preview não estica mais a imagem.
-- O Bluetooth ligava em todo boot com o Mesh configurado para ele, mesmo
-  desligado em Ajustes. Agora só o botão do Bluetooth liga o rádio.
-- IMU que falhava no boot ficava fora até reiniciar; o sistema tenta de novo.
-- Azimutal: durante o início a frio do GPS o mapa ficava vazio por minutos
-  (satélites ouvidos ainda sem elevação/azimute eram descartados). Agora mostra
-  quantos estão sendo ouvidos e uma barra de sinal por satélite.
-- Azimutal não liga mais o 5V do Grove por conta própria (só energizava um
-  módulo que o sistema não detectava): quem liga é Ajustes > Grove 5V, e o app
-  avisa quando está desligado.
-- Tocar num aparelho Bluetooth não dava retorno nenhum.
-- Emojis não apareciam no texto desenhado pelo compositor (o gancho de emoji
-  só existia no display físico) e tinham as cores trocadas (ordem de bytes do
-  RGB565). Agora saem em tamanho inteiro, sem ampliação fracionária.
-- Teclado virtual: fonte suave ajustada à largura de cada tecla (o ENVIAR não
-  cabia com a tela em pé); setas no lugar de "^" e "<-".
-- PIN do Meshtastic: o número mostrado pelo nó não fica mais salvo como PIN
-  fixo; um PIN salvo recusado volta ao padrão e o sistema passa a perguntar.
+### Fixed
+- SD card: "piggyback slots exhausted" on boot. Five services queued initial SD
+  writes during boot while the table only had four slots, causing the fifth
+  service (Mesh node Wi-Fi credentials) to silently drop its write.
+- Mesh: sending a direct message to an offline node while a Unit C6L had MQTT
+  enabled falsely displayed the gray "heard by mesh" checkmark and never timed
+  out with an `X`. The service was mistaking the node's local MQTT broker
+  publish ACK for an over-the-air radio relay confirmation.
+- Wi-Fi failing to auto-reconnect when returning home: after giving up out of
+  range of known routers, stopping the radio overwrote the `FAILED` state with
+  `OFF`, preventing the background auto-reconnect timer (which only checked for
+  `FAILED`) from ever scanning again until the user manually opened Settings >
+  Wi-Fi. Stopping the radio after a failed attempt now preserves the failure
+  reason, background reconnect runs whenever Wi-Fi is enabled in Settings and
+  disconnected, and waking the screen triggers an immediate scan. A connection
+  attempt that gets no response from the C6 within 60 s now also times out into
+  the retry loop, and running `varrer` in the console restores the connection
+  when finished.
+- Wi-Fi CSI and Sniffer: rapidly re-enabling either service right after
+  disabling it could spawn duplicate tasks (CSI) or leave the sniffer disabled
+  with no MAC table after returning success. Both now synchronize task teardown
+  via `kernel/service_stop.hpp`.
+- Mesh: channel configs and the NodeDB are no longer written to the SD card on
+  the radio receive loop (where a slow SD card caused dropped serial frames from
+  the node); they are now handed off to the asynchronous SD writer task.
+- Background jobs (Trail, Azimuthal): stopping a job now awaits task exit on a
+  semaphore instead of spinning in a 10 ms UI loop, sharing the same stop
+  primitive as system services.
+- Power & performance: the UI task now wakes via FreeRTOS task notifications
+  (instead of a queue); the physical keyboard is only polled over I2C when its
+  interrupt pin asserts (once verified working); the GPS reader blocks on the
+  UART driver event queue; ESP-NOW sleeps for 30 s when the C6 link is absent;
+  Settings pages only schedule periodic redraws at the rate required by the open
+  sub-page; and the home screen wallpaper buffer stays resident while on the
+  home screen.
+- Memory: removed the permanent Bluetooth task (−4 KB of internal SRAM);
+  enabling/disabling BLE now borrows a slot from the shared worker pool.
+- Replaced duplicate point-in-rect and millisecond tick helpers across apps with
+  shared `tab5_dentro()` and `tab5_agora_ms()`.
+- `sdkconfig.defaults`: set `CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES=2`
+  (builds with an older `sdkconfig` continue to work; run `idf.py menuconfig` or
+  delete `sdkconfig` to pick up the dedicated notification slot).
+- Mesh: stopping the service destroyed its main mutex while the home status bar
+  or Mesh app could still be holding or waiting on it (during transport switches
+  or Grove re-probes). The mutex is now allocated once and kept for the lifetime
+  of the OS.
+- Wi-Fi: reconnecting after a disconnect was sleeping for 1 s *inside* the
+  system event task (`sys_evt`), freezing all ESP-IDF event delivery (IP,
+  `esp_hosted`). Moved the delay onto the dedicated Wi-Fi task.
+- Wi-Fi: ESP-NOW, CSI, and Sniffer were updating the shared "keep receiver
+  awake" bitmask non-atomically and could clobber one another's bits.
+- UTF-8 string truncation now splits strictly on codepoint boundaries across the
+  entire OS via a single helper (`tab5_cortar_ao_caber`), replacing a dozen ad-hoc
+  implementations — three of which sliced mid-codepoint and drew garbage glyphs
+  on accented words (status bar, home dock, Files browser).
+- On-demand mutex initialization (`tab5_mutex_travar`) is now race-free on first
+  call; migrated GPS, IMU, MQTT, and Azimuthal to use it.
+- Serial console commands that open or close apps now wait for an opening app to
+  finish `ao_abrir` before issuing `ao_fechar` (preventing `ao_fechar` from
+  running on an app that never finished opening).
+- Power savings during sleep: the IMU is no longer polled over I2C every second
+  while the screen is off, the system monitor samples every 10 s instead of 1 s
+  and skips frame stats while the panel is torn down, the PM lock table is
+  dumped only on the first sleep entry, and battery power is computed as `V × I`
+  instead of performing a third INA226 register read.
+- Settings: dragging the brightness or volume slider now writes to NVS flash
+  only once after the drag settles (1 s debounce) instead of on every single
+  frame of the drag gesture.
+- Memory: the 1.8 MB PSRAM scratch buffer allocated if a draw occurs while the
+  panel is torn down is now freed as soon as the panel wakes back up; moved
+  monitor history and home icon order buffers out of internal SRAM.
+- USB mass storage when the cable is unplugged without ejecting: the session
+  stays open (in case the host OS still has cached writes), but once the USB bus
+  has been idle for more than 2 s, the screen is allowed to sleep and the CPU
+  drops back from maximum clock — previously it stayed pinned awake at max clock
+  forever on battery. Similarly, if enabled before plugging in a cable, the max
+  clock boost times out after 10 s and resumes once a host configures the USB
+  device.
+- USB mass storage on reclaim: if the TinyUSB task took longer than 2 s to stop,
+  the SD card was previously handed back to the Tab5 while USB could still be in
+  the middle of a sector read/write (use-after-free). Reclaiming now waits for
+  the USB task to confirm exit.
+- USB mass storage: requesting "reclaim card" while the USB session was still
+  initializing was silently ignored; the request is now latched and honoured as
+  soon as initialization completes.
+- Freed the 48 KB PSRAM card snapshot when the SD card returns from USB loan or
+  when loan setup aborts (previously leaked until reboot).
+- Journal replay: applying a journal entry no longer places 512 bytes of path
+  buffers on the caller's stack (paths now live inside the PSRAM journal block).
+- USB cable watchdog: when "auto-start USB drive on plug" is disabled (the
+  default), polls every 1 s instead of every 250 ms.
+- Wi-Fi now automatically reconnects to known networks after extended outages.
+  Previously, after 5 failed retries (walking out of range or a router rebooting)
+  the radio gave up permanently, and even opening Settings > Wi-Fi saw the known
+  network in scan results and turned the radio right back off. Now, as long as
+  Wi-Fi is enabled in Settings, it scans periodically with exponential backoff
+  (30 s, 1, 2, 4, and then every 5 min) and connects to the strongest known
+  network found; scanning from the UI also reconnects.
+- Mesh: if spawning the service task failed, the UART driver and Grove ownership
+  remained locked until reboot; both are now released on error.
+- MQTT bridge: the Brazil and US MQTT clients were decrypting and assembling
+  packets into the **exact same** `static` buffers concurrently from two
+  different tasks, corrupting each other's packets when messages arrived
+  simultaneously. Each client instance now owns its own buffers.
+- MQTT bridge: an outgoing frame that exceeded the buffer size could be sent
+  truncated on some paths because the payload length was computed even after the
+  bounded writer failed.
+- Notifications disappearing without opening the app: when waking into the lock
+  screen (or while locked), the kernel was still delivering `ao_aviso` events to
+  the obscured app behind the lock screen, causing ESP-NOW to mark incoming
+  messages as read before the user unlocked the tablet. Obscured apps no longer
+  receive events, touch, or keystrokes.
+- Mesh: restarting the service (transport switch, Wi-Fi drop in internet mode,
+  BLE disconnect, Unit C6L plugged into Grove) zeroed out unread counts and
+  wiped the status bar notification. Per-conversation unread counts now persist
+  across restarts until read, and re-registering a notification source preserves
+  its state.
+- Messages bridged from Telegram (or sent from modern smartphones) rendered as
+  tofu rectangles whenever they contained characters outside Roboto's Latin-1
+  glyph set. All drawn text now passes through `tab5_unicode` normalization
+  first — converting mathematical bold/script letters (`𝗻𝗲𝗴𝗿𝗶𝘁𝗼`, `𝓈𝒸𝓇𝒾𝓅𝓉`) back
+  to ASCII, regional indicator flag pairs to country codes (`BR`), stripping
+  skin-tone modifiers and zero-width joiners, composing combining accents,
+  transliterating Cyrillic and Greek, and replacing remaining unknown codepoints
+  with `?`. Tested on macOS via `testes/rodar_unicode.sh`.
+- Multi-line incoming messages were truncated when reloaded from the SD card's
+  line-oriented history file; embedded newlines are now normalized to spaces on
+  receipt.
+- Mesh: sending two messages back-to-back froze the UI for up to 2.1 s because
+  the 2-second firmware rate-limit delay ran synchronously on the UI task.
+  Outgoing text messages are now queued to the service task, which paces
+  transmissions in the background while immediate validation errors (BLE
+  disconnected, DM in internet-only mode, US feed offline) still report
+  synchronously.
+- Mesh over Grove serial: UART frame reads waited the full 200 ms timeout even
+  after a complete frame had already arrived (because it requested 256 bytes at
+  once). Now wakes on the first byte and reads the exact frame length.
+- Mesh over Bluetooth: draining the node's `FromRadio` mailbox stopped after 64
+  messages and waited up to 5 s (or the next BLE notify) before continuing —
+  making initial dumps on large meshes stutter. The service now continues
+  draining on the very next loop iteration and processes all queued notifications
+  per pass instead of just one.
+- Mesh over internet (MQTT): drains up to 16 incoming packets per loop pass (up
+  from 1), drains up to 8 proxy downlink messages per pass (up from 4), drops
+  duplicate packets replicated by multiple MQTT gateways before running AES
+  decryption, and rate-limits "queue full" warnings to once every 10 s while
+  naming which queue overflowed.
+- Mesh: the node table was being re-sorted on every drawn row whenever live
+  traffic arrived; sorting is now throttled to at most once every 250 ms, and
+  `AVISO_MESH_NOS` UI redraw events are capped at 4 Hz (1 Hz for US traffic).
+- Mesh: expanded the duplicate-packet ring buffer from 64 to 256 packet IDs so
+  delayed MQTT copies aren't accepted as new messages when high-volume US
+  traffic is active alongside the local mesh.
+- Mesh, Node tab: changing the node's MQTT or proxy settings over Bluetooth
+  failed to save or reboot the node. Upstream Meshtastic firmware shuts down
+  Bluetooth the instant it receives a modified `mqtt` config section — even in
+  the middle of an open `begin_edit_settings` transaction — so the subsequent
+  `commit_edit_settings` packet never arrived, leaving the transaction dangling
+  and Bluetooth off until a manual power cycle. Over Bluetooth, `mqtt` section
+  changes are now sent standalone outside a transaction so the node validates,
+  saves to flash, and reboots on its own; if other edits are staged at the same
+  time, the UI prompts to save them first. Grove serial behavior is unchanged.
+  The Node tab also displays the rejection reason whenever a save fails.
+- Mesh and ESP-NOW sometimes opened in landscape while holding the tablet
+  upright. On launch, a stale or zeroed IMU reading (the kernel caches readings
+  for 1 s, and the BMI270 takes a moment to produce its first sample after
+  waking from low-power mode) fell into the dead zone, whose fallback defaulted
+  to landscape. Launch now polls the IMU until it gets a plausible gravity
+  vector, picks the dominant axis directly (without the hysteresis dead zone
+  meant for live rotation), and falls back to keeping the current screen
+  orientation if flat on a table. While open, the tilt threshold for rotating
+  was lowered from 30° to ~24° so holding the tablet reclined still triggers
+  rotation reliably.
+- Wi-Fi CSI rejected by the C6 with `ESP_FAIL`: `esp_hosted` initializes the C6's
+  Wi-Fi driver using the `wifi_init_config_t` sent by the P4, and the P4 was
+  sending `csi_enable = 0`, causing the C6 driver to fail its menuconfig check
+  (*"CSI not enabled in menuconfig!"*). The P4 now sets `csi_enable = 1` on
+  Wi-Fi init (requiring no C6 reflash), and the C6 enables CSI through a single
+  clean path including 802.11ax HE SU frames. Full root-cause analysis and proof
+  in [RADIO_C6.md](RADIO_C6.md).
+- 802.15.4 left Wi-Fi associated but unable to pass traffic due to two bugs.
+  While active: missing `esp_coex_wifi_i154_enable()` coexistence registration.
+  On shutdown: calling `esp_ieee802154_disable()` gated the MAC clock mid-RX
+  while holding an RF coexistence grant; switched shutdown to
+  `esp_ieee802154_sleep()` (matching OpenThread). `radio 154` now pings the
+  router before, during, and after capture to verify both fixes.
+- Wi-Fi CSI arrived rarely and truncated: 2.4 GHz router beacons (802.11b DSSS)
+  contain no OFDM training symbols and produce no CSI, so `radio csi` now pings
+  the gateway at 10 Hz during capture (matching `esp-csi`); raised the maximum
+  record payload from 256 B to 1024 B and exposed the baseband frame format and
+  the C6's `first_word_invalid` hardware flag.
+- Wi-Fi FTM: `status 255` was our C6 wrapper reporting that
+  `esp_wifi_ftm_initiate_session` returned `ESP_ERR_NOT_SUPPORTED` because
+  ESP-IDF disables FTM initiator mode on ESP32-C6 silicon revisions v0.0 and
+  v0.1 (hardware errata). The C6 now only advertises `C6_CAP_FTM` on silicon
+  revisions that support it, and `farejo info` reports the C6 chip revision.
+- Wi-Fi CSI rate limiting now uses fixed cadence buckets instead of elapsed time
+  since the last accepted frame, preventing over-the-air jitter from dropping
+  nearly half the replies.
+- C6 firmware: replaced the fixed-item output queue with a variable-item ring
+  buffer (handling 7 B to ~1 KB records without copying 1 KB structs onto the
+  Wi-Fi task stack), and added dropped-message counters and 802.15.4 state to
+  `farejo info`.
+- Console: `espnow enviar` was only transmitting the first word of the message.
+- Console: long listings (`mesh` with hundreds of MQTT nodes, `ble`, `lista`,
+  `cartao`) starved core 0 for over 5 s and tripped the `IDLE0` task watchdog;
+  they now yield every 8 items.
+- Mesh, "Node" and Nodes tabs: fixed visual ghosting at the top and bottom of
+  the list while scrolling. Newly exposed rows had an empty cached signature and
+  were marked dirty on every drag sample; because dirty row indices span a
+  contiguous range, every drag sample repainted all visible rows over the
+  freshly scrolled pixels. Now only previously drawn rows are diff-compared, and
+  every row on the "Node" tab fills its own background.
+- Added console command `tela rolar cpu|dma` to benchmark front-to-back DMA2D
+  scroll blits against CPU `copyRect` live without reflashing.
+- Mesh: sending two text messages less than 2 s apart caused the node firmware
+  to silently drop the second one (PhoneAPI `TEXT_MESSAGE_APP` rate limit; on
+  2.7 it returns no error, leaving the message stuck at "no response"). Outgoing
+  sends now wait out the remaining cooldown automatically.
+- Mesh: serial frame headers and payloads were written in two separate
+  `uart_write_bytes` calls while both the Mesh service task (heartbeats) and UI
+  task (text, favorites, admin) wrote to the UART, allowing one frame to splice
+  into the middle of another and corrupt both. All UART writes are now serialized
+  by a TX mutex.
+- Mesh: channel 0 (`LongFast`, the primary channel) config was ignored and
+  disabled channels appeared active. In Protobuf v3, `Channel.index = 0` and
+  `role = DISABLED (0)` are omitted on the wire, whereas our decoder initialized
+  them to `-1` and `PRIMARY`. A deleted `LongFast` conversation could never be
+  reopened, and disabled channels stayed in the sidebar.
+- Mesh: channels disabled on the node are now hidden from the conversation
+  sidebar (preserving their history on the SD card), and learned channel configs
+  are persisted in NVS so they remain available when operating without the node.
+- Mesh: live `NODEINFO_APP` and `POSITION_APP` packets from the mesh now update
+  the node table immediately. Previously, node names, models, MACs, and
+  positions were only populated from the initial config dump, leaving newly
+  heard nodes displayed as raw hex IDs.
+- Mesh: node display names now fall back cleanly from `short_name` → `long_name`
+  → hex ID, showing the hex ID only when no human-readable name is known, and
+  the conversation sidebar displays the node's long name on a second line.
+- Mesh: gave the conversation sidebar a deterministic sort order (channels
+  first, then direct messages ordered by most recent activity) and tracked the
+  open conversation by its unique key rather than its array index — fixing a bug
+  where a new message in an earlier slot shifted indices and caused the open
+  window to display and send to the wrong conversation.
+- Mesh: long text messages failed to send. Payloads over 233 bytes were silently
+  dropped by the node, and payloads between ~220 and 233 bytes failed with
+  `TOO_LARGE` (total LoRa packet limit is 255 bytes including headers and +12 B
+  of PKI overhead on DMs). Capped compose length at 200 bytes (matching official
+  clients), stopping input at the limit and truncating cleanly on UTF-8
+  character boundaries.
+- Mesh: fixed a race where a newly arrived message only appeared on screen after
+  the *next* message arrived. The SD writer task swaps its double buffer before
+  flushing to disk, so a reader calling `tab5_sd_abrir` during that window saw
+  "no pending lines in buffer" and read the file before the flush completed.
+  `tab5_sd_gravar_pendentes` now waits for any in-flight flush to finish, and
+  the message counter only increments after the line is queued to the writer.
+- Mesh: our own sent messages echoed back by the node during a config dump were
+  being reset to "no response" and overwriting their true delivery status on the
+  SD card.
+- Mesh: the seen-packet ID ring buffer is no longer cleared when switching
+  transports — preventing the same message heard over LoRa and then over the
+  MQTT bridge from being appended twice.
+- Mesh, Mesh status tab: channel utilization, airtime, and uptime now display
+  `"-"` when no node telemetry has been received yet (instead of `"0"`), online
+  node count is computed locally when `LocalStats` is absent, the active
+  transport is shown on the link line, and our own node is shown by name.
+- Mesh: reorganized the Nodes table with our own node pinned at the top (white),
+  followed by directly heard RF nodes with SNR (yellow) **pinned in discovery
+  order** so they don't jump around as packets arrive, followed by remaining
+  nodes (MQTT in blue, no-SNR in gray) sorted from most recently heard to
+  oldest. When the table fills up, non-pinned MQTT nodes are evicted first.
+- Mesh: RF nodes were disappearing from the table within seconds when MQTT
+  downlink was enabled on the Unit C6L. The old table had only 32 slots that
+  MQTT traffic churned through immediately, and dump nodes with `last_heard == 0`
+  all collided into a single eviction slot. Expanded the table to 256 slots in
+  PSRAM with a 1024-entry name cache, full-age eviction prioritizing MQTT nodes
+  for removal, and RF pinning applied immediately on packet receipt even when
+  the Mesh window is closed.
+- Mesh: styled channel filter buttons in the same smooth font as the node table,
+  prefixed with channel index (`"ch0 LongFast"`) and a `"channels"` label.
+- Mesh over internet (MQTT): direct messages were being encrypted with the
+  shared channel PSK and broadcast readable to everyone on `LongFast`; DMs are
+  now rejected in serverless MQTT mode because PKI public keys are unavailable.
+- Mesh over internet (MQTT): `via_mqtt` and `hop_start` were being encoded as
+  Protobuf fields 13 and 14 of `MeshPacket` instead of 14 and 15.
+- Virtual keyboard: tracks each finger independently and emits the character on
+  that specific finger's release — previously, typing rapidly with two thumbs
+  dropped the first letter whenever the second thumb touched down before the
+  first lifted, and an 80 ms global cooldown ate double letters like `"ss"`.
+- Compose bar: now displays the last two wrapped lines of the draft message
+  (previously anything past the second line was invisible) with a trailing
+  cursor, wrapping by actual pixel width instead of a fixed 64-byte slice.
+- Lowered minimum display brightness from 4% to 0.9% PWM duty cycle and mapped
+  the brightness slider to a perceptual curve so the lower half of the bar has
+  fine-grained steps. Added `brilho <1-255> [hz]` console command to test PWM
+  frequencies without saving.
+- Outgoing messages were being stamped with the wrong date because the system
+  clock was accepting historical `last_heard` timestamps from node dumps as the
+  current time. Only live mesh packets now discipline the clock, and messages
+  recorded before a large clock jump are retroactively adjusted.
+- `nos.txt` grew with duplicate node entries on every boot where the SD card
+  wasn't mounted in time; it is now only rewritten after being read and is
+  compacted automatically when duplicates accumulate.
+- Camera "zoomed-in" field of view: the sensor's 1280×720 mode was cropping a
+  central window (80% × 60% of the array) instead of binning. Switched the
+  sensor to full 1600×1200 resolution; saved photos now capture the full sensor
+  frame (1200×1600 portrait) and the live viewfinder no longer stretches the
+  aspect ratio.
+- Bluetooth was powering on at every boot whenever Meshtastic had BLE selected as
+  its transport, even if Bluetooth was turned off in Settings. Now only the
+  Bluetooth toggle powers on the BLE controller.
+- If the BMI270 IMU failed to initialize at boot, it stayed dead until reboot;
+  the kernel now retries initialization automatically.
+- Azimuthal GPS app: during a cold GPS start, the skyplot stayed completely
+  blank for minutes because satellites tracked without elevation/azimuth were
+  ignored. Now displays the count of tracked satellites and a signal-strength
+  bar chart per satellite right away.
+- Azimuthal no longer forces the Grove 5V rail on by itself (which powered an
+  undetected module behind the kernel's back); Grove 5V is controlled via
+  Settings > Grove 5V, and the app displays a notice when the rail is off.
+- Tapping a Bluetooth device in Settings gave no visual feedback.
+- Color emoji failed to render when drawn through the compositor (the emoji hook
+  was only attached to the physical display object) and had byte-swapped RGB565
+  colors. Emoji now render at integer scale through the compositor with accurate
+  colors.
+- Virtual keyboard: auto-scales label fonts to fit narrow keys in portrait mode
+  (where `ENVIAR` previously overflowed) and uses graphical arrow icons instead
+  of ASCII `"^"` and `"<-"`.
+- Meshtastic BLE PIN: a dynamic PIN entered via the on-screen keyboard is no
+  longer overwritten as the permanent default PIN; if a saved PIN is rejected by
+  the node, the system falls back to `123456` and prompts the user on screen.
 
 ## [0.7.0] - 2026-09-25
 
-Primeira versão pública.
+Initial public release.
 
-### Sistema
-- Núcleo com laço de interface, compositor de página dupla, perfis de energia
-  por app, repouso da tela e partes de fundo.
-- Componentes: lista rolável, conversa (balões, teclado virtual), botões,
-  fontes suaves Roboto com acentos.
-- Gravador do cartão único para todos os apps, log diário e trabalhador para
-  leituras lentas fora do toque.
-- Ajustes organizado em páginas.
+### System
+- Kernel with UI event loop, double-buffered display compositor, per-app hardware
+  power profiles, display sleep, and background jobs.
+- UI components: scrollable list, conversation view (chat bubbles, virtual
+  keyboard), buttons, and smooth anti-aliased Roboto fonts with full accent
+  support.
+- Single batched SD card writer shared across all apps, daily system logs, and a
+  background system worker for off-UI file reads.
+- Paginated Settings app.
 
-### Rádio
-- Wi-Fi e Bluetooth LE pelo ESP32-C6 (esp_hosted; NimBLE no P4).
-- ESP-NOW com firmware próprio no C6; o canal escolhido fica salvo.
-- Meshtastic pelo cabo Grove ou por Bluetooth, com envio opcional da posição
-  do GPS.
+### Radio
+- Wi-Fi and Bluetooth LE via the companion ESP32-C6 (`esp_hosted`; NimBLE host
+  stack on the P4).
+- ESP-NOW running on custom C6 firmware with persistent channel selection.
+- Meshtastic over Grove serial cable or Bluetooth LE, with optional GPS position
+  forwarding.
 
-### Segurança
-- Senha do Wi-Fi cifrada no cartão com uma chave derivada de cada aparelho.
+### Security
+- Wi-Fi passwords encrypted on the SD card using a per-device hardware-derived
+  key.
 
-### Aplicativos
-- Mesh, ESP-NOW, Trilha, Azimutal, Câmera, Arquivos, Energia, Tarefas, IMU,
-  Ajustes, CreazySnake e Exemplo.
+### Applications
+- Mesh, ESP-NOW, Trail, Azimuthal, Camera, Files, Power, Tasks, IMU, Settings,
+  CreazySnake, and Example.
