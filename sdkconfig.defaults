@@ -1,297 +1,301 @@
-# Alvo do projeto: sem isto um clone novo compila para o ESP32 padrao.
+# Project target: without this, a fresh clone builds for the default ESP32.
 CONFIG_IDF_TARGET="esp32p4"
 
 # --- flash ---------------------------------------------------------------
-# Tab5 tem 16MB. O default de 2MB nao cabe app com display + radio.
+# The Tab5 has 16 MB. The 2 MB default cannot fit an app with the display and radio.
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-# Tabela propria em vez da "singleapp_large" do IDF: ela da 1500K ao app, e a
-# gente ja estava em 68% dela. Ver partitions.csv - a nvs continua no mesmo
-# endereco, entao as preferencias do usuario sobrevivem a mudanca.
+# Use a custom table instead of the IDF's "singleapp_large": it gives the app 1500K,
+# and we were already using 68% of that space. See partitions.csv; NVS stays at the
+# same address, so the user's preferences survive the change.
 # CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE is not set
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# --- REVISAO DO SILICIO -------------------------------------------------
-# NAO mora aqui: o P4 v1.x (os Tab5 vendidos ate agora) e o v3.x pedem
-# binarios DIFERENTES, e cada um esta num arquivo proprio -
-# sdkconfig.defaults.chip_v1 e sdkconfig.defaults.chip_v3. Quem escolhe e o
-# CMakeLists.txt da raiz (M5_CHIP, padrao v1); o flash.sh le a revisao do
-# aparelho conectado e escolhe sozinho.
+# --- SILICON REVISION ----------------------------------------------------
+# NOT stored here: P4 v1.x (the Tab5 units sold so far) and v3.x require
+# DIFFERENT binaries, and each has its own file: sdkconfig.defaults.chip_v1 and
+# sdkconfig.defaults.chip_v3. The root CMakeLists.txt chooses one (M5_CHIP,
+# v1 by default); flash.sh reads the revision of the connected device and chooses
+# automatically.
 
 # --- PSRAM ---------------------------------------------------------------
-# Obrigatoria no Tab5: o framebuffer de 720x1280 nao cabe na RAM interna.
+# Required on the Tab5: the 720x1280 framebuffer does not fit in internal RAM.
 CONFIG_SPIRAM=y
-# HEX a 200MHz - ver o aviso sobre o custo fixo por rajada mais abaixo
-# (secao DMA2D/cache). Sem isto fixado aqui, um clone novo que nunca passou
-# por menuconfig herda o padrao do proprio ESP-IDF (HEX a 20MHz) - 1/10 da
-# banda que o painel DSI (DW-GDMA lendo o framebuffer da PSRAM) precisa para
-# nao dar underrun. Foi exatamente o que aconteceu: o build de fabrica deste
-# repositorio sempre rodou numa maquina com o sdkconfig local ja ajustado a
-# mao (sdkconfig nao vai para o git, de proposito), e isto nunca tinha sido
-# testado num clone realmente limpo ate agora.
+# HEX at 200 MHz; see the warning below about the fixed cost per burst
+# (the DMA2D/cache section). Without this pinned here, a fresh clone that has
+# never run menuconfig inherits the ESP-IDF default (HEX at 20 MHz), just one
+# tenth of the bandwidth the DSI panel needs while DW-GDMA reads the PSRAM
+# framebuffer, or it underruns. That is exactly what happened: repository
+# factory builds always ran on a machine whose local sdkconfig had already been
+# adjusted by hand (sdkconfig is intentionally not committed), so this had never
+# been tested on a genuinely clean clone.
 CONFIG_SPIRAM_MODE_HEX=y
 CONFIG_SPIRAM_SPEED_200M=y
-# Buffers estaticos grandes marcados com EXT_RAM_BSS_ATTR vao para a PSRAM
-# (tabela de nos do Mesh, dreno do log, historico do monitor...) - a SRAM
-# interna e a memoria mais disputada do sistema.
+# Large static buffers marked with EXT_RAM_BSS_ATTR go to PSRAM
+# (the Mesh node table, log sink, monitor history, and so on); internal SRAM
+# is the system's most heavily contested memory.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 
-# --- nomes de arquivo no cartao -------------------------------------------
-# SEM ISTO O FAT SO ACEITA 8.3 - oito caracteres antes do ponto. O default do
-# IDF e CONFIG_FATFS_LFN_NONE, e o efeito e traicoeiro: a PASTA e criada, o
-# fopen do arquivo falha em silencio, e voce fica com um diretorio vazio sem
-# entender por que. Foi exatamente o que aconteceu:
-# "energia.csv" (7 caracteres) gravava a noite toda e "satelites.csv" (9) nunca
-# criava o arquivo.
+# --- file names on the card -----------------------------------------------
+# WITHOUT THIS, FAT ACCEPTS ONLY 8.3 NAMES: eight characters before the dot.
+# The IDF default is CONFIG_FATFS_LFN_NONE, with a deceptive result: the FOLDER
+# is created, fopen silently fails, and you are left with an empty directory
+# without knowing why. That is exactly what happened:
+# "energy.csv" (7 characters) wrote all night, while "satellites.csv" (9) never
+# created the file.
 #
-# Num sistema onde cada aplicativo escolhe o nome dos proprios arquivos, exigir
-# 8.3 e uma armadilha permanente. LFN_HEAP poe o buffer de nome no heap, que e
-# o que sobra no P4 com PSRAM.
+# In a system where each application chooses its own file names, requiring 8.3
+# names is a permanent trap. LFN_HEAP puts the name buffer on the heap, which is
+# the memory that remains available on the P4 with PSRAM.
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=128
 
-# O NOME DO CARTAO (rotulo do volume) - o app Arquivos mostra o nome que o
-# cartao tem no computador, em vez de "Cartao". So leitura (f_getlabel).
+# THE CARD NAME (volume label): the Files app shows the name the card has on the
+# computer instead of "Card". Read-only (f_getlabel).
 CONFIG_FATFS_USE_LABEL=y
 
 # --- console -------------------------------------------------------------
-# UART como principal e USB-Serial-JTAG como secundario (o default do P4).
-# CONFIG_ESP_CONSOLE_UART_DEFAULT era o valor. Trocado porque
-# a porta USB-C do Tab5 e o USB-Serial-JTAG NATIVO do P4 (/dev/cu.usbmodem*),
-# nao um conversor ligado na UART0.
+# UART as primary and USB-Serial-JTAG as secondary (the P4 default).
+# CONFIG_ESP_CONSOLE_UART_DEFAULT used to be selected. It was changed because
+# the Tab5's USB-C port is the P4's NATIVE USB-Serial-JTAG (/dev/cu.usbmodem*),
+# not a converter connected to UART0.
 #
-# Com a UART0 como console primario, os logs ate chegavam - pelo console
-# SECUNDARIO, que o proprio Kconfig do IDF descreve como SO SAIDA
-# (esp_system/Kconfig:312-315). Mas o stdin ficava preso na UART0, nos GPIO
-# 37/38, onde nao ha nada conectado: digitar no monitor nao chegava a lugar
-# nenhum, e nenhum terminal do mundo resolveria isso.
+# With UART0 as the primary console, logs still arrived through the SECONDARY
+# console, which the IDF Kconfig itself describes as OUTPUT ONLY
+# (esp_system/Kconfig:312-315). But stdin remained stuck on UART0, on GPIOs
+# 37/38, where nothing is connected: typing in the monitor went nowhere, and no
+# terminal on earth could fix that.
 #
-# A ajuda do Kconfig manda exatamente isto: "if you want input through
+# The Kconfig help says exactly this: "if you want input through the
 # USB_SERIAL_JTAG port, please change the primary config to
 # ESP_CONSOLE_USB_SERIAL_JTAG".
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
 
 # --- FreeRTOS ------------------------------------------------------------
-# Tick de 1000Hz: vTaskDelay ganha resolucao de 1ms em vez de 10ms.
+# 1000 Hz tick: vTaskDelay gets 1 ms resolution instead of 10 ms.
 CONFIG_FREERTOS_HZ=1000
 
-# DUAS ENTRADAS DE NOTIFICACAO POR TAREFA. A interface acorda pela entrada 1
-# (kernel/core.cpp, UI_AVISO_IDX) e deixa a 0 para o que usa notificacao por
-# baixo (stream buffers, drivers). Num sdkconfig antigo esta chave nao entra
-# sozinha: o codigo cai na 0 e funciona como antes - para ganhar a separacao,
-# 'idf.py menuconfig' (Component config > FreeRTOS > Kernel) ou apague o
-# sdkconfig e compile de novo.
+# TWO NOTIFICATION SLOTS PER TASK. The interface wakes through slot 1
+# (kernel/core.cpp, UI_AVISO_IDX) and leaves slot 0 for lower-level notification
+# users (stream buffers, drivers). In an old sdkconfig this key is not added
+# automatically: the code falls back to slot 0 and works as before. To get the
+# separation, use 'idf.py menuconfig' (Component config > FreeRTOS > Kernel), or
+# delete sdkconfig and build again.
 CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES=2
 
 # --- power management ----------------------------------------------------
-# PASSO 1 (ligado): DFS de frequencia, SEM light sleep.
-# Destrava o esp_pm_configure(), que no Arduino devolvia ESP_ERR_NOT_SUPPORTED.
-# A partir daqui a CPU cai sozinha para min_freq_mhz quando NINGUEM segura uma
-# trava de PM, e sobe para max_freq_mhz quando alguem segura ESP_PM_CPU_FREQ_MAX.
-# Nao e um governor medindo carga: e determinístico, movido por travas que os
-# drivers pegam sem avisar. Ver tab5_power.hpp.
+# STEP 1 (enabled): frequency DFS, WITHOUT light sleep.
+# Unlocks esp_pm_configure(), which returned ESP_ERR_NOT_SUPPORTED in Arduino.
+# From here, the CPU drops to min_freq_mhz when NOBODY holds a PM lock and rises
+# to max_freq_mhz when someone holds ESP_PM_CPU_FREQ_MAX. This is not a load-
+# measuring governor; it is deterministic and driven by locks acquired silently
+# by the drivers. See tab5_power.hpp.
 CONFIG_PM_ENABLE=y
 
-# PASSO 2 - light sleep automatico no idle. NAO ligue junto com o passo 1:
-# e onde mora o risco de interacao com PSRAM e painel DSI, e voce quer saber
-# qual dos dois passos quebrou, se quebrar.
-# Lembrete do silicio: PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP depende de
-# !ESP32P4_SELECTS_REV_LESS_V3, ou seja, NAO existe neste chip - a CPU so tem o
-# clock parado no light sleep, nao fica sem energia.
+# STEP 2 - automatic light sleep while idle. DO NOT enable it with step 1:
+# this is where interaction risk with PSRAM and the DSI panel lives, and you want
+# to know which step broke if something fails.
+# Silicon reminder: PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP depends on
+# !ESP32P4_SELECTS_REV_LESS_V3, so it DOES NOT exist on this chip. The CPU only
+# stops its clock in light sleep; it is not powered down.
 # CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 
-# Diagnostico, para quando a frequencia NAO cair: faz o esp_pm_dump_locks()
-# imprimir quem criou cada trava e quanto tempo segurou. E o instrumento para
-# descobrir se o SDIO do C6 esta segurando o clock la em cima.
+# Diagnostics for when the frequency does NOT drop: makes esp_pm_dump_locks()
+# print who created each lock and how long it was held. This is the tool for
+# finding out whether the C6 SDIO is keeping the clock high.
 # CONFIG_PM_PROFILING=y
 
 
-# --- estatisticas de tarefas ----------------------------------------------
-# Habilitam o app "Tarefas". Sem a primeira, o ulRunTimeCounter do TaskStatus_t
-# fica sempre zero e nao ha como calcular % de CPU.
-# GENERATE_RUN_TIME_STATS ja seleciona sozinho USE_TRACE_FACILITY e
-# USE_STATS_FORMATTING_FUNCTIONS - nao precisa listar as duas.
+# --- task statistics -------------------------------------------------------
+# Enable the "Tasks" app. Without the first option, TaskStatus_t's
+# ulRunTimeCounter stays at zero and CPU usage cannot be calculated.
+# GENERATE_RUN_TIME_STATS already selects USE_TRACE_FACILITY and
+# USE_STATS_FORMATTING_FUNCTIONS automatically; there is no need to list both.
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 
-# Acrescenta o campo xCoreID no TaskStatus_t. Depende de
-# USE_STATS_FORMATTING_FUNCTIONS, que a chave acima ja ligou.
+# Adds the xCoreID field to TaskStatus_t. Depends on
+# USE_STATS_FORMATTING_FUNCTIONS, which the option above already enabled.
 CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y
 
-# O contador de tempo e o esp_timer em microssegundos. Em 32 bits ele estoura em
-# ~71 minutos e as estatisticas viram lixo a partir dai. Em 64 bits, nunca.
+# The time counter is esp_timer in microseconds. At 32 bits it overflows after
+# about 71 minutes and the statistics become garbage; at 64 bits, never.
 CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64=y
 
-# --- otimizacao ----------------------------------------------------------
-# Equivalente ao "build_type = debug" do PlatformIO, que com espidf quebra
-# o build. -Og mantem o codigo depuravel. Troque por _PERF quando for medir.
+# --- optimization --------------------------------------------------------
+# Equivalent to PlatformIO's "build_type = debug", which breaks the build with
+# espidf. -Og keeps the code debuggable. Change to _PERF when measuring.
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# --- tarefa main ---------------------------------------------------------
-# O default de 3584 bytes nao aguenta M5.begin() (painel + touch + expansores).
+# --- main task ------------------------------------------------------------
+# The 3584-byte default cannot handle M5.begin() (panel + touch + expanders).
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# --- WiFi: SDIO ate o ESP32-C6 --------------------------------------------
-# O Tab5 nao tem radio no P4. WiFi e BLE saem de um ESP32-C6 ao lado, por SDIO.
+# --- WiFi: SDIO to the ESP32-C6 ------------------------------------------
+# The Tab5 has no radio on the P4. WiFi and BLE come from a nearby ESP32-C6 over
+# SDIO.
 #
-# O esp_hosted JA TRAZ UM PRESET para esta placa - achado lendo o Kconfig dele,
-# antes de fixar os seis pinos na mao. Ele define CLK 12, CMD 13,
-# D0 11, D1 10, D2 9, D3 8 e reset 15, que sao exatamente os medidos
-# na placa. Usar o preset e melhor: se a
-# Espressif corrigir algo, vem de graca.
+# esp_hosted ALREADY PROVIDES A PRESET for this board, found by reading its
+# Kconfig before hard-coding the six pins. It defines CLK 12, CMD 13,
+# D0 11, D1 10, D2 9, D3 8, and reset 15, exactly matching the measurements
+# on the board. Using the preset is better: if Espressif fixes something,
+# the fix comes for free.
 #
-# Com os defaults do kit de referencia (CMD 19, CLK 18, D0 14) o esp_hosted da
-# "send_op_cond returned 0x107" e a placa entra em boot loop.
+# With the reference-kit defaults (CMD 19, CLK 18, D0 14), esp_hosted reports
+# "send_op_cond returned 0x107" and the board enters a boot loop.
 CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
 CONFIG_ESP32P4_TAB5_C6_BOARD=y
 
-# O esp_hosted instala um __attribute__((constructor)) que roda ANTES do
-# app_main e dispara uma tarefa (eh_init, prio 23) fazendo eh_host_init() +
-# eh_host_connect_to_slave(). Isso briga de frente com o perfil de energia
-# nega-por-padrao: o app_main desliga WLAN_PWR_EN (trilho do C6) por volta dos
-# 2,1s, e a sondagem SDIO chega aos 3,1s num chip sem alimentacao ->
-#   sdmmc_io_reset: unexpected return: 0x108   (ESP_ERR_TIMEOUT, ~15 vezes)
+# esp_hosted installs an __attribute__((constructor)) that runs BEFORE
+# app_main and starts a task (eh_init, priority 23) that performs eh_host_init()
+# and eh_host_connect_to_slave(). This conflicts with the default-off power
+# profile: app_main turns off WLAN_PWR_EN (the C6 power rail) around 2.1 s, while
+# SDIO probing reaches the unpowered chip at 3.1 s ->
+#   sdmmc_io_reset: unexpected return: 0x108   (ESP_ERR_TIMEOUT, about 15 times)
 #   eh_sdio: ensure_slave_bus_ready failed: -1
-# Nao e pino errado nem firmware incompativel no C6: e falta de energia.
+# This is not a wrong pin or incompatible C6 firmware; it is a lack of power.
 #
-# Com =n o WiFi so sobe quando tab5_wifi mandar - depois de ligar o trilho e
-# esperar o C6 bootar. A propria ajuda do Kconfig recomenda n para apps que
-# precisam escolher o momento do init.
+# With =n, WiFi starts only when tab5_wifi requests it, after enabling the rail
+# and waiting for the C6 to boot. The Kconfig help itself recommends n for apps
+# that need to choose when initialization occurs.
 CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n
 
-# Cache L2: 128KB e o default do IDF; o P4 aceita 256KB e 512KB. Subimos para
-# 256KB porque o sistema desenha muito num framebuffer que mora na PSRAM, e cada
-# acerto de cache e um acesso a PSRAM que nao acontece.
+# L2 cache: 128 KB is the IDF default; the P4 supports 256 KB and 512 KB. We
+# increased it to 256 KB because the system draws heavily into a framebuffer in
+# PSRAM, and every cache hit avoids a PSRAM access.
 #
-# O custo e RAM interna: o L2MEM e dividido entre cache e SRAM. Cabe com folga -
-# o heap_init do boot mostrava 384+99+18 KB livres antes da mudanca.
+# The cost is internal RAM: L2MEM is divided between cache and SRAM. There is
+# ample room; boot's heap_init showed 384+99+18 KB free before the change.
 #
-# NAO subir para 512KB sem medir: nessa faixa o IDF muda a linha de cache de
-# 64 para 128 bytes (Kconfig.cache linhas 26-27), e linha maior desperdiça
-# banda quando o acesso e espalhado - pode piorar em vez de melhorar.
+# DO NOT increase it to 512 KB without measuring: in that range the IDF changes
+# the cache line from 64 to 128 bytes (Kconfig.cache lines 26-27), and a larger
+# line wastes bandwidth when access is scattered; performance may get worse.
 CONFIG_CACHE_L2_CACHE_256KB=y
 
-# --- canal peer_data com o C6 ----------------------------------------------
-# Cano de bytes opaco entre P4 e C6, por cima do Custom RPC. E por ele que o
-# ESP-NOW vai falar (o esp_now NAO linka no P4 - so existe do lado do C6), e e
-# por ele que o host confirma o enlace depois de gravar firmware novo no
-# coprocessador, cancelando a reversao automatica.
+# --- peer_data channel with the C6 ----------------------------------------
+# Opaque byte pipe between the P4 and C6 over Custom RPC. ESP-NOW communicates
+# through it (esp_now does NOT link on the P4; it exists only on the C6 side),
+# and the host uses it to confirm the link after flashing new coprocessor
+# firmware, canceling the automatic rollback.
 CONFIG_ESP_HOSTED_HOST_FEAT_PEER_DATA=y
 
-# --- pilhas das tarefas do esp_hosted na PSRAM ------------------------------
-# As 6 tarefas do esp_hosted (sdio_rx_buf, sdio_read, sdio_write,
-# sdio_process_rx, eh_rpc_tx, eh_rpc_rx) saem TODAS do mesmo knob de 4 KB, e
-# medido em uso (tarefas) quatro delas gastam menos de 1 KB: eram ~24 KB de
-# SRAM interna presos para ~8 KB de uso. Baixar o knob nao serve (eh_rpc_rx
-# usa ~2,7 KB e ficaria sem folga); mudar o LUGAR serve, sem patch no
-# componente - e o que a Espressif faz nos exemplos de host P4.
-# Seguro aqui porque nenhuma delas toca a flash (os callbacks de peer_data so
-# copiam para filas) e o SDIO usa buffers DMA proprios, nunca a pilha.
-# Custo: a foto do monitor le essas pilhas na secao critica; medido no
-# 'tarefas' (foto/pior) antes e depois.
+# --- esp_hosted task stacks in PSRAM --------------------------------------
+# All 6 esp_hosted tasks (sdio_rx_buf, sdio_read, sdio_write, sdio_process_rx,
+# eh_rpc_tx, eh_rpc_rx) use the same 4 KB setting. Measured in the task report,
+# four use less than 1 KB: about 24 KB of internal SRAM was reserved for about
+# 8 KB of actual use. Lowering the setting is not viable (eh_rpc_rx uses about
+# 2.7 KB and would lose headroom); moving the stacks is, without patching the
+# component, which is what Espressif does in its P4 host examples.
+# This is safe because none of them touches flash (peer_data callbacks only copy
+# to queues), and SDIO uses its own DMA buffers, never the task stack.
+# Cost: the monitor snapshot reads these stacks in the critical section; this
+# was measured in the task report (snapshot/worst case) before and after.
 CONFIG_ESP_HOSTED_DFLT_TASK_FROM_SPIRAM=y
 
-# --- buffers do WiFi: QUEM DECIDE E ESTE LADO, quem gasta e o C6 -------------
-# O esp_hosted do C6 chama o esp_wifi_init com os campos que chegam daqui
-# (get_merged_init_config: "always use value from host"). Os CONFIG_ESP_WIFI_*
-# do c6/sdkconfig nao valem para buffers, BA nem CSI. A RAM gasta e a do C6
-# (~250 KB livres no boot dele); o P4 nao aloca nada disto.
+# --- WiFi buffers: THIS SIDE DECIDES, the C6 pays the cost -----------------
+# The C6's esp_hosted calls esp_wifi_init with the fields received from here
+# (get_merged_init_config: "always use value from host"). The CONFIG_ESP_WIFI_*
+# values in c6/sdkconfig do not apply to buffers, BA, or CSI. The consumed RAM
+# is the C6's (about 250 KB free at its boot); the P4 allocates none of this.
 #
-# Valores da tabela de desempenho da Espressif para P4 + C6 por SDIO 4 bits a
-# 40 MHz (docs/design/performance.md do esp_hosted). Os de fabrica (10/32/32,
-# janela 6) limitavam cada agregado A-MPDU que o roteador manda a 6 quadros.
-# O TX_BA_WIN nao tem consumidor no IDF 5.5 (a biblioteca do WiFi usa o valor
-# interno dela); fica igual a tabela so por coerencia.
+# Values from Espressif's performance table for P4 + C6 over 4-bit SDIO at
+# 40 MHz (esp_hosted's docs/design/performance.md). The factory values
+# (10/32/32, window 6) limited each A-MPDU aggregate sent by the router to six
+# frames. IDF 5.5 has no consumer for TX_BA_WIN (the WiFi library uses its own
+# internal value); it matches the table for consistency.
 CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM=16
 CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM=64
 CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM=64
 CONFIG_WIFI_RMT_TX_BA_WIN=32
 CONFIG_WIFI_RMT_RX_BA_WIN=32
 
-# --- A PISCADA AZUL, CAUSA 1: a tela para de ser atualizada quando alguem
-#     escreve na flash -------------------------------------------------------
+# --- BLUE FLICKER, CAUSE 1: the screen stops updating when flash is written --
 #
-# O painel DPI nao "manda" a imagem: um DMA (DW-GDMA) le o framebuffer da PSRAM
-# linha a linha, para sempre. E esse DMA NAO E CIRCULAR - ele termina a cada
-# frame e e RELIGADO por uma interrupcao:
+# The DPI panel does not "push" the image: a DMA (DW-GDMA) reads the PSRAM
+# framebuffer line by line forever. This DMA is NOT CIRCULAR; it finishes each
+# frame and is RESTARTED by an interrupt:
 #
 #   mipi_dsi_dma_trans_done_cb (esp_lcd_panel_dpi.c:70)
 #     dw_gdma_channel_use_link_list(chan, link_list);
-#     dw_gdma_channel_enable_ctrl(chan, true);      <- 64 vezes por segundo
+#     dw_gdma_channel_enable_ctrl(chan, true);      <- 64 times per second
 #
-# Se essa interrupcao atrasar, o FIFO do painel seca e o frame sai AZUL.
+# If this interrupt is delayed, the panel FIFO runs dry and the frame turns BLUE.
 #
-# CONFIG_LCD_DSI_ISR_HANDLER_IN_IRAM ja vem =y: o codigo da interrupcao mora na
-# IRAM, entao falta de cache nao o atrasa. Mas ISSO NAO BASTA. Quando alguem
-# escreve na flash - e nvs_commit() escreve na flash - o IDF chama
-# spi_flash_disable_interrupts_caches_and_other_cpu(), que DESLIGA a cache e,
-# com ela, toda interrupcao que nao foi registrada como IRAM-safe. A do DSI nao
-# era. Um apagamento de setor leva dezenas de ms: dois ou tres frames inteiros
-# sem ninguem religar o DMA.
+# CONFIG_LCD_DSI_ISR_HANDLER_IN_IRAM already defaults to =y: the interrupt code
+# lives in IRAM, so a cache miss cannot delay it. But THAT IS NOT ENOUGH. When
+# someone writes flash—and nvs_commit() writes flash—the IDF calls
+# spi_flash_disable_interrupts_caches_and_other_cpu(), which DISABLES the cache
+# and, with it, every interrupt not registered as IRAM-safe. The DSI interrupt
+# was not. Erasing a sector takes tens of milliseconds: two or three complete
+# frames pass without anyone restarting the DMA.
 #
-# Quem escreve na NVS neste sistema: settings.cpp (brilho, wifi, teclado, grove,
-# tempo de tela - o app Ajustes) e tab5_mesh (o nosso numero de no). Ou seja: a
-# piscada ao sair de Ajustes nunca foi banda de memoria. Era isto.
+# What writes NVS in this system: settings.cpp (brightness, WiFi, keyboard,
+# Grove, screen timeout—the Settings app) and tab5_mesh (our node number). In
+# other words, the flicker when leaving Settings was never a memory-bandwidth
+# problem. This was the cause.
 #
-# CACHE_SAFE seleciona tambem DW_GDMA_ISR_IRAM_SAFE, que e a metade que importa
-# (a interrupcao que religa o DMA e do DW-GDMA, nao da ponte DSI). Custa alguns
-# KB de IRAM e nada mais: o M5GFX nao registra callback nenhum no painel DPI,
-# entao a checagem "callback tem que estar na IRAM" nao tem o que reprovar.
+# CACHE_SAFE also selects DW_GDMA_ISR_IRAM_SAFE, which is the important half
+# (the interrupt that restarts DMA belongs to DW-GDMA, not the DSI bridge). It
+# costs a few KB of IRAM and nothing else: M5GFX registers no callback on the
+# DPI panel, so there is nothing for the "callback must be in IRAM" check to
+# reject.
 CONFIG_LCD_DSI_ISR_CACHE_SAFE=y
 
-# --- PENTE FINO DE ROBUSTEZ ------------------------------------
+# --- ROBUSTNESS FINE-TUNING ------------------------------------
 
-# ESTOURO DE STACK, PEGO NO INSTANTE, NAO NO PROXIMO TROCA DE CONTEXTO.
+# STACK OVERFLOW, CAUGHT INSTANTLY, NOT AT THE NEXT CONTEXT SWITCH.
 #
-# O padrao (CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY, ja ligado) so percebe
-# o estouro quando o escalonador troca de tarefa - e ai o dano ja aconteceu,
-# e o que sobrou na stack pode ja ter sido reescrito por quem quer que tenha
-# rodado depois do estouro. Isto usa o ULTIMO watchpoint de hardware do CPU
-# para travar no EXATO instante em que qualquer um dos ultimos 32 bytes da
-# stack e sobrescrito - antes que o dano se espalhe.
+# The default (CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY, already enabled) only
+# notices the overflow when the scheduler switches tasks. By then the damage
+# has happened, and whatever remains on the stack may already have been
+# overwritten by code that ran afterward. This uses the CPU's LAST hardware
+# watchpoint to stop at the EXACT instant any of the last 32 bytes of the stack
+# is overwritten, before the damage spreads.
 #
-# Custo: ~60 bytes a menos de stack utilizavel POR TAREFA (a folga que ja
-# temos - a maior stack aqui e a do console, 12288 bytes - absorve isso sem
-# dor), e um watchpoint de hardware a menos para quem usar JTAG/gdb. Este
-# projeto depura pelo console proprio (ver console.cpp), nao por JTAG, entao
-# o watchpoint nao faz falta para mais nada.
+# Cost: about 60 fewer usable stack bytes PER TASK (our existing headroom—the
+# largest stack here is the 12288-byte console stack—absorbs this comfortably),
+# and one fewer hardware watchpoint for anyone using JTAG/gdb. This project is
+# debugged through its own console (see console.cpp), not JTAG, so the watchpoint
+# is not needed for anything else.
 CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
 
-# LINHA DE CACHE L2 DE 128 BYTES - achado na caca ao frame azul.
-# Cada falta/descarga de cache vira UMA rajada na PSRAM do tamanho da linha, e
-# a PSRAM (HEX, 200MHz) paga um custo fixo de comando+latencia por rajada. Com
-# 64B esse custo fixo pesa o dobro para os mesmos dados: menos banda util para
-# a CPU e o DOBRO de transacoes disputando o barramento com o DMA do painel.
-# Evidencias de que 128 e o valor esperado para esta placa:
-#  - o sdkconfig do Arduino da Espressif para P4 (inclusive o esp32p4_es, dos
-#    chips de revisao < 3 como o nosso) usa 128;
-#  - o M5GFX alinha a sincronizacao de cache em 128 (Panel_FrameBufferBase.cpp,
-#    Cache_WriteBack_Addr: addr & ~127u) - foi escrito esperando 128.
+# 128-BYTE L2 CACHE LINE—found while chasing the blue frame.
+# Every cache miss/flush becomes a PSRAM burst the size of the line, and
+# PSRAM (HEX, 200 MHz) pays a fixed command-plus-latency cost per burst. With
+# 64 B, that fixed cost doubles for the same data: less useful CPU bandwidth and
+# TWICE as many transactions competing with the panel DMA for the bus.
+# Evidence that 128 is the expected value for this board:
+#  - Espressif's P4 Arduino sdkconfig (including esp32p4_es, for revision < 3
+#    chips like ours) uses 128;
+#  - M5GFX aligns cache synchronization to 128 (Panel_FrameBufferBase.cpp,
+#    Cache_WriteBack_Addr: addr & ~127u); it was written expecting 128.
 CONFIG_CACHE_L2_CACHE_LINE_128B=y
 
-# STACK DAS TAREFAS DE IPC (ipc0/ipc1). O monitor do sistema
-# (services/tab5_monitor) acusou ipc0 com 448B livres de 1024: ela executa o que
-# o outro core pede (interrupcao, cache, troca de clock), e o consumo depende
-# de quem pede. 1536 da folga real; custa 1KB de SRAM somando os dois cores.
+# IPC TASK STACKS (ipc0/ipc1). The system monitor (services/tab5_monitor) showed
+# ipc0 with 448 B free out of 1024: it performs what the other core requests
+# (interrupts, cache work, clock changes), and usage depends on the requester.
+# 1536 provides real headroom; it costs 1 KB of SRAM across both cores.
 CONFIG_ESP_IPC_TASK_STACK_SIZE=1536
 
-# Camera: o controlador do pipeline do ISP roda exposicao automatica e balanco
-# de branco (sem ele a imagem sai verde e escura).
+# Camera: the ISP pipeline controller handles automatic exposure and white
+# balance (without it, the image is green and dark).
 CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
 
 # --- Bluetooth -------------------------------------------------
-# O P4 NAO TEM RADIO: o controlador BLE e o do C6, e o firmware nosso do C6 ja
-# nasce com ele ligado (ESP_HOSTED_CP_FEAT_BT, HCI por VHCI - ver c6/sdkconfig).
-# Aqui so sobe a STACK (NimBLE) no P4 e a ponte do esp_hosted, que leva os
-# pacotes HCI pelo mesmo SDIO do WiFi. Nada disto exige regravar o C6.
+# The P4 HAS NO RADIO: the BLE controller belongs to the C6, and our C6 firmware
+# already ships with it enabled (ESP_HOSTED_CP_FEAT_BT, HCI over VHCI; see
+# c6/sdkconfig). This only starts the NimBLE STACK on the P4 and the esp_hosted
+# bridge, which carries HCI packets over the same SDIO link as WiFi. None of
+# this requires reflashing the C6.
 #
-# Central (o Tab5 conecta no Meshtastic, nao o contrario) e periferico
-# desligado - so sobe o que se usa. Pareamento com PIN (o Meshtastic exige) e
-# vinculo guardado na NVS, para nao pedir o PIN a cada reinicio.
+# Central (the Tab5 connects to Meshtastic, not the reverse) is enabled and the
+# peripheral role is disabled; only what is used starts. PIN pairing (required
+# by Meshtastic) and the bond are stored in NVS, so the PIN is not requested on
+# every restart.
 #
-# A memoria do NimBLE vai para a PSRAM: a SRAM interna e a mais disputada do
-# sistema, e BLE nao e caminho de tempo real aqui.
+# NimBLE memory goes to PSRAM: internal SRAM is the system's most contested
+# resource, and BLE is not a real-time path here.
 CONFIG_ESP_HOSTED_HOST_FEAT_BT=y
 CONFIG_BT_ENABLED=y
 CONFIG_BT_CONTROLLER_DISABLED=y
@@ -312,60 +316,65 @@ CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 
-# --- Camera (SC202CS no MIPI-CSI) ----------------------------------------------
-# O sensor do Tab5. Sem estas chaves o esp_cam_sensor nao compila o driver dele
-# e o app Camera nao acha sensor nenhum.
+# --- Camera (SC202CS on MIPI-CSI) -----------------------------------------
+# The Tab5 sensor. Without these options, esp_cam_sensor does not compile its
+# driver and the Camera app cannot find any sensor.
 CONFIG_CAMERA_SC202CS=y
 CONFIG_CAMERA_SC202CS_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
-# Quadro inteiro do sensor. O modo 1280x720 e uma janela no centro (80% x 60%
-# do campo de visao): a foto parecia ter zoom.
+# Full sensor frame. The 1280x720 mode is a centered window (80% x 60% of the
+# field of view), so the photo looked zoomed in.
 CONFIG_CAMERA_SC202CS_MIPI_RAW8_1600X1200_30FPS=y
 CONFIG_CAMERA_SC202CS_MIPI_DEFAULT_FMT_RAW8_1600X1200_30FPS=y
 CONFIG_CAMERA_SC202CS_DIG_GAIN_PRIORITY=y
 CONFIG_CAM_CTLR_MIPI_CSI_ISR_CACHE_SAFE=y
 CONFIG_CAM_CTRL_SPI_ENABLE=n
 
-# --- DMA do painel em IRAM -------------------------------------------------------
-# As funcoes do DW-GDMA que a ISR do painel usa ficam em IRAM: com a cache
-# desligada (escrita na flash) elas continuam rodando e a tela nao pisca.
+# --- panel DMA in IRAM -----------------------------------------------------
+# The DW-GDMA functions used by the panel ISR stay in IRAM: with the cache
+# disabled (while writing flash), they keep running and the screen does not
+# flicker.
 CONFIG_DW_GDMA_CTRL_FUNC_IN_IRAM=y
 CONFIG_DW_GDMA_GETTER_FUNC_IN_IRAM=y
 CONFIG_DW_GDMA_SETTER_FUNC_IN_IRAM=y
 
-# --- RAM interna: o que sai dela -------------------------------------------------
-# A SRAM interna (~320 KB de heap) e o recurso mais disputado: pilhas, filas,
-# buffers DMA do SDIO do C6 e do painel. Ver tambem main/linker.lf.
+# --- internal RAM: what moves out of it ------------------------------------
+# Internal SRAM (about 320 KB of heap) is the most contested resource: stacks,
+# queues, and DMA buffers for the C6 SDIO and panel. See also main/linker.lf.
 #
-# mbedTLS na PSRAM. Com INTERNAL, cada sessao TLS (mqtts, https, a atualizacao
-# do C6 por rede) tira ~40 KB da interna de uma vez - o buffer de entrada sozinho
-# e de 16 KB. Hoje o MQTT e "mqtt://", mas o suporte a TLS esta compilado, e o
-# dia em que ligar nao pode derrubar o resto. O AES/SHA por hardware do P4 lida
-# com buffer na PSRAM (o driver copia por um bounce interno quando precisa).
+# mbedTLS in PSRAM. With INTERNAL, each TLS session (mqtts, https, or a network
+# update of the C6) takes about 40 KB from internal RAM at once; the input buffer
+# alone is 16 KB. MQTT is "mqtt://" today, but TLS support is compiled in, and
+# enabling it someday must not bring down the rest of the system. The P4's
+# hardware AES/SHA handles buffers in PSRAM (the driver copies through an
+# internal bounce buffer when necessary).
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 #
-# Pilha do sys_evt (o loop de eventos padrao do IDF). O ao_evento do WiFi loga
-# e faz RPC la dentro, e o pilhas-*.csv mostrou 600 bytes livres de 2304 - perto
-# demais do fim. Nao e economia: e o unico lugar que SOBE.
+# sys_evt stack (the IDF default event loop). The WiFi event handler logs and
+# performs RPC there, and pilhas-*.csv showed only 600 bytes free out of 2304,
+# too close to the limit. This is not an optimization: it is the one place that
+# NEEDS to grow.
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3072
 #
-# malloc() comum ate 4 KB fica na interna; acima disso vai para a PSRAM (o
-# padrao era 16 KB). Pilhas e objetos do FreeRTOS nao passam por aqui (pedem a
-# interna explicitamente), e quem faz DMA pede MALLOC_CAP_DMA - entao o que
-# muda de lugar sao os buffers comuns de 4 a 16 KB, que ocupavam a interna
-# sem precisar dela. Conferir pelo `mem mapa` (faixa <16K dos usados).
+# Ordinary malloc() allocations up to 4 KB stay internal; larger ones go to
+# PSRAM (the default was 16 KB). FreeRTOS stacks and objects do not pass through
+# this setting (they explicitly request internal memory), and DMA users request
+# MALLOC_CAP_DMA. Thus, the items moved are ordinary 4-to-16 KB buffers that
+# occupied internal RAM without needing it. Check with the memory map (the <16K range
+# of used memory).
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
 
-# --- Camera: calibracao propria do SC202CS -----------------------------------
-# Copia do sc202cs_default.json do esp_cam_sensor com UMA mudanca: a exposicao
-# automatica mira mais baixo (alvo de brilho 62 -> 52, faixa 56..64 -> 46..54)
-# e reage antes a areas estouradas (high_threshold 239 -> 230, high_regions
-# 3 -> 2). Motivo: o ISP do P4 aplica o ganho do balanco de branco e a matriz
-# de cor (CCM) SEM cortar o excesso antes; num branco que satura o sensor,
-# vermelho e azul passam de 255 e a linha do verde da CCM (-0,70 R + 2,08 G
-# - 0,38 B) derruba o verde - o branco sai magenta. Menos exposicao = menos
-# pixel saturado. Para voltar ao de fabrica: DEFAULT_IPA_JSON=y.
-# A correcao do magenta em si e a matriz protegida do IPA proprio
-# (main/hal/tab5_camera_ipa.c); a exposicao mais baixa so reduz a area estourada.
+# --- Camera: custom SC202CS calibration -----------------------------------
+# Copy of esp_cam_sensor's sc202cs_default.json with ONE change: automatic
+# exposure targets a lower brightness (target 62 -> 52, range 56..64 -> 46..54)
+# and reacts sooner to blown highlights (high_threshold 239 -> 230,
+# high_regions 3 -> 2). Reason: the P4 ISP applies white-balance gain and the
+# color matrix (CCM) WITHOUT clipping excess first. In a white area that
+# saturates the sensor, red and blue exceed 255 and the CCM's green row
+# (-0.70 R + 2.08 G - 0.38 B) pulls green down, making white appear magenta.
+# Lower exposure means fewer saturated pixels. To restore the factory setting:
+# DEFAULT_IPA_JSON=y.
+# The magenta correction itself is the protected matrix from the custom IPA
+# (main/hal/tab5_camera_ipa.c); lower exposure only reduces the blown-out area.
 # CONFIG_CAMERA_SC202CS_DEFAULT_IPA_JSON_CONFIGURATION_FILE is not set
 CONFIG_CAMERA_SC202CS_CUSTOMIZED_IPA_JSON_CONFIGURATION_FILE=y
 CONFIG_CAMERA_SC202CS_CUSTOMIZED_IPA_JSON_CONFIGURATION_FILE_PATH="main/hal/sc202cs_tab5.json"
