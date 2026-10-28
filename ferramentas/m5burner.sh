@@ -30,5 +30,5 @@ esac
 
 VERSAO="$(head -1 version.txt | tr -d '[:space:]')"
 SAIDA="$PWD/M5tabOS-$VERSAO-p4$CHIP.bin"
-( cd "$PASTA" && esptool.py --chip esp32p4 merge-bin -o "$SAIDA" @flash_args > /dev/null )
+( cd "$PASTA" && esptool.py --chip esp32p4 merge_bin -o "$SAIDA" @flash_args > /dev/null )
 echo ">>> $SAIDA ($(du -h "$SAIDA" | cut -f1)) - no M5Burner, gravar a partir de 0x0"
