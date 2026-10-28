@@ -19,7 +19,7 @@
 // A CONFIGURACAO VEM DO NO. Canais (nome e chave), regiao e servidor MQTT sao
 // aprendidos do dump do C6L quando ele esta conectado (mesh_mqtt_aprender_*)
 // e guardados na NVS: o modo internet usa exatamente o que o no usa. Sem
-// nada aprendido: servidor do Mesh Brasil (raiz meshdev), canal LongFast com a chave padrao.
+// nada aprendido: servidor publico oficial (raiz msh), canal LongFast com a chave padrao.
 //
 // LIMITES (ver tab5_mesh.hpp): so mensagens de CANAL - a mensagem direta
 // cifrada com chave publica (PKI) nao e decifrada aqui; no servidor publico o
@@ -97,19 +97,20 @@ size_t mesh_mqtt_proxy_receber(uint8_t* buf, size_t max);
 void   mesh_mqtt_proxy_contadores(uint32_t* subiu, uint32_t* desceu, uint32_t* perdeu);
 
 // ---------------------------------------------------------------------------
-// REDE AMERICANA - um segundo cliente, ao mesmo tempo que o de cima
+// REDE PUBLICA PELA INTERNET - um segundo cliente, ao mesmo tempo que o de cima
 // ---------------------------------------------------------------------------
 // mqtt.meshtastic.org, raiz msh/US, so o LongFast de fabrica. Funciona no modo
 // internet e tambem com o no conectado (no proxy inclusive): o no fala com a
 // malha daqui, e este cliente e do Tab5 sozinho - ele decifra e cifra, como o
-// modo internet. O servico marca tudo o que sai desta fila como da rede EUA
-// (nos separados, conversa "LongFast EUA"). Mesmos limites: so canal, sem PKI.
-bool     mesh_mqtt_eua_iniciar(void);   // o Wi-Fi ja tem que estar conectado
-void     mesh_mqtt_eua_parar(void);
-bool     mesh_mqtt_eua_ativo(void);
-bool     mesh_mqtt_eua_conectado(void);
-uint32_t mesh_mqtt_eua_recebidos(void); // pacotes entregues ao servico desde o boot
+// modo internet. O servico marca tudo o que sai desta fila como da rede de
+// internet (nos separados, conversa "LongFast Internet"). Mesmos limites:
+// so canal, sem PKI.
+bool     mesh_mqtt_internet_iniciar(void);   // o Wi-Fi ja tem que estar conectado
+void     mesh_mqtt_internet_parar(void);
+bool     mesh_mqtt_internet_ativo(void);
+bool     mesh_mqtt_internet_conectado(void);
+uint32_t mesh_mqtt_internet_recebidos(void); // pacotes entregues ao servico desde o boot
 // FromRadio pronto (0 = nada), sem espera. Chamada da tarefa do servico.
-size_t   mesh_mqtt_eua_receber(uint8_t* buf, size_t max);
+size_t   mesh_mqtt_internet_receber(uint8_t* buf, size_t max);
 // ToRadio{ packet } de canal -> publicado em msh/US/2/e/LongFast/!<no>.
-bool     mesh_mqtt_eua_enviar(const uint8_t* toradio, size_t n);
+bool     mesh_mqtt_internet_enviar(const uint8_t* toradio, size_t n);

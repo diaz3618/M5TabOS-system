@@ -175,11 +175,11 @@ uint8_t  ajustes_mesh_via(void);
 // Ligado de fabrica.
 bool     ajustes_mesh_internet(void);
 void     ajustes_definir_mesh_internet(bool ligado);
-// A REDE AMERICANA (mqtt.meshtastic.org, LongFast dos EUA) em paralelo, com o
+// A REDE PUBLICA PELA INTERNET (mqtt.meshtastic.org, LongFast) em paralelo, com o
 // Wi-Fi conectado - nos e conversa separados. Desligada de fabrica: e trafego
 // de internet que ninguem pediu. Liga/desliga na pagina de nos do app Mesh.
-bool     ajustes_mesh_eua(void);
-void     ajustes_definir_mesh_eua(bool ligado);
+bool     ajustes_mesh_rede_internet(void);
+void     ajustes_definir_mesh_rede_internet(bool ligado);
 void     ajustes_definir_mesh_via(uint8_t via);
 uint32_t ajustes_mesh_pin(void);
 void     ajustes_definir_mesh_pin(uint32_t pin);

@@ -60,17 +60,17 @@
 
 // Hora valida: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_hora.hpp).
 
-// AS DUAS REDES. BR e a de sempre (o no, o modo internet, o proxy); EUA e o
-// LongFast americano pelo servidor publico (services/tab5_mesh_mqtt.hpp),
-// ligado em ajustes_mesh_eua(). Os nos ficam marcados com a rede onde foram
-// ouvidos (o BR vence: no ouvido aqui e daqui). A conversa dos EUA e um CANAL
-// com o indice MESH_CANAL_EUA - fora da faixa dos 8 canais do no, entao nunca
+// AS DUAS REDES. NO e a de sempre (o no, o modo internet, o proxy); INTERNET e
+// o LongFast pelo servidor publico (services/tab5_mesh_mqtt.hpp), ligado em
+// ajustes_mesh_rede_internet(). Os nos ficam marcados com a rede onde foram
+// ouvidos (NO vence: no ouvido aqui e pela internet). A conversa da INTERNET e
+// um CANAL com o indice MESH_CANAL_INTERNET - fora da faixa dos 8 canais do no, entao nunca
 // colide com eles, e a chave (canal, idx) continua valendo em todo lugar.
-#define MESH_REDE_BR   0
-#define MESH_REDE_EUA  1
-#define MESH_CANAL_EUA 0x80
-#define MESH_MAX_NOS_EUA 96   // teto dos americanos na tabela de 256: nao expulsam os daqui
-static inline bool mesh_canal_eua(uint8_t idx) { return (idx & MESH_CANAL_EUA) != 0; }
+#define MESH_REDE_NO   0
+#define MESH_REDE_INTERNET  1
+#define MESH_CANAL_INTERNET 0x80
+#define MESH_MAX_NOS_INTERNET 96   // teto da rede publica na tabela de 256: nao expulsa os daqui
+static inline bool mesh_canal_internet(uint8_t idx) { return (idx & MESH_CANAL_INTERNET) != 0; }
 
 // Sentinela de mesh_msg_t::saltos - "nao da para saber", nunca "zero saltos".
 #define MESH_SALTOS_DESCONHECIDO 255
@@ -121,9 +121,9 @@ typedef struct {
   int32_t  lat_i, lon_i;               // graus x 1e7 (0 = sem posicao)
   bool     tem_pos;
   bool     usado;
-  // MESH_REDE_BR/EUA. No vao que o alinhamento ja deixava antes de 'fixado':
+  // MESH_REDE_NO/INTERNET. No vao que o alinhamento ja deixava antes de 'fixado':
   // o tamanho da struct nao muda, e o nodedb.bin antigo continua valendo
-  // (com zero ali, que e BR).
+  // (com zero ali, que e NO).
   uint8_t  rede;
 
   // LUGAR FIXO NO TOPO DA TABELA: a ordem em que o no foi ouvido pelo ar (com
@@ -356,14 +356,14 @@ int  tab5_mesh_num_nos(void);
 // desenho.
 bool tab5_mesh_no(int i, mesh_no_t* saida);
 
-// A MESMA TABELA, SO DE UMA REDE (MESH_REDE_BR/EUA), na mesma ordem. E o que
+// A MESMA TABELA, SO DE UMA REDE (MESH_REDE_NO/INTERNET), na mesma ordem. E o que
 // a pagina de nos mostra; as duas de cima continuam sendo "todos".
 int  tab5_mesh_num_nos_rede(uint8_t rede);
 bool tab5_mesh_no_rede(uint8_t rede, int i, mesh_no_t* saida);
 
-// A rede americana em texto para a tela: desligada, sem Wi-Fi, conectando, ou
+// A rede publica pela internet em texto para a tela: desligada, sem Wi-Fi, conectando, ou
 // conectada com quantos pacotes ja chegaram.
-const char* tab5_mesh_eua_estado(void);
+const char* tab5_mesh_rede_internet_estado(void);
 
 // Quantas vezes a tabela de nos (MESH_MAX_NOS - ver achar_no) esteve
 // cheia e precisou despejar o mais antigo para abrir espaco a um no novo,

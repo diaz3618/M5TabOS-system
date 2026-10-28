@@ -37,7 +37,7 @@ static char     s_mesh_end[18] = "";
 static bool     s_mesh_pin_tela = false;
 static uint8_t  s_mesh_pos_min = 0;
 static bool     s_mesh_internet = true;
-static bool     s_mesh_eua = false;
+static bool     s_mesh_rede_internet = false;
 static bool     s_bluetooth = false;
 static uint8_t  s_parede    = AJUSTES_PAREDE_SORTEIO;
 static bool     s_bloqueio  = false;   // tela de bloqueio ao acordar (desligada de fabrica)
@@ -136,7 +136,10 @@ void ajustes_iniciar(void)
     if (nvs_get_u8(h, "mesh_via", &v) == ESP_OK && v <= AJUSTES_MESH_INTERNET) { s_mesh_via = v; }
     if (nvs_get_u8(h, "mesh_pos", &v) == ESP_OK) { s_mesh_pos_min = v; }
     if (nvs_get_u8(h, "mesh_net", &v) == ESP_OK) { s_mesh_internet = (v != 0); }
-    if (nvs_get_u8(h, "mesh_eua", &v) == ESP_OK) { s_mesh_eua = (v != 0); }
+    if (nvs_get_u8(h, "mesh_rede", &v) == ESP_OK
+     || nvs_get_u8(h, "mesh_eua", &v) == ESP_OK) {   // segunda chave: compatibilidade com gravacoes antigas
+      s_mesh_rede_internet = (v != 0);
+    }
     if (nvs_get_u8(h, "bluetooth", &v) == ESP_OK) { s_bluetooth = (v != 0); }
     if (nvs_get_u8(h, "bloqueio", &v) == ESP_OK) { s_bloqueio = (v != 0); }
     if (nvs_get_u8(h, "pendrive", &v) == ESP_OK) { s_pendrive = (v != 0); }
@@ -344,13 +347,13 @@ void ajustes_definir_mesh_internet(bool ligado)
   gravar_u8("mesh_net", ligado ? 1 : 0);
 }
 
-bool ajustes_mesh_eua(void) { return s_mesh_eua; }
+bool ajustes_mesh_rede_internet(void) { return s_mesh_rede_internet; }
 
-void ajustes_definir_mesh_eua(bool ligado)
+void ajustes_definir_mesh_rede_internet(bool ligado)
 {
-  if (ligado == s_mesh_eua) { return; }
-  s_mesh_eua = ligado;
-  gravar_u8("mesh_eua", ligado ? 1 : 0);
+  if (ligado == s_mesh_rede_internet) { return; }
+  s_mesh_rede_internet = ligado;
+  gravar_u8("mesh_rede", ligado ? 1 : 0);
 }
 
 uint8_t ajustes_mesh_posicao_min(void) { return s_mesh_pos_min; }

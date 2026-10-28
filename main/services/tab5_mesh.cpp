@@ -108,11 +108,11 @@ static uint32_t    s_iniciado_em_ms   = 0;   // ver o aviso em tab5_mesh_silenci
 static int         s_notif = -1;   // fonte no servico de notificacao
 
 // DE QUAL REDE E O QUADRO QUE ESTA SENDO LIDO AGORA. So a tarefa do servico
-// le quadros (sempre com a trava), e o da fila dos EUA e lido com isto em
-// MESH_REDE_EUA: achar_no marca a rede do no, guardar_msg poe a mensagem na
-// conversa "LongFast EUA". Mais simples que levar a rede por cada funcao do
+// le quadros (sempre com a trava), e o da fila da internet e lido com isto em
+// MESH_REDE_INTERNET: achar_no marca a rede do no, guardar_msg poe a mensagem na
+// conversa "LongFast Internet". Mais simples que levar a rede por cada funcao do
 // caminho de leitura, que e o mesmo para as duas.
-static uint8_t     s_rede_rx = MESH_REDE_BR;
+static uint8_t     s_rede_rx = MESH_REDE_NO;
 
 // NOMES REAIS DOS CANAIS, ditos pelo proprio radio.
 //
@@ -740,7 +740,7 @@ static uint32_t s_ordem_ms = 0;
 static int ordem_nos(void)
 {
   if (s_ordem_ver == s_nos_ver && (tab5_agora_ms() - s_ordem_ms) < 1000) { return s_ordem_n; }
-  // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso (EUA) a
+  // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso da internet a
   // versao muda a cada pacote, e a pagina de nos pede uma linha de cada vez -
   // eram varias ordenacoes de 256 nos por desenho. Um quarto de segundo de
   // atraso na ordem nao se ve; o processamento, sim.
@@ -778,7 +778,7 @@ static int ordem_nos(void)
   s_ordem_n = n;
   s_ordem_rede_n[0] = s_ordem_rede_n[1] = 0;
   for (int k = 0; k < n; ++k) {
-    const int r = s_nos[s_ordem[k]].rede == MESH_REDE_EUA ? 1 : 0;
+    const int r = s_nos[s_ordem[k]].rede == MESH_REDE_INTERNET ? 1 : 0;
     s_ordem_rede[r][s_ordem_rede_n[r]++] = s_ordem[k];
   }
   return n;
@@ -968,7 +968,7 @@ int tab5_mesh_num_nos_rede(uint8_t rede)
 {
   travar();
   ordem_nos();
-  const int n = s_ordem_rede_n[rede == MESH_REDE_EUA ? 1 : 0];
+  const int n = s_ordem_rede_n[rede == MESH_REDE_INTERNET ? 1 : 0];
   destravar();
   return n;
 }
@@ -978,7 +978,7 @@ bool tab5_mesh_no_rede(uint8_t rede, int idx, mesh_no_t* saida)
   bool ok = false;
   travar();
   ordem_nos();
-  const int r = rede == MESH_REDE_EUA ? 1 : 0;
+  const int r = rede == MESH_REDE_INTERNET ? 1 : 0;
   if (idx >= 0 && idx < s_ordem_rede_n[r] && s_nos[s_ordem_rede[r][idx]].usado) {
     *saida = s_nos[s_ordem_rede[r][idx]];
     saida->idade_s = idade_do_no(*saida);
@@ -1184,10 +1184,10 @@ static void lembrar_nome(uint32_t num, const char* curto, const char* longo)
   const bool tem_curto = curto && curto[0];
   const bool tem_longo = longo && longo[0];
   if (num == 0 || (!tem_curto && !tem_longo)) { return; }
-  // OS DOS EUA NAO VAO PARA O CACHE. Sao centenas, de passagem: gravavam o
+  // OS DA INTERNET NAO VAO PARA O CACHE. Sao centenas, de passagem: gravavam o
   // cartao de 15 em 15 s e tomavam as 1024 vagas dos nomes daqui. Enquanto
   // estao na tabela o nome deles aparece igual (ela e consultada primeiro).
-  if (s_rede_rx == MESH_REDE_EUA) { return; }
+  if (s_rede_rx == MESH_REDE_INTERNET) { return; }
 
   int idx = -1;
   for (int i = 0; i < s_n_conhecidos; ++i) {
@@ -1411,7 +1411,7 @@ static void carregar_apagados(void)
   while (fgets(linha, sizeof(linha), f) && s_n_apagados < MESH_MAX_APAGADOS) {
     if (linha[0] == 'K') {
       const uint32_t idx = (uint32_t)strtoul(linha + 1, nullptr, 10);
-      if (idx < MESH_MAX_CANAIS || idx == MESH_CANAL_EUA) {
+      if (idx < MESH_MAX_CANAIS || idx == MESH_CANAL_INTERNET) {
         s_apagados[s_n_apagados].canal = true;
         s_apagados[s_n_apagados].chave = idx;
         ++s_n_apagados;
@@ -1490,7 +1490,7 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
 
 static void arquivo_da_conversa(const mesh_conversa_t* c, char* out, size_t tam)
 {
-  if (c->canal && mesh_canal_eua(c->idx)) { snprintf(out, tam, "eua-%u.txt", (unsigned)(c->idx & 0x7F)); }
+  if (c->canal && mesh_canal_internet(c->idx)) { snprintf(out, tam, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
   else if (c->canal) { snprintf(out, tam, "canal-%u.txt", (unsigned)c->idx); }
   else          { snprintf(out, tam, "no-%08lX.txt", (unsigned long)c->no); }
 }
@@ -1515,8 +1515,8 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
     if (canal) {
       // Nome REAL, se o radio ja nos contou (FromRadio campo 10). O rotulo
       // inventado abaixo e so o que resta enquanto a configuracao nao chegou.
-      if (mesh_canal_eua(idx)) {
-        snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "LongFast EUA");
+      if (mesh_canal_internet(idx)) {
+        snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "LongFast Internet");
       } else if (idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) {
         snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "%s", s_canal_nome[idx]);
       } else {
@@ -1664,11 +1664,11 @@ int tab5_mesh_carregar_do_cartao(void)
       if (idx < MESH_MAX_CANAIS && !desligado && !esta_apagada(true, (uint8_t)idx)
        && achar_ou_criar_conversa(true, (uint8_t)idx, 0) >= 0) { ++achadas; }
     }
-    else if (strncmp(n, "eua-", 4) == 0) {
-      // A conversa dos EUA, com historico no cartao: volta mesmo com a rede
+    else if (strncmp(n, "internet-", 9) == 0 || strncmp(n, "eua-", 4) == 0) {   // segundo nome: historico antigo
+      // A conversa da internet, com historico no cartao: volta mesmo com a rede
       // desligada (so leitura), como as outras.
-      if (!esta_apagada(true, MESH_CANAL_EUA)
-       && achar_ou_criar_conversa(true, MESH_CANAL_EUA, 0) >= 0) { ++achadas; }
+      if (!esta_apagada(true, MESH_CANAL_INTERNET)
+       && achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0) >= 0) { ++achadas; }
     }
     else if (strncmp(n, "no-", 3) == 0) {
       // Hexadecimal, como foi escrito. Zero nao e no - e o que o strtoul
@@ -1714,7 +1714,7 @@ int tab5_mesh_conversa_com(uint32_t no)
 // deste arquivo).
 int tab5_mesh_conversa_do_canal(uint8_t idx)
 {
-  if (idx >= MESH_MAX_CANAIS && idx != MESH_CANAL_EUA) { return -1; }
+  if (idx >= MESH_MAX_CANAIS && idx != MESH_CANAL_INTERNET) { return -1; }
 
   travar();
   const int interno = achar_ou_criar_conversa(true, idx, 0);
@@ -1743,8 +1743,8 @@ static bool vem_antes(int a, int b)
 {
   const mesh_conversa_t& x = s_conv[a];
   const mesh_conversa_t& y = s_conv[b];
-  // Os EUA embaixo de tudo, depois das diretas: e abaixo do traco na coluna.
-  const bool ex = x.canal && mesh_canal_eua(x.idx), ey = y.canal && mesh_canal_eua(y.idx);
+  // A internet embaixo de tudo, depois das diretas: e abaixo do traco na coluna.
+  const bool ex = x.canal && mesh_canal_internet(x.idx), ey = y.canal && mesh_canal_internet(y.idx);
   if (ex != ey) { return ey; }
   if (x.canal != y.canal) { return x.canal; }
   if (x.canal)            { return x.idx < y.idx; }
@@ -1852,7 +1852,7 @@ static void salvar_canais(void)
 // do preset de modem" - LongFast no padrao de fabrica.
 static void nome_do_canal(int idx, char* out, size_t tam)
 {
-  if (idx == MESH_CANAL_EUA) { snprintf(out, tam, "LongFast EUA"); }
+  if (idx == MESH_CANAL_INTERNET) { snprintf(out, tam, "LongFast Internet"); }
   else if (idx >= 0 && idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) { snprintf(out, tam, "%s", s_canal_nome[idx]); }
   else if (idx == 0) { snprintf(out, tam, "LongFast"); }
   else               { snprintf(out, tam, "Canal %d", idx); }
@@ -1926,11 +1926,11 @@ static void criar_conversas_dos_canais(void)
     if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_criar_conversa(true, (uint8_t)idx, 0); }
   }
   if (!algum && !esta_apagada(true, 0)) { achar_ou_criar_conversa(true, 0, 0); }
-  if (ajustes_mesh_eua() && !esta_apagada(true, MESH_CANAL_EUA)) { achar_ou_criar_conversa(true, MESH_CANAL_EUA, 0); }
+  if (ajustes_mesh_rede_internet() && !esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
 }
 
 // Indices dos canais a OFERECER: os ativos; sem nenhum conhecido, o primario.
-// O dos EUA vem por ultimo, com a rede ligada.
+// O da internet vem por ultimo, com a rede ligada.
 static int lista_canais(uint8_t out[MESH_MAX_CANAIS + 1])
 {
   int n = 0;
@@ -1938,7 +1938,7 @@ static int lista_canais(uint8_t out[MESH_MAX_CANAIS + 1])
     if (s_canais_conhecidos && s_canal_ativo[idx]) { out[n++] = (uint8_t)idx; }
   }
   if (n == 0) { out[n++] = 0; }
-  if (ajustes_mesh_eua()) { out[n++] = MESH_CANAL_EUA; }
+  if (ajustes_mesh_rede_internet()) { out[n++] = MESH_CANAL_INTERNET; }
   return n;
 }
 
@@ -2045,7 +2045,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
     // primeira linha ainda nao disse.
     saida->sub[0] = 0;
     if (saida->canal) {
-      if (mesh_canal_eua(saida->idx)) { snprintf(saida->sub, sizeof(saida->sub), "internet EUA"); }
+      if (mesh_canal_internet(saida->idx)) { snprintf(saida->sub, sizeof(saida->sub), "rede internet"); }
       else { snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? "canal primário" : "canal %u", (unsigned)saida->idx); }
     } else {
       const char* longo = nullptr;
@@ -2080,9 +2080,9 @@ static void publicar_notif(void)
   s_nao_lidas_dir = 0;
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (!s_conv[i].usada) { continue; }
-    // OS EUA NAO APITAM. O LongFast americano fala o dia inteiro: a bolinha
+    // OS DA INTERNET NAO APITAM. O LongFast publico fala o dia inteiro: a bolinha
     // da conversa conta, a barra de status e o bipe ficam com o que e daqui.
-    if (s_conv[i].canal && mesh_canal_eua(s_conv[i].idx)) { continue; }
+    if (s_conv[i].canal && mesh_canal_internet(s_conv[i].idx)) { continue; }
     s_nao_lidas += s_conv[i].nao_lidas;
     if (!s_conv[i].canal) { s_nao_lidas_dir += s_conv[i].nao_lidas; }
   }
@@ -2103,7 +2103,7 @@ static void publicar_notif(void)
     const char* nome_unico = nullptr;
     int canais_com_novidade = 0;
     for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
-      if (s_conv[i].usada && s_conv[i].canal && !mesh_canal_eua(s_conv[i].idx) && s_conv[i].nao_lidas > 0) {
+      if (s_conv[i].usada && s_conv[i].canal && !mesh_canal_internet(s_conv[i].idx) && s_conv[i].nao_lidas > 0) {
         ++canais_com_novidade;
         nome_unico = s_conv[i].nome;
       }
@@ -2250,33 +2250,33 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
 // entradas isso e mais rapido que qualquer indice, e nao ha alocacao.
 static mesh_no_t* achar_no(uint32_t num)
 {
-  // O nosso no e sempre daqui - a confirmacao de um envio aos EUA chega
+  // O nosso no e sempre daqui - a confirmacao de um envio pela internet chega
   // "de nos" pela fila de la.
-  const uint8_t rede = (s_meu_num && num == s_meu_num) ? MESH_REDE_BR : s_rede_rx;
+  const uint8_t rede = (s_meu_num && num == s_meu_num) ? MESH_REDE_NO : s_rede_rx;
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
     if (s_nos[i].usado && s_nos[i].num == num) {
-      // Ouvido aqui tambem: e daqui (um no do Brasil que aparece no servidor
-      // americano continua sendo do Brasil). O contrario nao rebaixa.
-      if (rede == MESH_REDE_BR && s_nos[i].rede != MESH_REDE_BR) { s_nos[i].rede = MESH_REDE_BR; ++s_nos_ver; }
+      // Ouvido aqui tambem: e daqui (um no local que aparece no servidor
+      // publico continua sendo local). O contrario nao rebaixa.
+      if (rede == MESH_REDE_NO && s_nos[i].rede != MESH_REDE_NO) { s_nos[i].rede = MESH_REDE_NO; ++s_nos_ver; }
       return &s_nos[i];
     }
   }
-  // TETO DOS EUA. O LongFast americano tem milhares de nos; sem teto eles
-  // empurrariam os daqui para fora da tabela. Cheio o teto, o novo americano
-  // toma a vaga do americano ouvido ha mais tempo (favorito nunca sai).
-  if (rede == MESH_REDE_EUA) {
-    int n_eua = 0, velho = -1;
+  // TETO DA INTERNET. O LongFast publico tem milhares de nos; sem teto eles
+  // empurrariam os daqui para fora da tabela. Cheio o teto, o novo no remoto
+  // toma a vaga do remoto ouvido ha mais tempo (favorito nunca sai).
+  if (rede == MESH_REDE_INTERNET) {
+    int n_internet = 0, velho = -1;
     int64_t maior = -1;
     for (int i = 0; i < MESH_MAX_NOS; ++i) {
       const mesh_no_t& c = s_nos[i];
-      if (!c.usado || c.rede != MESH_REDE_EUA) { continue; }
-      ++n_eua;
+      if (!c.usado || c.rede != MESH_REDE_INTERNET) { continue; }
+      ++n_internet;
       if (fav_pos(c.num) >= 0) { continue; }
       int64_t idade = idade_do_no(c);
       if (idade < 0) { idade = INT64_MAX / 2; }
       if (idade > maior) { maior = idade; velho = i; }
     }
-    if (n_eua >= MESH_MAX_NOS_EUA && velho >= 0) {
+    if (n_internet >= MESH_MAX_NOS_INTERNET && velho >= 0) {
       ++s_despejos;
       ++s_nos_ver;
       memset(&s_nos[velho], 0, sizeof(s_nos[velho]));
@@ -2284,7 +2284,7 @@ static mesh_no_t* achar_no(uint32_t num)
       s_nos[velho].num = num;
       s_nos[velho].snr = -128.0f;
       s_nos[velho].saltos = MESH_SALTOS_DESCONHECIDO;
-      s_nos[velho].rede = MESH_REDE_EUA;
+      s_nos[velho].rede = MESH_REDE_INTERNET;
       return &s_nos[velho];
     }
   }
@@ -2655,7 +2655,7 @@ static void ler_node_info(pb_leitor_t l)
 //
 // A correcao e um anel SO PARA ISSO, independente do que aparece na tela: 256
 // ids, 1 KB (na PSRAM, como o resto do .bss do servico), nada alem de um
-// uint32_t cada. Eram 64; com o LongFast dos EUA passando pelo mesmo anel, a
+// uint32_t cada. Eram 64; com o LongFast da internet passando pelo mesmo anel, a
 // janela de um texto daqui encolhia - a copia atrasada pela ponte entrava de
 // novo. Nao guarda conteudo - so "este id ja passou por aqui".
 #define MESH_DEDUP_N 256
@@ -2695,11 +2695,11 @@ static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* t
   // O id do pacote e o mesmo que mandamos, entao ele identifica o eco sem
   // ambiguidade. Vale tambem para mensagem enviada pelo CELULAR atraves do
   // C6L: chega uma vez so, com o id que o radio deu a ela.
-  // DOS EUA: so canal (a direta viria cifrada com PKI, que nao abrimos), e
-  // sempre na conversa "LongFast EUA".
-  if (s_rede_rx == MESH_REDE_EUA) {
+  // DA INTERNET: so canal (a direta viria cifrada com PKI, que nao abrimos), e
+  // sempre na conversa "LongFast Internet".
+  if (s_rede_rx == MESH_REDE_INTERNET) {
     if (para != 0xFFFFFFFFu) { return; }
-    canal = MESH_CANAL_EUA;
+    canal = MESH_CANAL_INTERNET;
   }
   if (id_ja_visto(id)) { return; }
   marcar_id_visto(id);
@@ -2791,19 +2791,19 @@ static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* t
   // nossa (id igual - o descarte falhou). E a origem: radio ou internet.
   ESP_LOGI(TAG, "mensagem %s de %08lX (id %08lX, %s%s): %s",
            s_msgs[0].direta ? "DIRETA" : "de canal", (unsigned long)de, (unsigned long)id,
-           via_mqtt ? "internet" : "radio", s_rede_rx == MESH_REDE_EUA ? " EUA" : "", txt);
+           via_mqtt ? "internet" : "radio", s_rede_rx == MESH_REDE_INTERNET ? " publica" : "", txt);
 
   sistema_avisar(AVISO_MESH_MSG);
 }
 
-// "OS NOS MUDARAM" PARA A TELA. Dos EUA, no maximo um por segundo: la chegam
+// "OS NOS MUDARAM" PARA A TELA. Da internet, no maximo um por segundo: la chegam
 // dezenas de pacotes por segundo, e cada aviso fazia a pagina de nos e a
 // coluna se conferirem de novo. A tabela muda na hora; so o aviso espera.
 static void avisar_nos(void)
 {
-  // E no Brasil ate 4 por segundo: a ponte MQTT tambem chega em rajada.
+  // E na rede do no ate 4 por segundo: a ponte MQTT tambem chega em rajada.
   static uint32_t ultimo_ms[2] = { 0, 0 };
-  const int k = (s_rede_rx == MESH_REDE_EUA) ? 1 : 0;
+  const int k = (s_rede_rx == MESH_REDE_INTERNET) ? 1 : 0;
   const uint32_t t = tab5_agora_ms();
   if (t - ultimo_ms[k] < (k ? 1000u : 250u)) { return; }
   ultimo_ms[k] = t;
@@ -3396,15 +3396,15 @@ static void pedir_apresentacao(void)
 // ---------------------------------------------------------------------------
 // FILA DE ENVIO DE TEXTO
 // ---------------------------------------------------------------------------
-typedef struct { uint16_t n; bool eua; uint32_t id; uint8_t d[MESH_TEXTO + 96]; } envio_fila_t;
+typedef struct { uint16_t n; bool internet; uint32_t id; uint8_t d[MESH_TEXTO + 96]; } envio_fila_t;
 static QueueHandle_t s_fila_envio = nullptr;
 #define MESH_FILA_ENVIO 8
 
 // Ja da para dizer que nao sai? (ver tab5_mesh_enviar)
-static bool pode_sair(bool eua, uint32_t para)
+static bool pode_sair(bool internet, uint32_t para)
 {
   const bool difusao = (para == 0xFFFFFFFFu);
-  if (eua) { return difusao && mesh_mqtt_eua_conectado(); }
+  if (internet) { return difusao && mesh_mqtt_internet_conectado(); }
   if (s_via == AJUSTES_MESH_INTERNET) { return difusao && mesh_mqtt_conectado(); }
   if (s_via == AJUSTES_MESH_BLUETOOTH && !mesh_ble_conectado()) {
     return difusao && mesh_mqtt_conectado() && !mesh_mqtt_em_proxy();   // a internet cobrindo a falta dele
@@ -3415,7 +3415,7 @@ static bool pode_sair(bool eua, uint32_t para)
 // DOIS SEGUNDOS ENTRE TEXTOS. O firmware descarta o texto que chega do
 // cliente menos de 2 s depois do anterior (PhoneAPI, rate limit da porta TEXT,
 // da 2.5 ate a atual): na 2.7 sem erro nenhum - a mensagem ficava "enviando" e
-// virava "sem resposta". A fila espera o que falta; os EUA nao tem esse
+// virava "sem resposta". A fila espera o que falta; a internet nao tem esse
 // limite (e o servidor, nao o no). Chamada pela tarefa do servico, sem trava.
 static void laco_envios(void)
 {
@@ -3424,10 +3424,10 @@ static void laco_envios(void)
   if (!s_fila_envio) { return; }
   for (int k = 0; k < 4; ++k) {
     if (xQueuePeek(s_fila_envio, &e, 0) != pdTRUE) { return; }
-    if (!e.eua && ultimo_ms && tab5_agora_ms() - ultimo_ms < 2100) { return; }
+    if (!e.internet && ultimo_ms && tab5_agora_ms() - ultimo_ms < 2100) { return; }
     xQueueReceive(s_fila_envio, &e, 0);
-    const bool ok = e.eua ? mesh_mqtt_eua_enviar(e.d, e.n) : enlace_enviar(e.d, e.n);
-    if (!e.eua) { ultimo_ms = tab5_agora_ms(); }
+    const bool ok = e.internet ? mesh_mqtt_internet_enviar(e.d, e.n) : enlace_enviar(e.d, e.n);
+    if (!e.internet) { ultimo_ms = tab5_agora_ms(); }
     if (!ok) {
       // O enlace caiu entre o toque e a vez dela: falhou, e a tela diz.
       ESP_LOGW(TAG, "pacote %08lX: o enlace recusou", (unsigned long)e.id);
@@ -3478,14 +3478,14 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   memcpy(enviado, texto, n_txt);
   enviado[n_txt] = 0;
 
-  // Pelos EUA o pacote vai no canal 0 DE LA (o LongFast deles); o indice
-  // MESH_CANAL_EUA e so a chave da conversa daqui. E la so ha canal (sem PKI).
-  const bool eua = mesh_canal_eua(canal);
-  if (eua && para != MESH_PB_DIFUSAO) { return false; }
+  // Pela internet o pacote vai no canal 0 DE LA (o LongFast publico); o indice
+  // MESH_CANAL_INTERNET e so a chave da conversa daqui. E la so ha canal (sem PKI).
+  const bool internet = mesh_canal_internet(canal);
+  if (internet && para != MESH_PB_DIFUSAO) { return false; }
 
   mesh_pb_envelope_t env = { };
   env.para    = para;
-  env.canal   = eua ? 0 : canal;
+  env.canal   = internet ? 0 : canal;
   env.porta   = PORT_TEXTO;
   env.carga   = (const uint8_t*)texto;
   env.n_carga = n_txt;
@@ -3510,10 +3510,10 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   if (!n_quadro) { ESP_LOGE(TAG, "texto nao coube no quadro"); return false; }
 
   // A RECUSA QUE DA PARA SABER AGORA sai agora, com o envio falhando na
-  // tela: a rede dos EUA fora, a internet (so canal - a direta precisa de
+  // tela: a rede publica fora, a internet (so canal - a direta precisa de
   // PKI), o Bluetooth sem conexao. O resto e decidido pelo enlace, na fila.
-  if (!pode_sair(eua, para)) {
-    ESP_LOGW(TAG, "envio recusado: %s", eua ? tab5_mesh_eua_estado() : tab5_mesh_enlace_descricao());
+  if (!pode_sair(internet, para)) {
+    ESP_LOGW(TAG, "envio recusado: %s", internet ? tab5_mesh_rede_internet_estado() : tab5_mesh_enlace_descricao());
     return false;
   }
 
@@ -3524,7 +3524,7 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   if (!s_fila_envio) { return false; }
   static envio_fila_t e;   // so a interface envia texto; 300 bytes fora da pilha dela
   e.n = (uint16_t)n_quadro;
-  e.eua = eua;
+  e.internet = internet;
   e.id = id;
   memcpy(e.d, quadro, e.n);
   if (xQueueSend(s_fila_envio, &e, 0) != pdTRUE) {
@@ -3619,7 +3619,7 @@ static bool enviar_posicao(void)
   return ok;
 }
 
-// Quem somos, para os clientes MQTT (Brasil e EUA): eles publicam e
+// Quem somos, para os clientes MQTT (no e internet): eles publicam e
 // respondem o want_config em nome deste numero e destes nomes. Chamado antes
 // de subir qualquer um dos dois.
 static void informar_no_ao_mqtt(void)
@@ -3786,28 +3786,28 @@ static void vTaskMesh(void*)
       proxima_posicao = t + (enviar_posicao() ? ajustes_mesh_posicao_min() * 60000u : 30000u);
     }
 
-    // A REDE AMERICANA, em paralelo a tudo o resto (ver tab5_mesh_mqtt.hpp):
+    // A REDE PUBLICA PELA INTERNET, em paralelo a tudo o resto (ver tab5_mesh_mqtt.hpp):
     // sobe com o Wi-Fi e o ajuste ligado, desce sem um ou outro. Ate 8
-    // pacotes por volta, lidos como da rede EUA (s_rede_rx) - nao contam como
+    // pacotes por volta, lidos como da rede INTERNET (s_rede_rx) - nao contam como
     // quadro do no (s_ultimo_quadro_ms e a vida do RADIO).
     {
-      const bool quer_eua = ajustes_mesh_eua() && tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
-      if (quer_eua && !mesh_mqtt_eua_ativo()) {
+      const bool quer_internet = ajustes_mesh_rede_internet() && tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
+      if (quer_internet && !mesh_mqtt_internet_ativo()) {
         informar_no_ao_mqtt();
-        mesh_mqtt_eua_iniciar();
+        mesh_mqtt_internet_iniciar();
         travar();
-        if (!esta_apagada(true, MESH_CANAL_EUA)) { achar_ou_criar_conversa(true, MESH_CANAL_EUA, 0); }
+        if (!esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
         destravar();
-      } else if (!quer_eua && mesh_mqtt_eua_ativo()) {
-        mesh_mqtt_eua_parar();
+      } else if (!quer_internet && mesh_mqtt_internet_ativo()) {
+        mesh_mqtt_internet_parar();
       }
       for (int k = 0; k < 32; ++k) {
-        const size_t n = mesh_mqtt_eua_receber(quadro, sizeof(quadro));
+        const size_t n = mesh_mqtt_internet_receber(quadro, sizeof(quadro));
         if (n == 0) { break; }
         travar();
-        s_rede_rx = MESH_REDE_EUA;
+        s_rede_rx = MESH_REDE_INTERNET;
         ler_from_radio(quadro, n);
-        s_rede_rx = MESH_REDE_BR;
+        s_rede_rx = MESH_REDE_NO;
         destravar();
       }
     }
@@ -3920,7 +3920,7 @@ static void vTaskMesh(void*)
     // ACORDA NO PRIMEIRO BYTE, LE O RESTO NA HORA. uart_read_bytes so volta
     // com o tamanho pedido OU no prazo: pedindo 256, um quadro de 60 bytes
     // ficava esperando os 200 ms inteiros - cada mensagem chegava atrasada, e o
-    // laco inteiro (fila de envio, internet, EUA) andava nesse passo. Esperar
+    // laco inteiro (fila de envio e os dois clientes de internet) andava nesse passo. Esperar
     // UM byte dorme igual quando a serial esta quieta e acorda quando ela fala.
     static uint8_t entrada[512];
     int lidos = uart_read_bytes(MESH_UART, entrada, 1, pdMS_TO_TICKS(200));
@@ -4015,7 +4015,7 @@ bool tab5_mesh_parar(void)
   descarregar_nomes();
 
   mesh_mqtt_parar();
-  mesh_mqtt_eua_parar();   // a fila dele e lida so por esta tarefa, que acabou de sair
+  mesh_mqtt_internet_parar();   // a fila dele e lida so por esta tarefa, que acabou de sair
   if (s_via == AJUSTES_MESH_BLUETOOTH) {
     mesh_ble_parar();
   } else if (s_via == AJUSTES_MESH_SERIAL) {
@@ -4096,14 +4096,14 @@ void tab5_mesh_iniciar(void)
   iniciar_via(via);
 }
 
-const char* tab5_mesh_eua_estado(void)
+const char* tab5_mesh_rede_internet_estado(void)
 {
   static char t[72];
-  if (!ajustes_mesh_eua())                          { return "desligada"; }
+  if (!ajustes_mesh_rede_internet())                          { return "desligada"; }
   if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO)    { return "esperando o Wi-Fi"; }
   if (!s_servico_ativo)                             { return "serviço Mesh parado"; }
-  if (!mesh_mqtt_eua_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
-  snprintf(t, sizeof(t), "conectada · %lu pacotes", (unsigned long)mesh_mqtt_eua_recebidos());
+  if (!mesh_mqtt_internet_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
+  snprintf(t, sizeof(t), "conectada · %lu pacotes", (unsigned long)mesh_mqtt_internet_recebidos());
   return t;
 }
 

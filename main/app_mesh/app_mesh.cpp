@@ -30,7 +30,7 @@
 #include "trabalho.hpp"
 #include "app.h"
 #include "tab5_mesh.hpp"
-#include "tab5_mesh_mqtt.hpp"   // mesh_mqtt_eua_conectado
+#include "tab5_mesh_mqtt.hpp"   // mesh_mqtt_internet_conectado
 #include "tab5_mesh_admin.hpp"
 #include "tab5_mesh_diario.hpp"
 #include "tab5_mesh_wifi_no.hpp"
@@ -526,8 +526,8 @@ static void desenhar_trilho(lgfx::LovyanGFX& d, const area_t& a)
 // nomes, selecao e nao-lidas mudam); fora disso, so a rolagem.
 static const int CONV_PASSO = ITEM_A + 8;
 
-// O TRACO DOS EUA: antes da primeira conversa da rede americana (que a ordem
-// do servico poe por ultimo), uma linha com "EUA". Faz parte do proprio item -
+// O TRACO DA INTERNET: antes da primeira conversa da rede publica (que a ordem
+// do servico poe por ultimo), uma linha com "INTERNET". Faz parte do proprio item -
 // a lista so conhece alturas de item - e o toque desconta a altura dele.
 static const int CONV_DIV_A = 34;
 static int s_conv_div = -1;   // indice do item que leva o traco; -1 = nenhum
@@ -539,7 +539,7 @@ static int achar_conv_div(void)
   const int n = tab5_mesh_num_conversas();
   for (int i = 0; i < n; ++i) {
     mesh_conversa_t c;
-    if (tab5_mesh_conversa(i, &c) && c.canal && mesh_canal_eua(c.idx)) { return i; }
+    if (tab5_mesh_conversa(i, &c) && c.canal && mesh_canal_internet(c.idx)) { return i; }
   }
   return -1;
 }
@@ -565,8 +565,8 @@ static void conv_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, 
     tab5_texto(d, 1.9f);
     d.setTextDatum(middle_left);
     d.setTextColor(TFT_SKYBLUE, FUNDO);
-    d.drawString("EUA", x + 12, ly);
-    const int tx = x + 12 + (int)d.textWidth("EUA") + 10;
+    d.drawString("INTERNET", x + 12, ly);
+    const int tx = x + 12 + (int)d.textWidth("INTERNET") + 10;
     d.drawFastHLine(tx, ly, largura - (tx - x) - 10, TFT_SKYBLUE);
     d.setTextDatum(top_left);
     y += CONV_DIV_A;
@@ -832,11 +832,11 @@ static int    s_n_chips = 0;
 static int    s_chips_altura = 0;          // altura da faixa dos canais, a partir do topo
 static char   s_chips_assin[(MESH_MAX_CANAIS + 1) * (MESH_NOME_CONVERSA + 4) + 48];
 
-// QUAL REDE A TABELA MOSTRA: Brasil ou EUA (botoes no topo da pagina). Na
-// vista EUA, o botao de ligar/desligar a rede americana e o canal de la.
-static uint8_t s_rede_vista = MESH_REDE_BR;
+// QUAL REDE A TABELA MOSTRA: no ou internet (botoes no topo da pagina). Na
+// vista INTERNET, o botao de ligar/desligar a rede publica e o canal de la.
+static uint8_t s_rede_vista = MESH_REDE_NO;
 static chip_t  s_chip_rede[2];
-static chip_t  s_chip_eua_liga;
+static chip_t  s_chip_internet_liga;
 static const int CHIP_A = 36;
 
 // NO ESCOLHIDO NA TABELA: a pagina mostra o cartao dele em vez da tabela.
@@ -1077,16 +1077,16 @@ static void nos_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int, void*)
 
 // Assinatura dos canais oferecidos: muda quando um canal liga, desliga, troca
 // de nome ou entra/sai da coluna - e ai a faixa e repintada inteira.
-// O estado da rede EUA, so pelo que muda o desenho (nao pelo contador de
+// O estado da rede de internet, so pelo que muda o desenho (nao pelo contador de
 // pacotes, que correria a cada segundo).
-static int eua_fase(void)
+static int internet_fase(void)
 {
-  return !ajustes_mesh_eua() ? 0 : mesh_mqtt_eua_conectado() ? 2 : 1;
+  return !ajustes_mesh_rede_internet() ? 0 : mesh_mqtt_internet_conectado() ? 2 : 1;
 }
 
 static void canais_assinatura(char* out, size_t tam)
 {
-  snprintf(out, tam, "r%u%d|", (unsigned)s_rede_vista, eua_fase());
+  snprintf(out, tam, "r%u%d|", (unsigned)s_rede_vista, internet_fase());
   const int n = tab5_mesh_num_canais();
   for (int i = 0; i < n; ++i) {
     uint8_t idx; char nome[MESH_NOME_CONVERSA]; bool vis = false;
@@ -1122,10 +1122,10 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
   int x = ini_x, y = a.y + 8;
   d.setTextDatum(middle_left);
 
-  // REDE: Brasil | EUA, e na vista EUA o liga/desliga e o estado dela.
+  // REDE: NODE | INTERNET, e na vista INTERNET o liga/desliga e o estado dela.
   d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   d.drawString("rede", x0 + NOS_MARGEM, y + CHIP_A / 2);
-  static const char* const ROT_REDE[2] = { "BRASIL", "EUA" };
+  static const char* const ROT_REDE[2] = { "NODE", "INTERNET" };
   for (int r = 0; r < 2; ++r) {
     const bool sel = (s_rede_vista == r);
     const int l = chip(d, x, y, ROT_REDE[r], sel ? TFT_SKYBLUE : d.color565(50, 55, 65),
@@ -1133,14 +1133,14 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
     s_chip_rede[r] = chip_t{ x - a.x, y - a.y, l, CHIP_A, (uint8_t)r };
     x += l + 10;
   }
-  s_chip_eua_liga = chip_t{ 0, 0, 0, 0, 0 };
-  if (s_rede_vista == MESH_REDE_EUA) {
+  s_chip_internet_liga = chip_t{ 0, 0, 0, 0, 0 };
+  if (s_rede_vista == MESH_REDE_INTERNET) {
     x += 14;
-    const bool lig = ajustes_mesh_eua();
+    const bool lig = ajustes_mesh_rede_internet();
     const int l = chip(d, x, y, lig ? "DESLIGAR" : "LIGAR", lig ? TFT_MAROON : TFT_DARKGREEN, TFT_WHITE);
-    s_chip_eua_liga = chip_t{ x - a.x, y - a.y, l, CHIP_A, 0 };
+    s_chip_internet_liga = chip_t{ x - a.x, y - a.y, l, CHIP_A, 0 };
     x += l + 14;
-    const int fase = eua_fase();
+    const int fase = internet_fase();
     char est[40];
     sanitizar_ascii(fase == 0 ? "desligada" : fase == 1 ? "conectando..." : "conectada", est, sizeof(est));
     d.setTextColor(fase == 2 ? TFT_GREENYELLOW : TFT_LIGHTGREY, TFT_BLACK);
@@ -1155,11 +1155,11 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
   for (int i = 0; i < n && s_n_chips < MESH_MAX_CANAIS + 1; ++i) {
     uint8_t idx; char nome[MESH_NOME_CONVERSA]; bool vis = false;
     if (!tab5_mesh_canal(i, &idx, nome, sizeof(nome), &vis)) { continue; }
-    if (mesh_canal_eua(idx) != (s_rede_vista == MESH_REDE_EUA)) { continue; }   // so os da rede vista
+    if (mesh_canal_internet(idx) != (s_rede_vista == MESH_REDE_INTERNET)) { continue; }   // so os da rede vista
     char limpo[MESH_NOME_CONVERSA];
     sanitizar_ascii(nome, limpo, sizeof(limpo));   // Font0: so ASCII (ver sanitizar_ascii)
     char rot[MESH_NOME_CONVERSA + 12];
-    if (mesh_canal_eua(idx)) { snprintf(rot, sizeof(rot), "%s%s", vis ? "" : "+ ", limpo); }
+    if (mesh_canal_internet(idx)) { snprintf(rot, sizeof(rot), "%s%s", vis ? "" : "+ ", limpo); }
     else { snprintf(rot, sizeof(rot), "%sch%u %s", vis ? "" : "+ ", (unsigned)idx, limpo); }
     const int l = (int)strlen(rot) * NOS_CH + 28;
     if (x + l > fim_x && x > ini_x) { x = ini_x; y += CHIP_A + 8; }
@@ -1175,7 +1175,7 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
 }
 
 static bool no_por_num(uint32_t num, mesh_no_t* out);
-static bool no_eua(uint32_t num) { mesh_no_t no; return no_por_num(num, &no) && no.rede == MESH_REDE_EUA; }
+static bool no_internet(uint32_t num) { mesh_no_t no; return no_por_num(num, &no) && no.rede == MESH_REDE_INTERNET; }
 
 static bool no_por_num(uint32_t num, mesh_no_t* out)
 {
@@ -1352,10 +1352,10 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
   const int by = a.y + a.altura - DET_BTN_Y_DA_BASE;
   const int bl = det_btn_l(a);
   tab5_botao(d, x0 + 24, by, bl, DET_BTN_A, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
-  // No dos EUA nao tem CONVERSAR: a direta sairia pelo nosso radio (ou pela
+  // No da INTERNET nao tem CONVERSAR: a direta sairia pelo nosso radio (ou pela
   // internet, que nao leva direta) e nunca chegaria la. Fala-se com ele no
-  // LongFast EUA.
-  if (!meu && !(achou && no.rede == MESH_REDE_EUA)) {
+  // LongFast Internet.
+  if (!meu && !(achou && no.rede == MESH_REDE_INTERNET)) {
     tab5_botao(d, x0 + 24 + bl + 24, by, bl, DET_BTN_A, "CONVERSAR", TFT_GREENYELLOW, TFT_BLACK);
   }
 }
@@ -1464,10 +1464,10 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
     campos[0].rot = "nós online (do rádio)";
   } else {
     int on = 0;
-    const int n = tab5_mesh_num_nos_rede(MESH_REDE_BR);   // a saude e da malha daqui
+    const int n = tab5_mesh_num_nos_rede(MESH_REDE_NO);   // a saude e da malha daqui
     for (int i = 0; i < n; ++i) {
       mesh_no_t no;
-      if (tab5_mesh_no_rede(MESH_REDE_BR, i, &no) && no.idade_s >= 0 && no.idade_s <= 7200) { ++on; }
+      if (tab5_mesh_no_rede(MESH_REDE_NO, i, &no) && no.idade_s >= 0 && no.idade_s <= 7200) { ++on; }
     }
     snprintf(campos[0].val, sizeof(campos[0].val), "%d / %d", on, n);
     campos[0].rot = "nós online (contados aqui, 2 h)";
@@ -1510,10 +1510,10 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
     const uint32_t meu_no = tab5_mesh_meu_numero();
     int vizinhos = 0, mais_recente = -1;
     int bat = -1;
-    const int nn = tab5_mesh_num_nos_rede(MESH_REDE_BR);
+    const int nn = tab5_mesh_num_nos_rede(MESH_REDE_NO);
     for (int i = 0; i < nn; ++i) {
       mesh_no_t no;
-      if (!tab5_mesh_no_rede(MESH_REDE_BR, i, &no)) { continue; }
+      if (!tab5_mesh_no_rede(MESH_REDE_NO, i, &no)) { continue; }
       if (meu_no && no.num == meu_no) { bat = no.bateria; continue; }
       if (no.idade_s < 0) { continue; }
       if (mais_recente < 0 || no.idade_s < mais_recente) { mais_recente = no.idade_s; }
@@ -1865,10 +1865,10 @@ static void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
   // faixa (em pe); o teclado, a largura inteira da area nos dois casos.
   const area_t r = { x0, a.y + topo, larg, a.altura - topo };
   conversa_area_teclado(&s_c, a);
-  if (c.canal && mesh_canal_eua(c.idx)) {
+  if (c.canal && mesh_canal_internet(c.idx)) {
     static char motivo[96];
-    snprintf(motivo, sizeof(motivo), "rede EUA %s - só consulta", tab5_mesh_eua_estado());
-    conversa_desenhar(&s_c, d, r, TUDO, tab5_mesh_servico_ativo() && mesh_mqtt_eua_conectado(), motivo);
+    snprintf(motivo, sizeof(motivo), "rede internet %s - só consulta", tab5_mesh_rede_internet_estado());
+    conversa_desenhar(&s_c, d, r, TUDO, tab5_mesh_servico_ativo() && mesh_mqtt_internet_conectado(), motivo);
   } else {
     conversa_desenhar(&s_c, d, r, TUDO, tab5_mesh_servico_ativo(),
                       "sem nó Meshtastic - só consulta");
@@ -3529,7 +3529,7 @@ static void ao_tocar(int x, int y)
           pintura_pedir(&s_p);
           sistema_pedir_redesenho_completo();
         } else if (x >= bx + bl + 24 && x < bx + 2 * bl + 24
-                && s_no_sel != tab5_mesh_meu_numero() && !no_eua(s_no_sel)) {
+                && s_no_sel != tab5_mesh_meu_numero() && !no_internet(s_no_sel)) {
           // -1 quando o numero nao serve (zero, ou o proprio no).
           const int c = tab5_mesh_conversa_com(s_no_sel);
           s_no_sel = 0;
@@ -3539,7 +3539,7 @@ static void ao_tocar(int x, int y)
       return;
     }
 
-    // A REDE: troca a tabela. E o liga/desliga dos EUA.
+    // A REDE: troca a tabela. E o liga/desliga da internet.
     for (int r = 0; r < 2; ++r) {
       const chip_t& k = s_chip_rede[r];
       if (x < k.x || x >= k.x + k.l || y < k.y || y >= k.y + k.a) { continue; }
@@ -3552,9 +3552,9 @@ static void ao_tocar(int x, int y)
       return;
     }
     {
-      const chip_t& k = s_chip_eua_liga;
+      const chip_t& k = s_chip_internet_liga;
       if (k.l && x >= k.x && x < k.x + k.l && y >= k.y && y < k.y + k.a) {
-        ajustes_definir_mesh_eua(!ajustes_mesh_eua());   // o laco do servico sobe/derruba o cliente
+        ajustes_definir_mesh_rede_internet(!ajustes_mesh_rede_internet());   // o laco do servico sobe/derruba o cliente
         pintura_pedir(&s_p);
         sistema_pedir_redesenho_completo();
         return;
@@ -3592,7 +3592,7 @@ static void ao_tocar(int x, int y)
     int dy = 0;
     const int i = lista_item_tocado(&s_l_conv, x, y, &dy);
     if (i < 0) { return; }
-    if (i == s_conv_div) { dy -= CONV_DIV_A; }   // o traco dos EUA em cima do item
+    if (i == s_conv_div) { dy -= CONV_DIV_A; }   // o traco da internet em cima do item
     dy -= 8;                          // o item comeca pelo respiro (conv_desenhar)
     if (dy < 0 || dy >= ITEM_A) { return; }   // no respiro entre itens: nada
 

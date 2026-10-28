@@ -3326,7 +3326,7 @@ static const comando_t COMANDOS[] = {
     "responde, o problema esta depois do roteador.",
     c_ping,
     "ping\tos dois de uma vez\n"
-    "ping platform.meshbrasil.com\to servidor do MQTT do Mesh" },
+    "ping mqtt.meshtastic.org\to servidor do MQTT do Mesh" },
   { "radio", "", G_REDE,
     "teste dos extras do C6: CSI, FTM, 802.15.4",
     "radio csi [s]\tliga o CSI por s segundos (10), so do roteador, pingando-o a 20 Hz como\n"
