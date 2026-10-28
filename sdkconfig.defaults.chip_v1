@@ -1,20 +1,22 @@
-# P4 REVISAO v1.x - o Tab5 como ele saiu de fabrica ate aqui (M5_CHIP=v1,
-# o padrao). Somado ao sdkconfig.defaults pelo CMakeLists.txt da raiz.
+# P4 REVISION v1.x - the Tab5 as it has shipped from the factory so far
+# (M5_CHIP=v1, the default). Added on top of sdkconfig.defaults by the root
+# CMakeLists.txt.
 #
-# O P4 do Tab5 e uma amostra de engenharia, revisao ANTERIOR a 3.0. O proprio
-# Kconfig do IDF avisa: "Revisions higher than 3.0 (included) and revisions less
+# The Tab5's P4 is an engineering sample, a revision BEFORE 3.0. The IDF's
+# own Kconfig warns: "Revisions higher than 3.0 (included) and revisions less
 # than 3.0 have huge hardware difference."
 #
-# Sem estas chaves o IDF assume rev >= 3.01 e CPU a 400MHz (o default dele), e o
-# SEGUNDO ESTAGIO DO BOOTLOADER NAO EXECUTA: a ROM carrega os segmentos, salta
-# para o entry, e a primeira instrucao ja e ilegal (MTVAL=0x0), seguido de reset
-# por watchdog em loop infinito. Nao aparece log nenhum do app - ele nunca roda.
+# Without these keys the IDF assumes rev >= 3.01 and a 400MHz CPU (its
+# default), and the SECOND-STAGE BOOTLOADER DOES NOT RUN: the ROM loads the
+# segments, jumps to the entry point, and the very first instruction is
+# already illegal (MTVAL=0x0), followed by a watchdog reset in an infinite
+# loop. No app log shows up at all - it never runs.
 #
-# O framework Arduino acerta isso sozinho porque o board json declara
-# "chip_variant": "esp32p4_es" e ele usa o sdkconfig pre-compilado
-# framework-arduinoespressif32-libs/esp32p4_es (REV_MIN_FULL=1, CPU 360MHz).
-# Com framework = espidf esse chip_variant e IGNORADO - aqui somos nos que
-# temos que declarar.
+# The Arduino framework gets this right on its own because its board JSON
+# declares "chip_variant": "esp32p4_es" and it uses the precompiled sdkconfig
+# from framework-arduinoespressif32-libs/esp32p4_es (REV_MIN_FULL=1, CPU
+# 360MHz). With framework = espidf that chip_variant is IGNORED - here we
+# have to declare it ourselves.
 CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
 CONFIG_ESP32P4_REV_MIN_1=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y

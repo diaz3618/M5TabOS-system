@@ -465,7 +465,7 @@ static void marcar_send_state(uint32_t id, int erro, uint32_t of, bool so_mqtt =
 
     const bool difusao = (e->para == 0xFFFFFFFFu);
     if (so_mqtt && erro == 0 && !difusao && of != e->para) {
-      ESP_LOGI(TAG, "mensagem %08lX: chegou ao servidor MQTT - esperando o destino", (unsigned long)id);
+      ESP_LOGI(TAG, "message %08lX: reached the MQTT server - waiting for the destination", (unsigned long)id);
       return;
     }
     uint8_t novo;
@@ -493,7 +493,7 @@ static void marcar_send_state(uint32_t id, int erro, uint32_t of, bool so_mqtt =
     system_notify(AVISO_MESH_ENVIO);
     gravar_desfecho(id, novo, (uint8_t)erro);
     ESP_LOGI(TAG, "mensagem %08lX: %s%s", (unsigned long)id,
-             novo == MESH_ENTREGUE ? "entregue ao destino" : novo == MESH_OUVIDO ? "ouvida por outro no (sem confirmacao do destino)" : "FALHOU - ",
+             novo == MESH_ENTREGUE ? "delivered to the destination" : novo == MESH_OUVIDO ? "heard by another node (destination not confirmed)" : "FAILED - ",
              novo == MESH_FALHOU ? mesh_erro_name((uint8_t)erro) : "");
     return;
   }
@@ -518,21 +518,21 @@ const char* mesh_erro_name(uint8_t erro)
   // cresce a cada versao of firmware e o resto cai no "?".
   switch (erro) {
     case 0:   return "ok";
-    case 1:   return "sem rota";
+    case 1:   return "no route";
     case 2:   return "recusado";
-    case 3:   return "sem resposta";
-    case 4:   return "sem interface";
+    case 3:   return "no response";
+    case 4:   return "no interface";
     case 5:   return "tentou demais";
-    case 6:   return "canal errado";
+    case 6:   return "wrong channel";
     case 7:   return "grande demais";
-    case 8:   return "ninguém respondeu";
-    case 9:   return "limite de transmissão";
-    case 32:  return "pedido inválido";
-    case 33:  return "sem autorização";
+    case 8:   return "nobody answered";
+    case 9:   return "transmission limit reached";
+    case 32:  return "invalid request";
+    case 33:  return "not authorized";
     case 34:  return "falha de chave";
     case 35:  return "chave desconhecida";
-    case 38:  return "rápido demais";
-    case MESH_ERRO_FILA: return "fila do rádio cheia";
+    case 38:  return "too fast";
+    case MESH_ERRO_FILA: return "radio queue full";
     default:  return "?";
   }
 }
@@ -900,7 +900,7 @@ static bool send_admin_favorito(uint32_t num, bool quer)
   pb_escritor_t w = pb_escritor(adm, sizeof(adm));
   pb_w_num(&w, quer ? 39 : 40, num);
   const bool ok = tab5_mesh_interno_admin(adm, pb_tamanho(&w));
-  ESP_LOGI(TAG, "favorito %08lX -> %s no no: %s", (unsigned long)num, quer ? "marcar" : "tirar", ok ? "enviado" : "falhou");
+  ESP_LOGI(TAG, "favorite %08lX -> %s node: %s", (unsigned long)num, quer ? "mark" : "remove", ok ? "sent" : "failed");
   return ok;
 }
 
@@ -1342,13 +1342,13 @@ static void carregar_nomes(void)
       }
       if (k < cap && tab5_sd_replace(MESH_PASTA, MESH_ARQ_NOS, txt, k)) {
         for (int i = 0; i < s_n_conhecidos; ++i) { s_conhecidos[i].dirty = false; }
-        ESP_LOGI(TAG, "cartao: nos.txt compactado de %d para %d linha(s)", lines, s_n_conhecidos);
+        ESP_LOGI(TAG, "card: nos.txt compacted from %d to %d line(s)", lines, s_n_conhecidos);
       }
       heap_caps_free(txt);
     }
   }
   tab5_sd_unmount();
-  ESP_LOGI(TAG, "cartao: %d no(s) conhecido(s)", s_n_conhecidos);
+  ESP_LOGI(TAG, "card: %d known node(s)", s_n_conhecidos);
 }
 
 // ---------------------------------------------------------------------------
@@ -1427,7 +1427,7 @@ static void carregar_apagados(void)
   }
   fclose(f);
   tab5_sd_unmount();
-  ESP_LOGI(TAG, "cartao: %d conversa(s) apagada(s) - ficam escondidas", s_n_apagados);
+  ESP_LOGI(TAG, "card: %d conversation(s) deleted - hidden", s_n_apagados);
 }
 
 // SEM TRAVA: chamada of dentro dela.
@@ -1560,7 +1560,7 @@ static void gravar_msg(int ci, const mesh_msg_t* m)
            m->snr, (long)m->rssi, (int)m->via_mqtt, (unsigned)m->saltos,
            (unsigned long)m->id, m->text);
   if (!tab5_sd_enqueue_append(MESH_PASTA, arquivo, line, nullptr, true)) {
-    ESP_LOGW(TAG, "gravador cheio - mensagem NAO foi salva no cartao");
+  ESP_LOGW(TAG, "writer full - message was NOT saved to the card");
   }
 }
 
@@ -1684,7 +1684,7 @@ int tab5_mesh_carregar_of_cartao(void)
   closedir(dir);
   tab5_sd_unmount();
 
-  ESP_LOGI(TAG, "cartao: %d conversa(s) no arquivo", achadas);
+  ESP_LOGI(TAG, "card: %d conversation(s) in the file", achadas);
   return achadas;
 }
 
@@ -2046,7 +2046,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
     saida->sub[0] = 0;
     if (saida->channel) {
       if (mesh_canal_internet(saida->idx)) { snprintf(saida->sub, sizeof(saida->sub), "rede internet"); }
-      else { snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? "canal primário" : "canal %u", (unsigned)saida->idx); }
+      else { snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? "primary channel" : "channel %u", (unsigned)saida->idx); }
     } else {
       const char* longo = nullptr;
       for (int k = 0; k < MESH_MAX_NOS; ++k) {
@@ -2409,7 +2409,7 @@ static void salvar_nodedb(void)
     memcpy(bloco + sizeof(cab), s_nodedb_copia, sizeof(mesh_no_t) * (size_t)n);
     if (tab5_sd_replace(MESH_PASTA, MESH_ARQ_NODEDB, bloco, size)) {
       s_nodedb_ver_salva = ver;
-      ESP_LOGI(TAG, "cartao: %d no(s) na NodeDB do Tab5", n);
+  ESP_LOGI(TAG, "card: %d node(s) in the Tab5 NodeDB", n);
     }
     heap_caps_free(bloco);
   }
@@ -2435,7 +2435,7 @@ static void carregar_nodedb(void)
     const int total = (cab.n < MESH_MAX_NOS) ? (int)cab.n : MESH_MAX_NOS;
     lidos = (int)fread(s_nodedb_copia, sizeof(mesh_no_t), (size_t)total, f);
   } else {
-    ESP_LOGW(TAG, "cartao: nodedb.bin de outra versao - ignorado");
+  ESP_LOGW(TAG, "card: nodedb.bin is from another version - ignored");
   }
   fclose(f);
   tab5_sd_unmount();
@@ -2457,7 +2457,7 @@ static void carregar_nodedb(void)
   s_nodedb_ver_salva = s_nos_ver;
   destravar();
   heap_caps_free(s_nodedb_copia);
-  ESP_LOGI(TAG, "cartao: %d no(s) lembrado(s) da NodeDB do Tab5", n);
+  ESP_LOGI(TAG, "card: %d node(s) remembered from the Tab5 NodeDB", n);
 }
 
 // Ver o aviso complete em tab5_mesh.hpp. So LEITURA - nunca cria entrada
@@ -3447,7 +3447,7 @@ bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
   // one uart_write_bytes numa porta que nao existe nao e "nao enviou" - e
   // comportamento indefinido. Quem protege o hardware e a camada of hardware.
   if (!s_servico_active) {
-    ESP_LOGW(TAG, "envio recusado: servico parado (sem no Meshtastic)");
+    ESP_LOGW(TAG, "send rejected: service stopped (no Meshtastic node)");
     return false;
   }
   // ENLACE MUDO NAO E MOTIVO PARA RECUSAR, e a recusa era pior que o problema.
@@ -3462,7 +3462,7 @@ bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
   // ACK nao vem, e o prazo of 60s marca a message como "sem resposta" in
   // propria screen. Isso e informacao; o silencio nao era.
   if (!tab5_mesh_no_ar()) {
-    ESP_LOGW(TAG, "enlace sem quadro recente - enviando assim mesmo");
+    ESP_LOGW(TAG, "no recent frame on the link - sending anyway");
   }
 
   // No maximum MESH_PAYLOAD_MAX (233) bytes - acima disso o no descarta o
@@ -3472,7 +3472,7 @@ bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
   if (n_txt > MESH_PAYLOAD_MAX) {
     n_txt = MESH_PAYLOAD_MAX;
     while (n_txt > 0 && ((unsigned char)text[n_txt] & 0xC0) == 0x80) { --n_txt; }
-    ESP_LOGW(TAG, "texto acima de %d bytes - enviado cortado", MESH_PAYLOAD_MAX);
+    ESP_LOGW(TAG, "text exceeds %d bytes - sending truncated", MESH_PAYLOAD_MAX);
   }
   char enviado[MESH_PAYLOAD_MAX + 1];
   memcpy(enviado, text, n_txt);
@@ -3507,7 +3507,7 @@ bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
   // O enquadramento (se houver) e of enlace.
   uint8_t frame[MESH_TEXTO + 96];
   const size_t n_frame = mesh_pb_to_radio(&env, frame, sizeof(frame));
-  if (!n_frame) { ESP_LOGE(TAG, "texto nao coube no quadro"); return false; }
+  if (!n_frame) { ESP_LOGE(TAG, "text did not fit in the frame"); return false; }
 
   // A RECUSA QUE DA PARA SABER AGORA exit now, com o send_state falhando in
   // screen: a rede publica fora, a internet (so canal - a direta precisa of
@@ -3528,7 +3528,7 @@ bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
   e.id = id;
   memcpy(e.d, frame, e.n);
   if (xQueueSend(s_fila_send_state, &e, 0) != pdTRUE) {
-    ESP_LOGW(TAG, "fila de envio cheia - mensagem nao saiu");
+    ESP_LOGW(TAG, "send queue full - message was not sent");
     return false;
   }
 
@@ -3757,7 +3757,7 @@ static void vTaskMesh(void*)
         s_envios_ver++;
         system_notify(AVISO_MESH_ENVIO);
         gravar_desfecho(s_envios[i].id, MESH_SEM_RESPOSTA, 0);
-        ESP_LOGW(TAG, "pacote %08lX: sem confirmacao em %d s",
+        ESP_LOGW(TAG, "packet %08lX: no confirmation after %d s",
                  (unsigned long)s_envios[i].id, MESH_ACK_MS / 1000);
       }
     }
@@ -3951,7 +3951,7 @@ static void vTaskMesh(void*)
           // acaso em dado binario. Encontrando uma, ela lia one "tamanho" que e
           // lixo e engolia o frame BOM que vinha depois. Uma message some, e
           // nada no log diz por que.
-          ESP_LOGW(TAG, "quadro de %u bytes nao cabe - pulando", (unsigned)falta);
+          ESP_LOGW(TAG, "frame of %u bytes does not fit - skipping", (unsigned)falta);
           estado = 5;
         }
         else { estado = 4; }
@@ -3990,12 +3990,12 @@ bool tab5_mesh_stop(void)
 {
   if (!s_servico_active) { return true; }   // ja parado; request of novo nao e erro
 
-  ESP_LOGI(TAG, "parando o servico...");
+  ESP_LOGI(TAG, "stopping the service...");
   // A tarefa espera no maximum 200 ms in UART (ou in fila of enlace): a saida
   // custa uma iteration. 1 s e folga larga. Sem confirmacao, o request FICA DE PE
   // e nada e desmontado - a next chamada termina (ver parada_pedir).
   if (!stop_request(&s_parada, 1000)) {
-    ESP_LOGE(TAG, "a tarefa nao confirmou em 1s - segue parando, nada foi desmontado");
+    ESP_LOGE(TAG, "the task did not confirm within 1 s - continuing to stop; nothing was dismantled");
     return false;
   }
 
@@ -4059,7 +4059,7 @@ bool tab5_mesh_stop(void)
 
   s_servico_active = false;
   system_notify(AVISO_MESH_NOS);   // a barra of escrita passa a "so consulta"
-  ESP_LOGI(TAG, "servico parado%s", s_via == SETTINGS_MESH_TRANSPORT_SERIAL ? ", Grove livre" : "");
+  ESP_LOGI(TAG, "service stopped%s", s_via == SETTINGS_MESH_TRANSPORT_SERIAL ? ", Grove released" : "");
   return true;
 }
 
@@ -4075,12 +4075,12 @@ uint8_t tab5_mesh_via(void) { return s_via; }
 
 const char* tab5_mesh_enlace_descricao(void)
 {
-  if (!s_servico_active) { return "parado"; }
+  if (!s_servico_active) { return "stopped"; }
   if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_descricao(); }
   if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     return (!mesh_ble_conectado() && mesh_mqtt_active()) ? mesh_mqtt_descricao() : mesh_ble_descricao();
   }
-  return tab5_mesh_no_ar() ? "cabo Grove, conversando" : "cabo Grove, esperando o no";
+  return tab5_mesh_no_ar() ? "Grove cable, communicating" : "Grove cable, waiting for the node";
 }
 
 static void start_via(uint8_t via);
@@ -4099,9 +4099,9 @@ void tab5_mesh_start(void)
 const char* tab5_mesh_rede_internet_estado(void)
 {
   static char t[72];
-  if (!settings_mesh_public_network())                          { return "desligada"; }
-  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)    { return "esperando o Wi-Fi"; }
-  if (!s_servico_active)                             { return "serviço Mesh parado"; }
+  if (!settings_mesh_public_network())                          { return "disabled"; }
+  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)    { return "waiting for Wi-Fi"; }
+  if (!s_servico_active)                             { return "Mesh service stopped"; }
   if (!mesh_mqtt_internet_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
   snprintf(t, sizeof(t), "conectada · %lu pacotes", (unsigned long)mesh_mqtt_internet_recebidos());
   return t;
@@ -4110,13 +4110,13 @@ const char* tab5_mesh_rede_internet_estado(void)
 const char* tab5_mesh_internet_estado(void)
 {
   if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_INTERNET) {
-    if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "Internet escolhida: esperando o Wi-Fi conectar"; }
+    if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "Internet selected: waiting for Wi-Fi to connect"; }
     if (!mesh_mqtt_active())                        { return "Internet escolhida: vai conectar em instantes"; }
     return mesh_mqtt_descricao();
   }
-  if (!settings_mesh_internet())                   { return "Desligada"; }
+  if (!settings_mesh_internet())                   { return "Disabled"; }
   if (tab5_grove_type() == GROVE_MESHTASTIC
-   || (s_servico_active && s_via == SETTINGS_MESH_TRANSPORT_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
+   || (s_servico_active && s_via == SETTINGS_MESH_TRANSPORT_SERIAL)) { return "Waiting: the node on Grove has priority"; }
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)  { return "Esperando o Wi-Fi conectar"; }
   if (!mesh_mqtt_active())                         { return "Ligada, vai conectar em instantes"; }
   return mesh_mqtt_descricao();
@@ -4126,10 +4126,10 @@ const char* tab5_mesh_proxy_estado(void)
 {
   // Curto: vai on lado of "enabled" numa line of pagina "No".
   static char d[48];
-  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "sem Wi-Fi no Tab5"; }
-  if (!mesh_mqtt_no_tem_proxy())                 { return "o nó ainda não confirmou"; }
+  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "no Wi-Fi on the Tab5"; }
+  if (!mesh_mqtt_no_tem_proxy())                 { return "the node has not confirmed yet"; }
   if (!mesh_mqtt_em_proxy())                     { return "vai conectar"; }
-  if (!mesh_mqtt_conectado())                    { return "conectando ao servidor"; }
+  if (!mesh_mqtt_conectado())                    { return "connecting to the server"; }
   uint32_t sobe, desce, perde;
   mesh_mqtt_proxy_contadores(&sobe, &desce, &perde);
   snprintf(d, sizeof(d), "conectado (%lu/%lu)", (unsigned long)sobe, (unsigned long)desce);
@@ -4152,9 +4152,9 @@ static void start_via(uint8_t via)
     // Uma parada em andamento nao pode ser atropelada por one start: a tarefa
     // antiga ainda esta alive e a UART ainda e dela.
     if (stop_em_progress(&s_parada)) {
-      ESP_LOGW(TAG, "ainda parando o servico anterior - nao vou subir por cima");
+      ESP_LOGW(TAG, "the previous service is still stopping - will not start over it");
     } else {
-      ESP_LOGI(TAG, "servico ja esta de pe - nada a fazer");
+      ESP_LOGI(TAG, "service is already running - nothing to do");
     }
     return;
   }
@@ -4226,7 +4226,7 @@ static void start_via(uint8_t via)
   } else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     // Sem Grove e sem UART: o enlace BLE procura o no, conecta e entrega o
     // que chegar. O Bluetooth ja foi enabled por quem chamou.
-    if (!mesh_ble_start()) { ESP_LOGE(TAG, "enlace Bluetooth nao subiu"); return; }
+    if (!mesh_ble_start()) { ESP_LOGE(TAG, "Bluetooth link did not start"); return; }
   } else {
   uart_config_t cfg = { };
   cfg.baud_rate = MESH_BAUD;
@@ -4237,7 +4237,7 @@ static void start_via(uint8_t via)
   cfg.source_clk = UART_SCLK_DEFAULT;
 
   if (!tab5_grove_acquire(GROVE_OWNER_MESH)) {
-    ESP_LOGE(TAG, "Grove ocupado - servico nao vai subir");
+    ESP_LOGE(TAG, "Grove is busy - service will not start");
     return;
   }
 
@@ -4247,7 +4247,7 @@ static void start_via(uint8_t via)
    || uart_set_pin(MESH_UART, MESH_TX, MESH_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK)
   {
     esp_log_level_set("uart", ESP_LOG_WARN);
-    ESP_LOGE(TAG, "nao consegui abrir a UART do Grove");
+    ESP_LOGE(TAG, "could not open the Grove UART");
     return;
   }
   esp_log_level_set("uart", ESP_LOG_WARN);
@@ -4269,12 +4269,12 @@ static void start_via(uint8_t via)
     s_servico_active = false;
     if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { mesh_ble_stop(); }
     else if (s_via == SETTINGS_MESH_TRANSPORT_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_release(GROVE_OWNER_MESH); }
-    ESP_LOGE(TAG, "sem memoria para a tarefa do Mesh");
+    ESP_LOGE(TAG, "not enough memory for the Mesh task");
     return;
   }
   system_notify(AVISO_MESH_NOS);
   tab5_memory_marco("Mesh (servico)");
-  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { ESP_LOGI(TAG, "servico no ar (so internet, sem o no)"); }
-  else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { ESP_LOGI(TAG, "servico no ar (Bluetooth)"); }
-  else { ESP_LOGI(TAG, "servico no ar (Grove %d baud, RX=%d TX=%d)", MESH_BAUD, MESH_RX, MESH_TX); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { ESP_LOGI(TAG, "service running (Internet only, without the node)"); }
+  else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { ESP_LOGI(TAG, "service running (Bluetooth)"); }
+  else { ESP_LOGI(TAG, "service running (Grove %d baud, RX=%d TX=%d)", MESH_BAUD, MESH_RX, MESH_TX); }
 }

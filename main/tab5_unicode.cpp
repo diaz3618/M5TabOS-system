@@ -5,8 +5,9 @@
 // ---------------------------------------------------------------------------
 // UTF-8
 // ---------------------------------------------------------------------------
-// Devolve quantos bytes o caractere ocupa; 0 = sequencia cortada no end of
-// string (para ali); -1 = byte que nao comeca caractere (pula one).
+// Returns the number of bytes the character occupies; 0 = truncated sequence
+// at the end of the string (stop there); -1 = byte that does not start a
+// character (skip one).
 static int decodificar(const unsigned char* p, uint32_t* code)
 {
   int n;
@@ -35,24 +36,25 @@ static int codificar(uint32_t c, char* b)
 }
 
 // ---------------------------------------------------------------------------
-// TABELAS DE TROCA
+// REPLACEMENT TABLES
 // ---------------------------------------------------------------------------
-// U+00C0..U+00FF sem o acento - so para o que a FONTE nao tiver (Ì, Ù, Å, Ø,
-// ý...); o que ela tem passa reto antes of chegar aqui. '#' = caso especial.
+// U+00C0..U+00FF without the accent - only for characters the FONT does not
+// support (Ì, Ù, Å, Ø, ý...); supported characters pass through unchanged
+// before reaching this point. '#' = special case.
 static const char LATIN1_BASE[] = "AAAAAA#CEEEEIIIIDNOOOOOxOUUUUY##aaaaaa#ceeeeiiiidnooooo/ouuuuy#y";
 
-// U+0100..U+017F (Latin Extended-A: polones, tcheco, turco, romeno...).
+// U+0100..U+017F (Latin Extended-A: Polish, Czech, Turkish, Romanian...).
 static const char LATIN_A_BASE[] =
   "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiJjJjKkkLlLlLlLlLlNnNnNnnNnOoOoOo##RrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";
 
-// Cirilico U+0410..U+042F (minusculas U+0430..U+044F: o mesmo, em minuscula).
+// Cyrillic U+0410..U+042F (lowercase U+0430..U+044F: the same, in lowercase).
 static const char* const CIRILICO[32] = {
   "A", "B", "V", "G", "D", "E", "Zh", "Z", "I", "I", "K", "L", "M", "N", "O", "P",
   "R", "S", "T", "U", "F", "Kh", "Ts", "Ch", "Sh", "Shch", "", "Y", "", "E", "Yu", "Ya",
 };
 
-// Grego U+0391..U+03A9 (minusculas U+03B1..U+03C9; U+03A2 nao existe e o
-// U+03C2, sigma final, cai in mesma vaga).
+// Greek U+0391..U+03A9 (lowercase U+03B1..U+03C9; U+03A2 does not exist and
+// U+03C2, final sigma, falls in the same slot).
 static const char* const GREGO[25] = {
   "A", "V", "G", "D", "E", "Z", "I", "Th", "I", "K", "L", "M", "N", "X", "O", "P",
   "R", "S", "S", "T", "Y", "F", "Ch", "Ps", "O",

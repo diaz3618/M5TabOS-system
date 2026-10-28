@@ -228,7 +228,7 @@ static void log_in_carona(void)
   // maximum por minuto, so when houve recusa nova.
   const uint32_t recusas = s_ccm_recusas;
   if (recusas != ccm_contadas && now - ccm_summary_us >= 60000000LL) {
-    ESP_LOGI(TAG, "camera: %lu ajuste(s) de cor fora do limite do chip foram ignorados (esperado, nao e erro)",
+    ESP_LOGI(TAG, "camera: %lu color adjustment(s) outside the chip limit were ignored (expected, not an error)",
              (unsigned long)(recusas - ccm_contadas));
     ccm_contadas = recusas;
     ccm_summary_us = now;
@@ -249,7 +249,7 @@ void tab5_log_start(void)
   s_buf = xStreamBufferCreateWithCaps(LOG_BUF_TAM, 1, MALLOC_CAP_SPIRAM);
   s_escrita = xSemaphoreCreateMutex();              // ANTES of hook: ele so escreve com a trava
   if (!s_buf || !s_escrita) {
-    ESP_LOGE(TAG, "sem RAM para o buffer de log - captura em cartao desativada");
+    ESP_LOGE(TAG, "no RAM for the log buffer - card capture disabled");
     return;
   }
 
@@ -262,7 +262,7 @@ void tab5_log_start(void)
   // log_na_carona). O bloco of dreno of 12KB e 'static' in PSRAM, fora of stack.
   tab5_sd_piggyback(log_in_carona);
 
-  ESP_LOGI(TAG, "captura no ar: buffer %dKB, descarga a cada %lus, /sdcard/apps/Sistema/logs/log_AAAA-MM-DD.txt",
+  ESP_LOGI(TAG, "capture running: %dKB buffer, flush every %lus, /sdcard/apps/Sistema/logs/log_AAAA-MM-DD.txt",
            LOG_BUF_TAM / 1024, (unsigned long)(LOG_FLUSH_MS / 1000));
 
   // POR QUE O APARELHO REINICIOU. Um travamento perde as lines que ainda
@@ -271,19 +271,19 @@ void tab5_log_start(void)
   const esp_reset_reason_t r = esp_reset_reason();
   const char* reason = "outro";
   switch (r) {
-    case ESP_RST_POWERON:   reason = "ligado agora"; break;
-    case ESP_RST_SW:        reason = "reinicio pedido (esp_restart)"; break;
+    case ESP_RST_POWERON:   reason = "powered on"; break;
+    case ESP_RST_SW:        reason = "requested restart (esp_restart)"; break;
     case ESP_RST_PANIC:     reason = "TRAVOU (panic/excecao)"; break;
     case ESP_RST_INT_WDT:   reason = "TRAVOU (watchdog de interrupcao)"; break;
-    case ESP_RST_TASK_WDT:  reason = "TRAVOU (watchdog de tarefa)"; break;
+    case ESP_RST_TASK_WDT:  reason = "TASK WATCHDOG RESET"; break;
     case ESP_RST_WDT:       reason = "TRAVOU (outro watchdog)"; break;
     case ESP_RST_BROWNOUT:  reason = "queda de tensao"; break;
     case ESP_RST_DEEPSLEEP: reason = "acordou do sono profundo"; break;
     default: break;
   }
   if (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT) {
-    ESP_LOGW(TAG, "boot: o ultimo reinicio foi %s (codigo %d)", reason, (int)r);
+    ESP_LOGW(TAG, "boot: last reset was %s (code %d)", reason, (int)r);
   } else {
-    ESP_LOGI(TAG, "boot: o ultimo reinicio foi %s (codigo %d)", reason, (int)r);
+    ESP_LOGI(TAG, "boot: last reset was %s (code %d)", reason, (int)r);
   }
 }

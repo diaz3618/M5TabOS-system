@@ -1,55 +1,53 @@
-// Registro of energia - SERVICO DO SISTEMA, nao aplicativo.
+// Energy logging - a SYSTEM SERVICE, not an application.
 //
-// POR QUE NAO E UM APP: os aplicativos aqui sao criados on open e destruidos
-// on close. Se o registro morasse no app Energia, so haveria dado enquanto ele
-// estivesse in screen - e a pergunta que ele responde ("a battery acabou;
-// when?") requires registro CONTINUO, inclusive com a screen
-// apagada e com outro app open. Entao ele e one servico of sistema, que liga
-// no boot e nunca para - sem tarefa propria: roda of carona in tarefa
-// "cartao" (tab5_sd_carona), que ja acorda a cada segundo.
+// WHY THIS IS NOT AN APP: applications are created when opened and destroyed
+// when closed. If logging lived in the Energy app, data would exist only while
+// that app was on screen, but the question it answers ("when did the battery
+// run out?") requires CONTINUOUS logging, including with the screen off and
+// another app open. It is therefore a system service that starts at boot and
+// never stops. It has no task of its own; it rides on the "card" task
+// (tab5_sd_carona), which already wakes once per second.
 //
-// COMO GRAVA SEM GASTAR: cartao montado consome. Entao sample in RAM a cada
-// minuto e so DESCARREGA no cartao a cada 10 - montando, anexando e
-// desmontando. O cartao stays disabled mais of 99% of time, e mesmo assim
-// none sample se perde.
+// HOW IT SAVES POWER: a mounted card consumes power. We therefore keep one
+// sample per minute in RAM and FLUSH to the card only every 10 samples,
+// mounting, appending, and unmounting it. The card stays disabled for more
+// than 99% of the time, without losing samples.
 //
 // Arquivo: /sdcard/apps/Sistema/energia.csv
 //   ENE,<t_s>,<V>,<mA>,<mW>,<pct>,<MHz>,<sleep>,<estado>,<app>
 //
 // -------------------------------------------------------------------------
-// SEGUNDO ARQUIVO, NA MESMA JANELA: SAUDE DAS TAREFAS E DO HEAP
+// SECOND FILE, IN THE SAME WINDOW: TASK AND HEAP HEALTH
 // -------------------------------------------------------------------------
-// Pedido explicito: uma pasta que guarde, on longo of time, quanta stack
-// cada tarefa ainda tem of folga e como anda o heap - para revisar dias
-// depois e perceber ANTES one consumo que so cresce, em vez of descobrir
-// when ja virou one Guru Meditation. E o mesmo raciocinio of energia.csv
-// (uma curva vale mais que one numero isolado), aplicado a memoria.
+// The requirement is a record that shows, over time, how much stack headroom
+// each task has and how the heap is changing. This makes it possible to spot
+// a steadily growing allocation before it becomes a Guru Meditation. It is
+// the same reasoning as energy.csv: a curve is more useful than one isolated
+// number, applied to memory.
 //
-// Escrito in MESMA descarga que o energia.csv - mesma montagem of cartao,
-// mesmo intervalo, none tarefa nova. So o custo marginal of open mais one
-// arquivo enquanto o cartao ja esta of pe.
+// It is written in the SAME flush as energia.csv, using the same card mount,
+// interval, and existing task. The marginal cost is only opening one more
+// file while the card is already mounted.
 //
 // Arquivo: /sdcard/apps/Sistema/tarefas.csv
 //   TASKS,<t_s>,<n_tarefas>,<heap_int_livre>,<heap_int_minimo>,<psram_livre>,<psram_minimo>
 //   TASK,<t_s>,<name>,<pilha_livre_bytes>,<core>,<priority>   (uma por tarefa)
 //
-// pilha_livre_bytes e o HIGH WATER MARK - a menor folga que aquela stack ja
-// teve since que nasceu, nao a folga now. E o numero que importa: ele so
-// cai, nunca sobe, e por isso e o que avisa "esta tarefa chegou perto" antes
-// of estouro of verdade.
+// pilha_livre_bytes is the HIGH WATER MARK: the smallest amount of headroom
+// that stack has ever had, not its current headroom. It only decreases, so it
+// warns that a task is getting close before a real overflow occurs.
 
 #pragma once
 
 #include <stdint.h>
 
-// Liga o registro (carona in tarefa "cartao"). Chamar depois of M5.begin()
-// e of tab5_sd_init().
+// Start logging on the "card" task. Call after M5.begin() and tab5_sd_init().
 void registro_start(void);
 
-// Nome of app em first plano, para o sistema informar on registro.
-// Passar NULL when estiver in screen inicial.
+// Name of the foreground app, so the system can include it in the log.
+// Pass NULL when the home screen is active.
 void registro_app_current(const char* name);
 
-// Quantas amostras estao esperando in RAM, e quantas ja foram para o cartao.
-// Serve para o app Energia mostrar que o registro esta vivo.
+// Number of samples waiting in RAM, and number already written to the card.
+// Used by the Energy app to show that logging is alive.
 void registro_estado(int* in_ram, uint32_t* gravadas, uint32_t* falhas);

@@ -27,9 +27,9 @@ static int              s_n = 0;
 static uint32_t         s_versao = 0;
 static SemaphoreHandle_t s_trava = nullptr;
 
-// Mutex criado in PRIMEIRA chamada, e nao num notif_iniciar() - assim o
-// modulo nao impoe order of inicializacao a ninguem: one servico que suba
-// antes of sistema pode registrar-se sem que exista uma "fase 0" para manter
+// The mutex is created on the FIRST call, not in notif_iniciar(), so the
+// module imposes no initialization order: a service starting before the
+// system may register without requiring a maintained "phase 0".
 // em dia. Mecanismo e risco documentados em tab5_mutex.hpp; a razao of ser
 // seguro AQUI especificamente e a mesma of sempre: o first registro
 // acontece antes of existirem duas tarefas disputando - servicos registram
@@ -47,8 +47,8 @@ int notification_registrar(const char* name)
     if (s_fontes[i].usada && strcmp(s_fontes[i].name, name) == 0) { id = i; break; }
   }
   if (id >= 0) {
-    // A VAGA VOLTA COM O ESTADO DELA (ver o .h). Zerar aqui era o aviso of
-    // Mesh sumindo a cada vez que o servico subia of novo por outra via.
+    // THE SLOT RETURNS WITH ITS STATE (see the header). Clearing it here made
+    // the Mesh notice disappear whenever the service restarted through another path.
     destravar();
     return id;
   }
@@ -61,8 +61,8 @@ int notification_registrar(const char* name)
   }
   destravar();
 
-  if (id < 0) { ESP_LOGE(TAG, "sem vaga para '%s' (limite %d)", name, NOTIF_MAX_FONTES); }
-  else        { ESP_LOGI(TAG, "'%s' pode mandar notificacoes (vaga %d)", name, id); }
+  if (id < 0) { ESP_LOGE(TAG, "no slot for '%s' (limit %d)", name, NOTIF_MAX_FONTES); }
+  else        { ESP_LOGI(TAG, "'%s' can publish notifications (slot %d)", name, id); }
   return id;
 }
 
@@ -75,9 +75,9 @@ void notification_publicar(int id, int count, notification_level_t level, const 
   lock();
   fonte_t* f = &s_fontes[id];
   if (f->usada) {
-    // Versao so muda when algo REALMENTE changed. Sem esta comparacao, one
-    // servico que republica o mesmo estado a cada segundo faria a barra of
-    // status repintar a cada segundo - o piscar of iteration, por one caminho novo.
+    // The version changes only when something REALLY changes. Without this
+    // comparison, a service republishing the same state every second would
+    // repaint the status bar every second and make it flicker.
     changed = (f->count != count)
          || (f->level != level)
          || (strncmp(f->summary, summary ? summary : "", NOTIF_RESUMO) != 0);
@@ -94,11 +94,11 @@ void notification_publicar(int id, int count, notification_level_t level, const 
   // PRIMEIRO PRODUTOR ATIVO DA QUEUE DE EVENTOS - Etapa 2 of ARCHITECTURE.md
   // . "changed" e conferido FORA of secao travada of proposito:
   // sistema_acordar_interface() so poe one evento numa queue diferente e nunca
-  // bloqueia, mas nao ha reason para hold o mutex deste modulo emprestado
+  // blocks, but there is no reason to hold this module's mutex while borrowing
   // por outro (evitar qualquer order of trava entre os dois, mesmo que hoje
   // nenhum dos dois pudesse causar problema). Mesh e Trilha (os unicos dois
-  // servicos que chamam notif_publicar() hoje) ganham isto of graca, sem
-  // precisar saber que esta queue existe.
+  // Services that call notif_publicar() today get this for free without
+  // needing to know this queue exists.
   if (changed) { system_wake_interface(); }
 }
 
@@ -133,12 +133,12 @@ bool notification_houve_novidade_sonora(void)
   for (int i = 0; i < s_n; ++i) {
     fonte_t* f = &s_fontes[i];
     if (!f->usada) { continue; }
-    // Compara SEMPRE contra o ultimo valor visto por ESTA funcao - nao o
-    // total agregado (isso viveu em kernel/core.cpp, e nao
-    // dava para saber qual fonte tinha mudado). Atualiza o "ultimo visto"
-    // of toda fonte usada, silenciada ou nao: assim, se o user religar o
-    // sound of uma fonte que subiu enquanto estava muda, isso NAO conta como
-    // novidade retroativa - so o que raise DAQUI PARA FRENTE toca.
+    // ALWAYS compare against the last value seen by THIS function, not an
+    // aggregate total (that used to live in kernel/core.cpp, which could not
+    // identify the changed source). Update the "last seen" value for every
+    // source, silenced or not. If the user unmutes a source that increased
+    // while muted, that must NOT count as retroactive news; only future
+    // increases should sound.
     if (f->count > f->count_no_ultimo_beep && !f->silenciada) {
       touch = true;
     }
@@ -173,7 +173,7 @@ int notification_listar(notification_item_t* saida, int max)
   for (int k = 0; k < s_n; ++k) {
     const fonte_t* f = &s_fontes[k];
     if (!f->usada || f->count <= 0) { continue; }
-    // Insercao ordenada: oito fontes no maximum, nao vale one qsort.
+    // Ordered insertion: with only eight sources, qsort is not worthwhile.
     int j = n++;
     while (j > 0 && antes(f, &s_fontes[order[j - 1]])) { order[j] = order[j - 1]; --j; }
     order[j] = k;

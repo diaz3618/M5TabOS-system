@@ -1,75 +1,68 @@
-// LOG DO SISTEMA NO CARTAO, UM ARQUIVO POR DIA.
+// SYSTEM LOG ON THE CARD, ONE FILE PER DAY.
 //
 // -------------------------------------------------------------------------
-// POR QUE
+// WHY
 // -------------------------------------------------------------------------
-// Ate hoje o UNICO jeito of ver o log era o monitor serial enabled no
-// computador - e boa parte dos bugs deste sistema (GPS, Mesh, o Grove em
-// geral) so aparece longe of mesa, "perto of window" onde o sinal e melhor
-// mas o cabo USB nao chega. Sem log, cada incidente stays sem prova: o
-// sintoma descrito vira adivinhacao of causa lendo o code.
+// Until now, the ONLY way to see the log was the serial monitor connected to a
+// computer. Many bugs in this system (GPS, Mesh, and Grove in general) appear
+// away from the desk, near a window where the signal is better but the USB
+// cable cannot reach. Without a log, each incident is unproven and the cause
+// must be guessed from the symptom.
 //
 // -------------------------------------------------------------------------
-// POR DIA, NAO POR BOOT, com o reason junto
+// BY DAY, NOT BY BOOT, with the reason included
 // -------------------------------------------------------------------------
-// "por boot complica bastante, pq toda hora estamos bootando" - este sistema
-// reinicia o time todo durante desenvolvimento (cada flash.sh e one boot
-// novo). Um arquivo por boot viraria uma pasta ilegivel of arquivos of
-// segundos. Por DIA, usando a data of RTC (ver tab5_rtc.hpp - battery
-// propria, "quase nunca descarrega"), varios boots of mesmo dia caem no
-// MESMO arquivo, one atras of outro, e uma marca "=== boot ... ===" separa
-// as sessoes sem precisar of one arquivo novo para cada uma.
+// "Per boot is complicated because we boot constantly"—the system restarts
+// throughout development (each flash.sh creates a new boot). One file per boot
+// would create an unreadable directory of short files. By DAY, using the RTC
+// date (see tab5_rtc.hpp, with its own battery that almost never discharges),
+// several boots on one day share the SAME file, one after another, separated
+// by an "=== boot ... ===" marker.
 //
 // -------------------------------------------------------------------------
-// COMO CAPTURA: substitui o vprintf of ESP_LOG, nao duplica cada chamada
+// HOW CAPTURE WORKS: replaces ESP_LOG's vprintf, without duplicating calls
 // -------------------------------------------------------------------------
-// tab5_log_iniciar() troca a funcao que o ESP_LOG usa para imprimir
-// (esp_log_set_vprintf) por uma que faz DUAS coisas: chama a funcao
-// ORIGINAL first (o console serial continua identico a hoje, byte a
-// byte) e manda uma copia of MESMA line para one buffer em RAM. Assim
-// qualquer ESP_LOGI/W/E/D of QUALQUER tarefa of sistema (interface, GPS,
-// Mesh, camera...) e capturado automaticamente - none tarefa precisa
-// saber que este arquivo existe.
+// tab5_log_iniciar() replaces the function ESP_LOG uses for output
+// (esp_log_set_vprintf) with one that does TWO things: calls the ORIGINAL
+// first (the serial console remains byte-for-byte identical) and sends a copy
+// of the SAME line to a RAM buffer. Every ESP_LOGI/W/E/D from ANY system task
+// (interface, GPS, Mesh, camera, and so on) is captured automatically; no task
+// needs to know this file exists.
 //
 // -------------------------------------------------------------------------
-// POR QUE UM BUFFER EM RAM ANTES DO CARTAO
+// WHY A RAM BUFFER BEFORE THE CARD
 // -------------------------------------------------------------------------
-// A funcao que substitui o vprintf roda NA STACK DE QUEM CHAMOU O LOG - pode
-// ser a tarefa of interface, o GPS, a camera, qualquer uma. Gravar no cartao
-// ali mesmo (montar, open, write, close, desmontar - a mesma conta of
-// ~100ms que tab5_sd.hpp documenta) prenderia QUALQUER tarefa of sistema
-// pelo time of uma escrita of cartao, toda vez que ela log-asse algo. Foi
-// exatamente o tipo of bug que a sondagem of Grove teve que exit of tarefa
-// of interface para nao repetir (ver o aviso grande em kernel/core.cpp).
+// The vprintf replacement runs on THE CALLER'S STACK—it may be the interface,
+// GPS, camera, or any other task. Writing to the card there (mount, open,
+// write, close, unmount—the ~100 ms documented by tab5_sd.hpp) would hold up
+// ANY system task for every log call. This is exactly the kind of bug that
+// forced Grove probing out of the interface task (see kernel/core.cpp).
 //
-// Em vez disso, a troca of vprintf so FORMATA a line e poe numa queue em RAM
-// (xStreamBuffer, que aceita varias tarefas escrevendo on mesmo time sem
-// trava manual) - operacao of poucos microssegundos, nunca bloqueia. A
-// tarefa "cartao" (o gravador of sistema, of baixa priority) esvazia essa
-// queue of tempos em tempos, of carona (tab5_sd_carona), e SO ENTAO monta o
-// cartao e escreve. Se o cartao estiver
-// ausente, as lines ficam esperando no buffer ate ele voltar (ou sao
-// descartadas se o buffer encher first - preferimos perder log velho a
-// lock o sistema tentando guardar todo log para sempre).
+// Instead, the vprintf replacement only FORMATS the line and puts it in a RAM
+// queue (xStreamBuffer accepts writers from multiple tasks without a manual
+// lock). It takes a few microseconds and never blocks. The "card" task, the
+// low-priority system writer, drains the queue periodically through
+// tab5_sd_carona and ONLY THEN mounts and writes the card. If the card is
+// absent, lines wait in the buffer until it returns (or are dropped when the
+// buffer fills—we prefer losing old logs to locking the system forever).
 #pragma once
 
 #include <stddef.h>
 #include <stdint.h>
 
-// Instala a captura e pega carona in tarefa "cartao" para descarregar. Chamar UMA vez
-// no boot, depois of tab5_sd_init() (ela usa tab5_sd_mount/open) - ver
-// kernel/core.cpp.
+// Install capture and use the "card" task for flushing. Call ONCE at boot,
+// after tab5_sd_init() (it uses tab5_sd_mount/open); see kernel/core.cpp.
 void tab5_log_start(void);
 
-// Descarrega no cartao em ate 1 s, como one aviso faria, sem wait o lote of
-// 60 s. Para o end of algo cujo log se quer read logo (o pendrive: o console
-// iteration e quem abre a porta serial reinicia o Tab5 - o que estava so in RAM
-// se perderia). De qualquer tarefa.
+// Flush to the card within 1 second, as an urgent notice would, without
+// waiting for the 60-second batch. Use at the end of an operation whose log
+// must be read immediately (for example, a pendrive operation whose console
+// iteration opens the serial port and reboots Tab5). Safe from any task.
 void tab5_log_descarregar_logo(void);
 
-// Estado para o comando 'servicos' e para quem quiser mostrar que o log esta
-// vivo: quantos bytes esperam in RAM, quantas lines ja foram gravadas of
-// verdade, quantas se perderam (buffer cheio) e o name of arquivo of hoje
-// ("" se a captura ainda nao tentou write none vez).
+// State for the 'servicos' command and for displays that want to show the log
+// is alive: bytes waiting in RAM, lines actually written, lines lost because
+// the buffer filled, and today's filename ("" if capture has not tried to
+// write even once).
 void tab5_log_estado(size_t* bytes_pendentes, uint32_t* lines_gravadas,
                       uint32_t* lines_perdidas, char* arquivo, size_t arquivo_size);

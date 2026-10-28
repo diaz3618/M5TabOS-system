@@ -1,22 +1,23 @@
 cmake_minimum_required(VERSION 3.16.0)
 
-# A VERSAO DO SISTEMA mora em version.txt (uma linha, SemVer) e so muda pelo
-# tools/release.sh - as regras estao em VERSIONING.md.
+# THE SYSTEM VERSION lives in version.txt (one line, SemVer) and only
+# changes through tools/release.sh - the rules are in VERSIONING.md.
 #
-# O numero que vai para o binario (esp_app_get_description()->version, o que
-# aparece em Ajustes, no console e no log de boot) diz tambem DE ONDE o build
-# saiu:
-#   0.8.0              - exatamente o commit da tag v0.8.0: a versao lancada
-#   0.8.0+12.a1b2c3d   - 12 commits depois dela, no commit a1b2c3d
-# Sem git (copia solta do codigo), fica so o numero do version.txt.
+# The number that goes into the binary (esp_app_get_description()->version,
+# the one shown in Settings, the console, and the boot log) also says WHERE
+# the build came from:
+#   0.8.0              - exactly the v0.8.0 tag's commit: the released version
+#   0.8.0+12.a1b2c3d   - 12 commits after it, at commit a1b2c3d
+# Without git (a loose copy of the code), it's just version.txt's number.
 #
-# LIDO NA CONFIGURACAO, nao a cada build: um commit novo refaz a configuracao
-# (CMAKE_CONFIGURE_DEPENDS no logs/HEAD), mas mudanca ainda nao commitada nao
-# aparece no numero - o "+N.hash" e "construido a partir de", nao "identico a".
+# READ AT CONFIGURE TIME, not on every build: a new commit redoes the
+# configuration (CMAKE_CONFIGURE_DEPENDS on logs/HEAD), but an uncommitted
+# change does not show up in the number - "+N.hash" means "built from",
+# not "identical to".
 file(STRINGS "${CMAKE_SOURCE_DIR}/version.txt" M5TABOS_VER LIMIT_COUNT 1)
 string(STRIP "${M5TABOS_VER}" M5TABOS_VER)
 if(NOT M5TABOS_VER MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
-  message(FATAL_ERROR "version.txt deve ter uma versao X.Y.Z, tem '${M5TABOS_VER}'")
+  message(FATAL_ERROR "version.txt must contain a X.Y.Z version, has '${M5TABOS_VER}'")
 endif()
 set(PROJECT_VER "${M5TABOS_VER}")
 
@@ -31,11 +32,11 @@ if(GIT_FOUND)
     set(M5TABOS_N   "${CMAKE_MATCH_2}")
     set(M5TABOS_SHA "${CMAKE_MATCH_3}")
 
-    # A VERSAO SO ANDA PARA FRENTE. version.txt abaixo da ultima tag e um
-    # erro de mao (merge, revert, copia velha): pararia o build antes de um
-    # binario "0.6" sair depois do 0.7 lancado.
+    # THE VERSION ONLY MOVES FORWARD. version.txt below the last tag is a
+    # mistake (a merge, a revert, a stale copy): this stops the build before
+    # a "0.6" binary ships after the released 0.7.
     if(M5TABOS_VER VERSION_LESS M5TABOS_TAG)
-      message(FATAL_ERROR "version.txt (${M5TABOS_VER}) esta ABAIXO da ultima versao lancada (v${M5TABOS_TAG}).")
+      message(FATAL_ERROR "version.txt (${M5TABOS_VER}) is BELOW the last released version (v${M5TABOS_TAG}).")
     endif()
     if(NOT M5TABOS_N EQUAL 0)
       set(PROJECT_VER "${M5TABOS_VER}+${M5TABOS_N}.${M5TABOS_SHA}")
@@ -51,21 +52,22 @@ if(GIT_FOUND)
 endif()
 message(STATUS "M5tabOS ${PROJECT_VER}")
 
-# REVISAO DO CHIP (ver sdkconfig.defaults.chip_v1 / _v3). O P4 v1.x e o v3.x
-# pedem binarios diferentes. Cada revisao compila na SUA pasta de build, com o
-# sdkconfig DENTRO dela - um sdkconfig gerado para uma revisao nao pode ser
-# reaproveitado pela outra (as chaves de revisao so valem na primeira vez):
-#     idf.py build                            -> build/,    P4 v1.x (padrao)
+# CHIP REVISION (see sdkconfig.defaults.chip_v1 / _v3). P4 v1.x and v3.x
+# need different binaries. Each revision builds into ITS OWN build folder,
+# with its sdkconfig INSIDE it - an sdkconfig generated for one revision
+# cannot be reused by the other (the revision keys only take effect the
+# first time):
+#     idf.py build                            -> build/,    P4 v1.x (default)
 #     idf.py -B build_v3 -DM5_CHIP=v3 build   -> build_v3/, P4 v3.x
-set(M5_CHIP "v1" CACHE STRING "Revisao do ESP32-P4: v1 (Tab5 ate aqui) ou v3")
+set(M5_CHIP "v1" CACHE STRING "ESP32-P4 revision: v1 (Tab5 so far) or v3")
 if(NOT M5_CHIP MATCHES "^v[13]$")
-  message(FATAL_ERROR "M5_CHIP deve ser v1 ou v3, e '${M5_CHIP}'")
+  message(FATAL_ERROR "M5_CHIP must be v1 or v3, is '${M5_CHIP}'")
 endif()
 set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_SOURCE_DIR}/sdkconfig.defaults.chip_${M5_CHIP}")
 if(NOT M5_CHIP STREQUAL "v1")
   set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
 endif()
-message(STATUS "M5tabOS para ESP32-P4 ${M5_CHIP}.x")
+message(STATUS "M5tabOS for ESP32-P4 ${M5_CHIP}.x")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(M5tabOS)

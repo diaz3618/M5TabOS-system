@@ -1,38 +1,38 @@
-// NOTIFICACAO - servico of sistema, nao remendo of aplicativo.
+// NOTIFICATIONS - a system service, not an application patch.
 //
 // -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE
+// WHY THIS EXISTS
 // -------------------------------------------------------------------------
-// A barra of status chamava tab5_mesh_nao_lidas() diretamente. Funcionava, e
-// era uma divida: o SISTEMA conhecia one SERVICO pelo name. O segundo app que
-// precisasse notify alguma coisa - one alarme of battery, one download pronto,
-// one GPS que perdeu o fix - teria que ser costurado no mesmo lugar, com o mesmo
-// if. Ao quinto, a barra of status seria uma lista of casos especiais e mexer
-// nela viraria mexer em cinco modulos.
+// The status bar used to call tab5_mesh_nao_lidas() directly. It worked, but
+// made the SYSTEM know one SERVICE by name. A second app needing to announce
+// something—a low-battery alarm, a completed download, or a GPS that lost its
+// fix—would have to be wired into the same place with another special case.
+// Eventually changing the status bar would mean changing five modules.
 //
-// Aqui a relacao inverte: quem tem novidade ANUNCIA, e o sistema so pergunta
-// "ha algo?" sem saber of quem. O tab5_mesh some of sistema.cpp.
-//
-// -------------------------------------------------------------------------
-// O MODELO: UMA FONTE, UM ESTADO
-// -------------------------------------------------------------------------
-// Cada servico (ou app) tem UMA fonte registrada e reescreve o estado dela
-// when quer. Guia of uso para quem publica: WRITING_APPS.md, secao 8.2.
-// Nao e queue of eventos, e ESTADO ATUAL - "tenho 3 mensagens, uma delas
-// direta". Isso e of proposito:
-//
-//   - queue cresce sem limit when ninguem consome; estado nao;
-//   - notify "3 mensagens" e mais util que tres notices of "1 message";
-//   - quem gera sabe agregar melhor que quem exibe.
+// Here the relationship is inverted: whoever has news ANNOUNCES it, and the
+// system only asks "is there anything?" without knowing who produced it.
+// tab5_mesh disappears from sistema.cpp.
 //
 // -------------------------------------------------------------------------
-// CONCORRENCIA
+// THE MODEL: ONE SOURCE, ONE STATE
 // -------------------------------------------------------------------------
-// notif_publicar() e chamavel of QUALQUER tarefa - e o ponto, ja que quem tem
-// novidade e o servico e nao a interface. A leitura acontece in tarefa of
-// interface. O modulo se protege sozinho.
+// Each service (or app) has ONE registered source and rewrites its state when
+// needed. Usage guidance for publishers is in WRITING_APPS.md, section 8.2.
+// This is not an event queue; it is CURRENT STATE—"I have three messages,
+// one of them direct." That is intentional:
 //
-// O que ele NAO faz: draw. Notificacao nao sabe o que e uma screen.
+//   - a queue grows without limit when nobody consumes it; state does not;
+//   - "three messages" is more useful than three "one message" notices;
+//   - the producer knows how to aggregate better than the display layer.
+//
+// -------------------------------------------------------------------------
+// CONCURRENCY
+// -------------------------------------------------------------------------
+// notif_publicar() can be called from ANY task—that is the point, since the
+// service, not the interface, owns the news. The interface task performs the
+// reads. The module protects itself.
+//
+// What it does NOT do: draw. Notifications do not know what a screen is.
 
 #pragma once
 
@@ -42,44 +42,44 @@
 #define NOTIF_MAX_FONTES  8
 #define NOTIF_RESUMO      32
 
-// Gravidade. A barra pinta pela PIOR fonte active - vermelho ganha of azul,
-// porque uma coisa endereçada a voce nao e a mesma coisa que trafego passando.
+// Severity. The bar displays the WORST active source—red outranks blue,
+// because something addressed to you is not the same as passing traffic.
 typedef enum {
-  NOTIF_ESTADO = 0,   // atividade em progress ("gravando track") - so aparece se nada mais tiver o que dizer
-  NOTIF_INFO,         // acontecendo algo, nada requires voce
-  NOTIF_ATENCAO,      // algo endereçado a voce, ou que vai atrapalhar em breve
-  NOTIF_URGENTE,      // requires acao: battery acabando, cartao cheio
+  NOTIF_ESTADO = 0,   // activity in progress ("recording a track") - shown only when nothing else needs saying
+  NOTIF_INFO,         // something is happening; it requires no action
+  NOTIF_ATENCAO,      // addressed to you, or likely to cause trouble soon
+  NOTIF_URGENTE,      // requires action: battery low, card full
 } notification_level_t;
 
-// Registra uma fonte e devolve o identificador, ou -1 se nao houver vaga.
+// Register a source and return its identifier, or -1 if no slot is available.
 // IDEMPOTENTE PELO NOME: registrar of novo one name que ja existe
 // devolve a MESMA vaga, COM O ESTADO QUE ELA TINHA. (Antes a vaga voltava
 // zerada - e o Mesh, que se registra of novo a cada vez que o servico sobe
-// por outra via, apagava o proprio aviso sem ninguem ter lido nada. Quem
-// quer erase publica 0; o registro nao decide isso por ele.) O Mesh se registra a cada vez que o servico sobe - e
-// ele sobe of novo a cada sondagem of Grove. Antes, cada subida tomava uma
-// vaga nova; in 8a nao havia mais vaga, s_notif virava -1 e toda message
-// dali em diante chegava sem aviso nenhum, ate reiniciar o aparelho.
+// through another path erased its own notice before anyone read it. A caller
+// that wants to clear it publishes 0; registration does not decide that.) Mesh
+// registers whenever the service starts, including after each Grove probe.
+// Previously each start consumed a new slot; by the eighth there was no slot,
+// s_notif became -1, and every later message arrived without a notice until reboot.
 //
 // 'name' precisa sobreviver on registro (literal ou estatico): guardamos o
-// ponteiro, nao uma copia. E o mesmo contrato of app_t.name.
+// pointer, not a copy. This is the same contract as app_t.name.
 int notification_registrar(const char* name);
 
-// Publica o estado ATUAL of fonte. count 0 apaga o aviso.
-// 'summary' pode ser nullptr when nao houver text util.
+// Publish the source's CURRENT state. A count of 0 clears the notice.
+// 'summary' may be nullptr when there is no useful text.
 void notification_publicar(int id, int count, notification_level_t level, const char* summary);
 
 // QUAL APP ABRE when o aviso e touched in central of notices (kernel/shell).
-// Sem associar, vale o app com o MESMO NOME of fonte - o caso das partes of
+// Without an association, the app with the SAME NAME as the source is used—the
 // fundo (background.h), cujo name ja e o of app. 'app_nome' segue o contrato of
-// 'name': literal ou estatico. nullptr = o aviso nao abre nada.
+// 'name': literal or static. nullptr = the notice opens nothing.
 void notification_associar_app(int id, const char* app_name);
 
-// Atalho para "nao tenho mais nada a dizer".
+// Shortcut for "I have nothing more to say."
 static inline void notification_limpar(int id) { notification_publicar(id, 0, NOTIF_INFO, nullptr); }
 
 // Liga/desliga o AVISO SONORO desta fonte, e SO desta
-// . Nao afeta
+// It does not affect
 // count/level/summary: a fonte continua publicando e aparecendo in barra
 // e in lista of ativas exatamente igual, so para of count para o beep (ver
 // notif_houve_novidade_sonora() abaixo). Quem grava a preferencia entre
@@ -89,9 +89,9 @@ void notification_silenciar(int id, bool silenciar);
 
 // ---- leitura, para quem desenha -------------------------------------------
 
-// Muda a cada publicacao que altere alguma coisa. A barra compara com o que ela
-// desenhou por ultimo - e o que evita repintar a toa e, junto, o que garante
-// que a novidade apareca in hora e nao no next 1% of battery.
+// Changes whenever a publication changes anything. The bar compares it with
+// the last version it drew, avoiding needless repainting and ensuring news
+// appears immediately instead of at the next 1% battery change.
 uint32_t notification_versao(void);
 
 typedef struct {
@@ -107,7 +107,7 @@ typedef struct {
 // 'outras' recebe quantas fontes ativas ficaram of fora. false = nada active.
 //
 // Substitui o antigo "N notices" com varias fontes ativas: ele SOMAVA coisas
-// que nao se somam (pontos of Trilha + mensagens of Mesh) - com uma track
+// values that should not be added (Trilha points + Mesh messages): with a track
 // gravando, uma message nova virava "348 notices" em vez of "1 em LongFast",
 // e sumia no numero. Copia em vez of return ponteiro: a tabela muda a
 // qualquer momento, noutra tarefa.
@@ -122,9 +122,9 @@ int notification_listar(notification_item_t* saida, int max);
 
 // ---- leitura, para quem toca sound -------------------------------------------
 
-// Verdadeiro se alguma fonte NAO SILENCIADA subiu of count since a
-// ULTIMA chamada a esta funcao especifica - e a UNICA pergunta que quem toca
-// o beep (kernel/core.cpp) precisa fazer; ele nao sabe, e nao precisa saber,
-// quantas fontes existem ou os nomes delas. Chamar sempre no MESMO passo of
-// time (hoje, a cada BARRA_MS) - e o que define "since a ultima vez".
+// True if any NON-SILENCED source increased its count since the LAST call to
+// this specific function. This is the ONLY question the beep player
+// (kernel/core.cpp) needs to ask; it need not know how many sources exist or
+// their names. Call it at the SAME time interval (currently every BARRA_MS),
+// which defines "since the last time."
 bool notification_houve_novidade_sonora(void);

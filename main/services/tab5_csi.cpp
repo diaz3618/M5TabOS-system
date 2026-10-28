@@ -3,7 +3,7 @@
 #include "tab5_sniffer.hpp"     // tab5_farejo_caps_c6: o que o C6 gravado sabe fazer
 #include "tab5_wifi.hpp"
 #include "task_pool.h"
-#include "service_stop.hpp"      // request/confirm a saida of tarefa (o mesmo of GPS e of Mesh)
+#include "service_stop.hpp"      // request/confirm task exit (same mechanism as GPS and Mesh)
 #include "tab5_mutex.hpp"
 #include "eh_host_feat_peer_data.h"
 #include "esp_wifi.h"
@@ -18,7 +18,7 @@
 
 static const char* TAG = "csi";
 
-// O C6 desliga o CSI sozinho em C6_RADIO_VALIDADE_MS sem renovacao.
+// The C6 disables CSI after C6_RADIO_VALIDADE_MS without renewal.
 #define RENOVA_MS      3000
 // Fonte of trafego: o DOBRO of ritmo request on C6 (1 record a cada 100 ms).
 // Com a fonte no mesmo ritmo of limit, o atraso variavel of ar faz quadros
@@ -48,7 +48,7 @@ static const char* TAG = "csi";
 #define DESV_ALFA      0.30f    // suaviza o desvio (~0,3 s)
 #define APRENDER_N     30       // ~3 s of records para o first "parado"
 #define BASE_DESCE     0.20f    // o parado acompanha depressa para bottom...
-#define BASE_SOBE      0.003f   // ...e devagar para top (~30 s): movimento longo nao vira "normal" logo
+#define BASE_SOBE      0.003f   // ...and slowly toward the top (~30 s): long movement does not become "normal" immediately
 #define BASE_MIN       0.004f
 #define RAZAO_LEVE     2.0f
 #define RAZAO_FORTE    4.0f
@@ -112,7 +112,7 @@ static void medir(const c6_csi_cab_t& c, const uint8_t* d, uint16_t n)
     soma += a[k];
     ++validos;
   }
-  if (validos < SC_N - 2 || soma < (float)validos) { return; }   // frame sem energia: nao mede
+  if (validos < SC_N - 2 || soma < (float)validos) { return; }   // low-energy frame: do not measure
   const float m = soma / (float)validos;
   for (int k = 0; k < SC_N; ++k) { if (a[k] >= 0) { a[k] /= m; } }
 
@@ -259,7 +259,7 @@ static void vTarefa(void*)
   if (pediu_c6) { c6_csi_cfg_t off = { }; mandar(off); }
   tab5_wifi_keep_awake(TAB5_AWAKE_CSI, false);
   s_fase = TAB5_CSI_DESLIGADO;
-  ESP_LOGI(TAG, "CSI desligado");
+  ESP_LOGI(TAG, "CSI disabled");
   stop_confirm(&s_parada);   // a ULTIMA coisa: daqui em diante one enable pode create outra
 }
 
@@ -290,7 +290,7 @@ void tab5_csi_enable(uint32_t quem)
     // Saindo (o ultimo desligou ha pouco): espera a saida, depois sobe outra.
     if (!stop_request(&s_parada, 1500)) {
       tab5_mutex_destravar(&s_trava_cmd);
-      ESP_LOGE(TAG, "a tarefa anterior do CSI ainda nao saiu - nao liguei");
+      ESP_LOGE(TAG, "the previous CSI task has not exited - not enabled");
       return;
     }
   }
@@ -309,19 +309,20 @@ void tab5_csi_enable(uint32_t quem)
     s_quem = 0;
     s_fase = TAB5_CSI_DESLIGADO;
     tab5_mutex_destravar(&s_trava_cmd);
-    ESP_LOGE(TAG, "sem vaga para a tarefa do CSI");
+    ESP_LOGE(TAG, "no slot for the CSI task");
     return;
   }
   tab5_mutex_destravar(&s_trava_cmd);
-  ESP_LOGI(TAG, "CSI ligado");
+  ESP_LOGI(TAG, "CSI enabled");
 }
 
 void tab5_csi_disable(uint32_t quem)
 {
   tab5_mutex_lock(&s_trava_cmd);
   s_quem = s_quem & ~quem;
-  // O ultimo exited: PEDE a saida (nao espera - quem desliga e a screen). A
-  // tarefa ve o request in iteration seguinte; o wake tira ela of vTaskDelay.
+  // The last requester exited: REQUEST task exit (do not wait—the screen
+  // caller disables it). The task sees the request on the next iteration;
+  // wake interrupts its vTaskDelay.
   if (!s_quem && stop_running(&s_parada)) { s_parada.request = true; pool_wake(&s_id); }
   tab5_mutex_destravar(&s_trava_cmd);
 }

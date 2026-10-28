@@ -176,9 +176,9 @@ bool tab5_frame_init(esp_lcd_panel_handle_t panel)
     esp_rom_install_channel_putc(2, vigia_canal2);
     // Autoteste: a mesma funcao que a ISR of driver usa. Se o vigia nao
     // count isto, o zero of underrun nao quer dizer nada.
-    esp_rom_printf("quadro: teste do detector de underrun (linha esperada, nao e erro)\n");
-    if (s_underruns == 1) { s_underruns = 0; ESP_LOGI(TAG, "detector de piscada (underrun) testado e funcionando"); }
-    else { ESP_LOGE(TAG, "detector de piscada (underrun) NAO funciona - o contador de underrun nao vale"); }
+    esp_rom_printf("frame: underrun detector test (expected line, not an error)\n");
+    if (s_underruns == 1) { s_underruns = 0; ESP_LOGI(TAG, "flicker detector (underrun) tested and working"); }
+    else { ESP_LOGE(TAG, "flicker detector (underrun) is NOT working - underrun count is unusable"); }
   }
   if (s_dma2d == nullptr && s_ppa == nullptr) {
     esp_async_fbcpy_config_t fc = { };
@@ -201,7 +201,7 @@ bool tab5_frame_init(esp_lcd_panel_handle_t panel)
   esp_lcd_dpi_panel_event_callbacks_t cbs = { };
   cbs.on_frame_buf_complete = on_end_of_frame;
   if (esp_lcd_dpi_panel_register_event_callbacks(panel, &cbs, nullptr) != ESP_OK) {
-    ESP_LOGE(TAG, "nao consegui registrar o aviso de end de quadro");
+    ESP_LOGE(TAG, "could not register the frame-end notification");
     return false;
   }
   // UNDERRUN SEM MASCARA. O driver of IDF programa a ponte DSI
@@ -304,7 +304,7 @@ static bool copiar_dma2d(void* target, const tab5_rect_t& r, const void* source,
   }
   // Tela inteira leva ~13 ms; 100 ms e so a network contra one DMA travado.
   if (xSemaphoreTake(s_dma2d_end, pdMS_TO_TICKS(100)) != pdTRUE) {
-    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) nao terminou em 100 ms", r.l, r.a, r.x, r.y);
+    ESP_LOGE(TAG, "copy %dx%d at (%d,%d) did not finish within 100 ms", r.l, r.a, r.x, r.y);
     return false;
   }
   return true;
@@ -463,7 +463,7 @@ bool tab5_frame_fill(void* target, const tab5_rect_t& r, uint16_t color)
       return false;   // who chamou pinta pela CPU por top
     }
     s_fill_ok = 1;
-    ESP_LOGI(TAG, "limpeza de tela por hardware (PPA) testada e funcionando");
+    ESP_LOGI(TAG, "hardware screen clear (PPA) tested and working");
   }
   return true;
 }
@@ -580,7 +580,7 @@ void tab5_frame_benchmark(void)
   b.dst = (uint16_t*)heap_caps_aligned_calloc(128, 1, FB_BYTES, MALLOC_CAP_SPIRAM);
   b.end = xSemaphoreCreateBinary();
   if (!b.src || !b.dst || !b.end) {
-    printf("banco: sem memoria\n");
+    printf("framebuffer: out of memory\n");
   } else {
     for (uint32_t i = 0; i < FB_L * FB_A; ++i) { b.src[i] = (uint16_t)(i * 2654435761u >> 16); }
     esp_cache_msync(b.src, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M);

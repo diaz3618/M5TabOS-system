@@ -1,28 +1,28 @@
 /*
- * Firmware do coprocessador ESP32-C6 do M5Stack Tab5.
+ * ESP32-C6 coprocessor firmware for the M5Stack Tab5.
  *
  * ---------------------------------------------------------------------------
- * POR QUE ESTE ARQUIVO EXISTE
+ * WHY THIS FILE EXISTS
  * ---------------------------------------------------------------------------
- * O ESP32-P4 nao tem radio. Tudo que e WiFi passa pelo C6 por SDIO, atraves do
- * esp_hosted. E o esp_hosted NAO leva o ESP-NOW junto: esp_now_init, _send e
- * _register_recv_cb nem sequer linkam do lado do P4 (o esp_now.h de la e so
- * "injected", faz compilar e nao existe implementacao). esp_wifi_80211_tx e o
- * modo promiscuo tambem nao sao proxiados.
+ * The ESP32-P4 has no radio. All WiFi traffic goes through the C6 over SDIO
+ * via esp_hosted. esp_hosted does NOT carry ESP-NOW: esp_now_init, _send, and
+ * _register_recv_cb do not even link on the P4 side (its esp_now.h is merely
+ * "injected" to make builds compile and has no implementation). Neither
+ * esp_wifi_80211_tx nor promiscuous mode is proxied.
  *
- * Ou seja: para ter ESP-NOW no Tab5, ele tem que rodar AQUI, onde o radio esta.
- * O P4 conversa com este firmware pelo canal peer_data do esp_hosted - um cano
- * de bytes opaco que ja existe e dispensa mexer em protobuf.
+ * Therefore ESP-NOW for the Tab5 must run HERE, where the radio is. The P4
+ * communicates with this firmware through esp_hosted's peer_data channel—an
+ * existing opaque byte pipe that needs no protobuf changes.
  *
  * ---------------------------------------------------------------------------
- * ISTO SUBSTITUI O FIRMWARE DA M5STACK
+ * THIS REPLACES THE M5STACK FIRMWARE
  * ---------------------------------------------------------------------------
- * O C6 do Tab5 vem com o firmware da M5Stack (esp_hosted 2.12.6, backup em
- * c6/backup_fabrica_2.12.6.bin). O host do M5tabOS e 3.0.7, e este firmware e
- * da mesma versao - o boot confere ("host=3.0.7 coprocessor=3.0.7 (match)").
+ * The Tab5 C6 ships with M5Stack firmware (esp_hosted 2.12.6, backed up at
+ * c6/backup_fabrica_2.12.6.bin). The M5tabOS host is 3.0.7, and this firmware
+ * uses the same version—the boot log confirms it ("host=3.0.7 coprocessor=3.0.7 (match)").
  *
- * Mas e o firmware que faz o WiFi funcionar. Por isso as DUAS redes de
- * seguranca abaixo.
+ * But this is the firmware that makes WiFi work, which is why the TWO safety
+ * nets below are needed.
  */
 
 #include <string.h>
@@ -33,12 +33,12 @@
 #include "esp_mac.h"
 #include "nvs_flash.h"
 #include "esp_now.h"
-#include "espnow.h"            /* SO os tipos do componente espressif/esp-now (ver DOIS DIALETOS) */
+#include "espnow.h"            /* ONLY types from espressif/esp-now (see TWO DIALECTS) */
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_core_dump.h"
-#include <stdlib.h>   /* free do relatorio FTM */
+#include <stdlib.h>   /* free the FTM report */
 #if CONFIG_IEEE802154_ENABLED
 #include "esp_ieee802154.h"
 #include "esp_coexist.h"       /* esp_coex_wifi_i154_enable */
@@ -54,19 +54,19 @@
 #include "freertos/semphr.h"
 
 #include "eh_cp_feat_peer_data.h"
-#include "tab5_c6.h"   /* o contrato, shared com o P4 */
+#include "tab5_c6.h"   /* shared contract with the P4 */
 
 static const char *TAG = "tab5c6";
 
 /* ---------------------------------------------------------------------------
- * PROTOCOLO COM O P4
+ * PROTOCOL WITH THE P4
  * ---------------------------------------------------------------------------
- * Os msg_id sao um contrato entre os dois lados, e moram num arquivo so:
- * shared/tab5_c6.h, incluido pelos dois projetos.
+ * msg_ids are a contract between both sides and live in one file:
+ * shared/tab5_c6.h, included by both projects.
  *
- * Formato do payload, sempre cru - nada de protobuf aqui. O canal ja entrega
- * (msg_id, bytes, tamanho), e inventar serializacao em cima disso seria
- * trabalho sem retorno: os dois lados sao nossos e compilam juntos.
+ * Payloads are always raw—no protobuf here. The channel already provides
+ * (msg_id, bytes, length), so inventing serialization on top would be
+ * pointless work: both sides are ours and are built together.
  */
 #define MSG_HOST_VIVO     C6_MSG_HOST_VIVO
 #define MSG_HOST_ENVIAR   C6_MSG_HOST_ENVIAR
@@ -76,9 +76,9 @@ static const char *TAG = "tab5c6";
 #define MSG_C6_RECEBIDO   C6_MSG_RECEBIDO
 #define MSG_C6_ESTADO     C6_MSG_ESTADO
 
-/* O que ESTE firmware sabe fazer: vai no PRONTO e no INFO. Os tres extras do
- * radio so acendem o bit se o modulo foi COMPILADO (depende do sdkconfig do
- * c6/) - assim o P4 esconde a funcao que esta gravação nao trouxe, sem reabrir. */
+/* What THIS firmware can do is reported in PRONTO and INFO. The three radio
+ * extras set their bits only when COMPILED in (depending on c6/'s sdkconfig),
+ * so the P4 hides features missing from this build without reopening the device. */
 #if CONFIG_ESP_WIFI_CSI_ENABLED
 #define CAP_CSI C6_CAP_CSI
 #else
@@ -97,11 +97,11 @@ static const char *TAG = "tab5c6";
 #define CAPS (C6_CAP_ESPNOW | C6_CAP_FAREJO | C6_CAP_CRU | C6_CAP_INFO \
               | CAP_CSI | CAP_FTM | CAP_154)
 
-/* O que ESTE chip faz, alem do que foi compilado. O FTM initiator nao existe nos
- * C6 de revisao v0.0/v0.1: o proprio esp_wifi_init (esp_wifi/src/wifi_init.c)
- * apaga o bit dele no feature_caps nessas revisoes - errata do silicio - e o
- * initiate_session responde ESP_ERR_NOT_SUPPORTED ("FTM Initiator mode not
- * supported!"). Anunciar o cap nesse chip seria prometer o que ele nao faz. */
+/* What THIS chip can do beyond what was compiled. The FTM initiator does not
+ * exist on C6 revisions v0.0/v0.1: esp_wifi_init itself (esp_wifi/src/wifi_init.c)
+ * clears its feature_caps bit on those revisions—a silicon erratum—and
+ * initiate_session returns ESP_ERR_NOT_SUPPORTED ("FTM Initiator mode not
+ * supported!"). Advertising that capability would promise something it cannot do. */
 static uint8_t caps_reais(void)
 {
     uint8_t c = CAPS;
@@ -111,8 +111,8 @@ static uint8_t caps_reais(void)
     return c;
 }
 
-/* Revisao do chip para o INFO: 0x80 marca "valida"; o resto e maior*16+menor
- * (esp_chip_info da maior*100+menor). */
+/* Chip revision for INFO: 0x80 marks it as "valid"; the remainder is
+ * major*16+minor (esp_chip_info reports major*100+minor). */
 static uint8_t chip_rev_info(void)
 {
     esp_chip_info_t ci;
@@ -122,55 +122,55 @@ static uint8_t chip_rev_info(void)
 
 static const uint8_t DIFUSAO[ESP_NOW_ETH_ALEN] = { 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF };
 
-/* Diagnostico dos extras do radio, devolvido no INFO: sem o log serial do C6
- * (que exige o Downloader), e o unico jeito de o P4 saber onde parou. */
+/* Diagnostics for radio extras, returned in INFO: without the C6 serial log
+ * (which requires the Downloader), this is the only way for the P4 to know where it stopped. */
 static volatile int16_t  s_csi_err = 0, s_z154_err = 0;
 static volatile uint32_t s_csi_cb = 0, s_csi_env = 0, s_z154_rx = 0;
 static volatile int16_t  s_csi_err2 = 0;
-static volatile bool     s_z154_lig = false;          /* 802.15.4 ouvindo now */
-static bool              s_z154_habilitado __attribute__((unused)) = false;   /* esp_ieee802154_enable feito (uma vez so) */
+static volatile bool     s_z154_lig = false;          /* 802.15.4 listening now */
+static bool              s_z154_habilitado __attribute__((unused)) = false;   /* esp_ieee802154_enable completed (once) */
 static volatile uint8_t  s_csi_etapa = 0, s_csi_modo = 0;
-/* Os extras do radio sao ligados pela tarefa do RPC e desligados pelo vigia
- * (esp_timer): esta trava impede os dois de mexerem no driver ao mesmo time. */
+/* Radio extras are enabled by the RPC task and disabled by the watchdog
+ * (esp_timer); this lock keeps both from touching the driver at the same time. */
 static SemaphoreHandle_t s_radio_mtx = NULL;
 
 /* ---------------------------------------------------------------------------
- * REDE DE SEGURANCA 2 - no nivel do APLICATIVO
+ * SAFETY NET 2 - at the APPLICATION level
  * ---------------------------------------------------------------------------
- * A rede 1 e o CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE do sdkconfig.defaults. Ela
- * so vale com o NOSSO bootloader: a OTA nao substitui o bootloader, e o da
- * M5Stack pode nao ter rollback. A gravacao pelo cabo (idf.py flash) leva o
- * bootloader, a tabela de particoes e o otadata deste projeto juntos.
+ * Safety net 1 is CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE in sdkconfig.defaults.
+ * It works only with OUR bootloader: OTA does not replace the bootloader, and
+ * the M5Stack one may lack rollback. A cable flash (idf.py flash) installs
+ * this project's bootloader, partition table, and otadata together.
  *
- * Esta segunda rede nao depende dele. Se o P4 nao disser "estou te ouvindo"
- * dentro do prazo, NOS MESMOS apontamos o boot de iteration para a particao
- * anterior e reiniciamos. Cobre o caso provavel de uma OTA - subimos, mas o
- * enlace SDIO nao fecha e o Tab5 fica sem WiFi. So vale para imagem que chegou
- * por OTA (ver GUARDA DE IMAGEM NOVA); gravada pelo cabo nao ha para onde voltar.
+ * This second net does not depend on it. If the P4 does not say "I am
+ * listening" in time, WE point the bootloader to the previous partition and
+ * reboot. This covers the likely OTA failure where we boot but the SDIO link
+ * never comes up and the Tab5 loses WiFi. It applies only to an OTA image
+ * (see NEW IMAGE GUARD); a cable-flashed image has nowhere to roll back to.
  *
- * O que ela NAO cobre: falha antes deste codigo rodar (loop de panico no boot).
- * Para isso so o bootloader, ou acesso fisico ao C6.
+ * What it does NOT cover: failure before this code runs (a boot panic loop).
+ * That requires the bootloader or physical access to the C6.
  */
 #define PRAZO_HOST_MS (C6_PRAZO_HOST_S * 1000)
 
-/* GUARDA DE IMAGEM NOVA - por que nao basta o rollback do bootloader
+/* NEW IMAGE GUARD - why bootloader rollback alone is not enough
  *
- * Uma OTA pelo enlace reinicia o C6 DUAS vezes seguidas: a 1a pelo proprio
- * esp_hosted (2 s depois do activate) e a 2a pelo P4, que ve o SDIO cair,
- * se reinicia e, no boot, reseta o C6 de novo (CP_RESET_STRATEGY_ALWAYS). O
- * bootloader entende "reiniciou ainda em PENDING_VERIFY" como imagem quebrada
- * e iteration para a anterior - ou seja, TODA OTA seria desfeita, boa ou ruim.
+ * An OTA over the link reboots the C6 TWICE in succession: first by esp_hosted
+ * (2 s after activate), then by the P4, which sees SDIO drop, reboots, and
+ * resets the C6 again at boot (CP_RESET_STRATEGY_ALWAYS). The bootloader treats
+ * "rebooted while still PENDING_VERIFY" as a broken image and rolls back—so
+ * EVERY OTA would be undone, good or bad.
  *
- * Entao a decisao muda de lugar:
- *   - o bootloader cobre so o panico ANTES do app_main (a imagem nem chega
- *     aqui): no 1o boot da imagem nova, assim que chegamos, ela e marcada
- *     valida para ele;
- *   - daqui em diante quem decide e esta guarda, com o estado na NVS ("tab5c6"):
- *     "pend" = imagem nova ainda nao confirmada pelo P4, "tent" = boots dela
- *     sem confirmacao. Passou de GUARDA_MAX_BOOTS (laco de panico depois do
- *     app_main, enlace que nunca fecha), ou o prazo correu sem o VIVO do P4:
- *     iteration para o outro slot.
- *   - imagem gravada pelo cabo nunca fica pending: nada para onde voltar. */
+ * The decision therefore moves here:
+ *   - the bootloader covers only panics BEFORE app_main (the image never gets
+ *     here); on the first boot of a new image, as soon as we arrive, we mark it
+ *     valid for the bootloader;
+ *   - from then on this guard decides, using NVS state ("tab5c6"): "pend" is
+ *     a new image not yet confirmed by the P4, and "tent" counts its boots
+ *     without confirmation. After GUARDA_MAX_BOOTS (a panic loop after
+ *     app_main, with the link never coming up), or when the deadline expires
+ *     without the P4's VIVO, it rolls back to the other slot;
+ *   - a cable-flashed image never becomes pending: there is nowhere to roll back to. */
 #define GUARDA_MAX_BOOTS 4
 
 static esp_timer_handle_t s_carencia = NULL;
@@ -178,7 +178,7 @@ static bool s_confirmado = false;
 static nvs_handle_t s_guarda = 0;
 static volatile bool s_pendente = false;
 
-static void guarda_gravar(uint8_t pend, uint8_t tent)
+static void save_image_guard(uint8_t pend, uint8_t tent)
 {
     if (!s_guarda) { return; }
     nvs_set_u8(s_guarda, "pend", pend);
@@ -186,53 +186,53 @@ static void guarda_gravar(uint8_t pend, uint8_t tent)
     nvs_commit(s_guarda);
 }
 
-static void desistir_e_voltar(void *arg)
+static void abandon_and_revert(void *arg)
 {
     (void)arg;
     if (s_confirmado) { return; }
 
-    /* "O OUTRO slot" (next_update_partition), onde ficou a imagem que gravou
-     * esta. NAO esp_ota_get_last_invalid_partition(): ela so acha particao
-     * INVALID/ABORTED, estado que nao existe antes de um rollback. A factory e
-     * a rede de baixo, se um dia houver uma. */
+    /* "THE OTHER slot" (next_update_partition), where the image that wrote
+     * this one resides. NOT esp_ota_get_last_invalid_partition(): it finds only
+     * INVALID/ABORTED partitions, a state that does not exist before rollback.
+     * The factory partition is the fallback if one ever exists. */
     const esp_partition_t *cand[2] = {
         esp_ota_get_next_update_partition(NULL),
         esp_partition_find_first(ESP_PARTITION_TYPE_APP,
                                  ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL),
     };
 
-    ESP_LOGE(TAG, "imagem nova sem confirmacao do host - revertendo");
+    ESP_LOGE(TAG, "new image unconfirmed by host - reverting");
 
     for (int i = 0; i < 2; ++i) {
         if (!cand[i]) { continue; }
 
         esp_app_desc_t d;
         if (esp_ota_get_partition_description(cand[i], &d) == ESP_OK) {
-            ESP_LOGE(TAG, "tentando '%s' (%s %s)", cand[i]->label,
+            ESP_LOGE(TAG, "trying '%s' (%s %s)", cand[i]->label,
                      d.project_name, d.version);
         } else {
-            ESP_LOGE(TAG, "'%s' nao tem imagem valida - pulando", cand[i]->label);
+            ESP_LOGE(TAG, "'%s' has no valid image - skipping", cand[i]->label);
             continue;
         }
 
         if (esp_ota_set_boot_partition(cand[i]) == ESP_OK) {
-            /* Limpa a guarda ANTES: a imagem de iteration le a mesma NVS, e com
-             * "pend" de pe ela tambem se acharia nova e reverteria de novo. */
-            guarda_gravar(0, 0);
+            /* Clear the guard FIRST: the rollback image reads the same NVS, and
+             * with "pend" set it would also consider itself new and roll back again. */
+            save_image_guard(0, 0);
             vTaskDelay(pdMS_TO_TICKS(100));
             esp_restart();
         }
-        ESP_LOGE(TAG, "'%s' recusada", cand[i]->label);
+        ESP_LOGE(TAG, "'%s' rejected", cand[i]->label);
     }
 
-    /* Sem iteration: fica de pe e para de count, senao reverteria a cada boot. */
-    guarda_gravar(0, 0);
+    /* No rollback target: stay up and stop counting, or we would roll back on every boot. */
+    save_image_guard(0, 0);
     s_pendente = false;
-    ESP_LOGE(TAG, "NAO HA PARA ONDE VOLTAR. Seguindo de pe.");
+    ESP_LOGE(TAG, "NO ROLLBACK TARGET. Continuing anyway.");
 }
 
-/* No app_main, logo depois da NVS: decide se esta imagem esta em prova. */
-static void guarda_iniciar(void)
+/* Called from app_main just after NVS: decide whether this image is on trial. */
+static void start_image_guard(void)
 {
     esp_ota_img_states_t st;
     const esp_partition_t *rodando = esp_ota_get_running_partition();
@@ -242,8 +242,8 @@ static void guarda_iniciar(void)
 
     uint8_t pend = 0, tent = 0;
     if (nvs_open("tab5c6", NVS_READWRITE, &s_guarda) != ESP_OK) {
-        /* Sem NVS nao ha guarda propria: fica o rollback do bootloader e a
-         * carencia classica (o VIVO marca valida). */
+        /* Without NVS there is no application guard: use bootloader rollback
+         * and the classic grace period (VIVO marks the image valid). */
         s_guarda = 0;
         pend = chegou_por_ota ? 1 : 0;
     } else {
@@ -254,41 +254,41 @@ static void guarda_iniciar(void)
             nvs_get_u8(s_guarda, "tent", &tent);
         }
         if (pend) { ++tent; }
-        guarda_gravar(pend, tent);
-        /* Com a guarda gravada, o bootloader ja fez a parte dele. */
+        save_image_guard(pend, tent);
+        /* With the guard stored, the bootloader has already done its part. */
         if (chegou_por_ota) { esp_ota_mark_app_valid_cancel_rollback(); }
     }
 
     s_pendente = pend != 0;
     if (!s_pendente) {
-        ESP_LOGI(TAG, "imagem confirmada: sem carencia");
+        ESP_LOGI(TAG, "image confirmed: no grace period");
         return;
     }
     if (tent > GUARDA_MAX_BOOTS) {
-        ESP_LOGE(TAG, "imagem nova: %u boots sem confirmacao", (unsigned)tent);
-        desistir_e_voltar(NULL);
+        ESP_LOGE(TAG, "new image: %u boots without confirmation", (unsigned)tent);
+        abandon_and_revert(NULL);
         return;
     }
-    const esp_timer_create_args_t ta = { .callback = desistir_e_voltar, .name = "carencia" };
+    const esp_timer_create_args_t ta = { .callback = abandon_and_revert, .name = "grace_period" };
     if (esp_timer_create(&ta, &s_carencia) == ESP_OK) {
         esp_timer_start_once(s_carencia, (uint64_t)PRAZO_HOST_MS * 1000);
-        ESP_LOGW(TAG, "imagem NOVA em prova (boot %u de %u): sem o VIVO do host em %d s, "
-                      "volto para a anterior", (unsigned)tent, GUARDA_MAX_BOOTS + 1,
+        ESP_LOGW(TAG, "NEW image on trial (boot %u of %u): no host VIVO in %d s, "
+                      "returning to the previous image", (unsigned)tent, GUARDA_MAX_BOOTS + 1,
                  PRAZO_HOST_MS / 1000);
     }
 }
 
-static void host_falou(void)
+static void host_confirmed(void)
 {
     if (s_confirmado) { return; }
     s_confirmado = true;
     if (s_carencia) { esp_timer_stop(s_carencia); }
     if (s_pendente) {
-        guarda_gravar(0, 0);
+        save_image_guard(0, 0);
         s_pendente = false;
-        ESP_LOGI(TAG, "host confirmou o enlace - imagem nova vira definitiva");
+        ESP_LOGI(TAG, "host confirmed the link - new image is permanent");
     }
-    /* Caso sem NVS: e aqui que o rollback do bootloader e cancelado. */
+    /* Without NVS, this is where bootloader rollback is cancelled. */
     esp_ota_mark_app_valid_cancel_rollback();
 }
 
@@ -297,31 +297,32 @@ static void host_falou(void)
  * --------------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------------------
- * SAIDA PARA O HOST - e ela NAO e luxo
+ * OUTPUT TO THE HOST - this is NOT optional
  * ---------------------------------------------------------------------------
- * Os callbacks do radio (ESP-NOW, CSI, promiscuo) rodam na tarefa de WiFi e
- * tem que devolver depressa - e a mesma regra do "nada de E/S bloqueante no
- * ao_tocar" do lado do P4. O eh_cp_feat_peer_data_send fala por RPC com o host
- * e pode BLOQUEAR; chamado de dentro do callback, trava a stack de WiFi
- * inteira, e nao ha sintoma pior: o radio simplesmente para.
+ * Radio callbacks (ESP-NOW, CSI, promiscuous mode) run in the WiFi task and
+ * must return quickly—the same "no blocking I/O in touch handling" rule applies on
+ * the P4. eh_cp_feat_peer_data_send talks to the host over RPC and can BLOCK;
+ * calling it from a callback stalls the entire WiFi stack, with the worst
+ * possible symptom: the radio simply stops.
  *
- * Entao o callback so escreve no RING BUFFER e sai; quem fala com o host e a
- * tarefa c6saida. Ring e nao fila de itens fixos: as mensagens vao de 7 B (um
- * ESTADO) a ~1 KB (um CSI HE). Com fila, cada item custaria o maior tamanho na
- * RAM e o produtor montaria uma copia desse tamanho na PROPRIA stack - a stack
- * da tarefa de WiFi, que nao e nossa. No ring, o produtor reserva o espaco
- * exato (SendAcquire) e escreve direto nele: zero copia intermediaria.
+ * The callback therefore writes only to the RING BUFFER and returns; the
+ * The output task talks to the host. This is not a fixed-item queue: messages
+ * range from 7 B (an ESTADO) to about 1 KB (HE CSI). A queue would reserve the
+ * largest size for every item in RAM, and the producer would build a copy of
+ * that size on the WiFi task's stack, which is not ours. The ring reserves the
+ * exact space (SendAcquire) and writes directly into it: no intermediate copy.
  *
- * Item = msg_id (4 B) + body. Cheio = descarta (o host nao esta consumindo, e
- * travar aqui so pioraria; perder um record e melhor que stop o radio). */
+ * Item = msg_id (4 B) + body. Full means drop it (the host is not consuming;
+ * blocking here would only make things worse; losing a record is better than
+ * stopping the radio). */
 #define SAIDA_RING_BYTES  (12 * 1024)
 
 static RingbufHandle_t s_saida = NULL;
 static volatile uint32_t s_saida_perdas = 0;
 
-/* Em DUAS partes (cabecalho + body), para quem monta a message nao precisar
- * juntar as duas num buffer seu. Qualquer tarefa; NUNCA de ISR. */
-static bool enfileirar2(uint32_t msg_id, const uint8_t *cab, size_t ncab,
+/* In TWO parts (header + body), so callers do not need to join both in their
+ * own buffer. Any task; NEVER from an ISR. */
+static bool queue_message_parts(uint32_t msg_id, const uint8_t *cab, size_t ncab,
                         const uint8_t *body, size_t ncorpo)
 {
     if (!s_saida) { return false; }
@@ -337,12 +338,12 @@ static bool enfileirar2(uint32_t msg_id, const uint8_t *cab, size_t ncab,
     return true;
 }
 
-static void enfileirar(uint32_t msg_id, const uint8_t *data, size_t n)
+static void queue_message(uint32_t msg_id, const uint8_t *data, size_t n)
 {
-    enfileirar2(msg_id, data, n, NULL, 0);
+    queue_message_parts(msg_id, data, n, NULL, 0);
 }
 
-static void vTarefaSaida(void *arg)
+static void output_task(void *arg)
 {
     (void)arg;
     for (;;) {
@@ -359,26 +360,26 @@ static void vTarefaSaida(void *arg)
 }
 
 /* ---------------------------------------------------------------------------
- * DOIS DIALETOS DE ESP-NOW
+ * TWO ESP-NOW DIALECTS
  * ---------------------------------------------------------------------------
- * O ESP-NOW so transporta bytes; o que vai dentro e decisao de cada firmware:
- *   - FORMATO ESPRESSIF: o componente espressif/esp-now poe um cabecalho
- *     (versao, tipo, tamanho, "magic" anti-repeticao, flags, enderecos) e
- *     retransmite. E o do chat do Cardputer oficial (M5Cardputer-UserDemo).
- *   - TEXTO PURO: esp_now_send() direto com o texto. Arduino, UIFlow, exemplos
- *     simples - o StickC e o Basic, provavelmente.
- * O Tab5 fala OS DOIS. Nao usamos a biblioteca para rodar (ela descarta tudo
- * que nao e dela - texto puro nunca chegaria - e o espnow_init dela aborta o
- * chip se o ESP-NOW falhar por baixo, o modo de falha de 09/2026). Ela so
- * empresta os TIPOS (espnow.h), para o cabecalho ser identico por construcao;
- * as regras de aceite abaixo sao as do espnow_recv_cb dela (versao 2.5.3,
- * formato no ar identico ao 2.5.1 do UserDemo).
+ * ESP-NOW carries only bytes; each firmware decides what they contain:
+ *   - ESPRESSIF FORMAT: the espressif/esp-now component adds a header
+ *     (version, type, size, anti-duplicate "magic", flags, addresses) and
+ *     retransmits. This is the official Cardputer chat (M5Cardputer-UserDemo).
+ *   - RAW TEXT: esp_now_send() directly with the text. Arduino, UIFlow, and
+ *     simple examples—probably StickC and Basic.
+ * The Tab5 supports BOTH. We do not run the library (it drops anything that
+ * is not its own—raw text would never arrive—and its espnow_init aborts the
+ * chip if ESP-NOW fails underneath, the 09/2026 failure mode). We borrow only
+ * its TYPES (espnow.h), keeping the wire header identical by construction;
+ * the acceptance rules below match its espnow_recv_cb (v2.5.3, with the same
+ * over-the-air format as UserDemo v2.5.1).
  *
- * RECEBER: passou nas regras do formato Espressif -> tira o cabecalho; senao
- * -> texto puro. ENVIAR: nos dialetos ouvidos nos ultimos 10 min; sem ninguem
- * ouvido ainda, nos dois (para ser achado). */
+ * RECEIVE: if it passes the Espressif format rules, remove the header;
+ * otherwise treat it as raw text. SEND: use dialects heard in the last 10
+ * minutes; if nothing has been heard yet, use both (to be discoverable). */
 
-typedef struct {                       /* = espnow_data_t de espnow.c */
+typedef struct {                       /* = espnow_data_t from espnow.c */
     uint8_t type    : 4;
     uint8_t version : 2;
     uint8_t         : 2;
@@ -389,15 +390,15 @@ typedef struct {                       /* = espnow_data_t de espnow.c */
     uint8_t payload[0];
 } __attribute__((packed)) pacote_espressif_t;
 
-#define ESPRESSIF_VERSAO   2           /* ESPNOW_VERSION do componente */
-#define ESPRESSIF_REPETE   3           /* copias com o mesmo magic (quem recebe descarta as repetidas) */
+#define ESPRESSIF_VERSAO   2           /* component's ESPNOW_VERSION */
+#define ESPRESSIF_REPETE   3           /* copies with the same magic (receivers discard duplicates) */
 #define DIALETO_VALIDADE_US (10LL * 60 * 1000000)
 
 static uint8_t  s_meu_mac[ESP_NOW_ETH_ALEN];
-static uint16_t s_magicos[32];         /* ultimos 'magic' vistos: descarta retransmissao */
+static uint16_t s_magicos[32];         /* latest 'magic' values: discard retransmissions */
 static int      s_magico_prox = 0, s_magicos_n = 0;
-/* Duas tarefas mexem no anel (a de WiFi recebendo, a c6envio registrando o
- * nosso): a trava e curta, 32 comparacoes. */
+/* Two tasks touch the ring (WiFi receive and c6envio recording our own): the
+ * lock is brief, with 32 comparisons. */
 static portMUX_TYPE s_magico_mux = portMUX_INITIALIZER_UNLOCKED;
 static volatile int64_t s_ouviu_espressif_us = 0, s_ouviu_cru_us = 0;
 
@@ -405,8 +406,8 @@ static bool magico_visto(uint16_t m)
 {
     bool visto = false;
     portENTER_CRITICAL(&s_magico_mux);
-    /* So as entradas PREENCHIDAS: o anel nasce zerado, e um magic 0 legitimo
-     * (a biblioteca sorteia de 0 a 65535) seria descartado como repetido. */
+    /* Only FILLED entries: the ring starts at zero, and a legitimate magic 0
+     * (the library chooses 0 through 65535) would otherwise be discarded as a duplicate. */
     for (int i = 0; i < s_magicos_n && !visto; ++i) { visto = (s_magicos[i] == m); }
     if (!visto) {
         s_magicos[s_magico_prox] = m;
@@ -417,8 +418,8 @@ static bool magico_visto(uint16_t m)
     return visto;
 }
 
-/* Um par precisa estar CADASTRADO antes de qualquer envio, inclusive a difusao. */
-static esp_err_t garantir_par(const uint8_t mac[ESP_NOW_ETH_ALEN])
+/* A peer must be REGISTERED before any send, including broadcast. */
+static esp_err_t ensure_peer(const uint8_t mac[ESP_NOW_ETH_ALEN])
 {
     if (esp_now_is_peer_exist(mac)) { return ESP_OK; }
     esp_now_peer_info_t p = { 0 };
@@ -428,11 +429,11 @@ static esp_err_t garantir_par(const uint8_t mac[ESP_NOW_ETH_ALEN])
     p.encrypt = false;
     esp_err_t r = esp_now_add_peer(&p);
     if (r == ESP_ERR_ESPNOW_FULL) {
-        /* TABELA CHEIA (ESP_NOW_MAX_TOTAL_PEER_NUM = 20). Cada destino unicast
-         * novo ocupa uma vaga para sempre; no 21o, todo envio para MAC novo
-         * falharia ate o C6 reiniciar. Solta os unicast (a difusao fica) e tenta
-         * de novo. Coleta antes de erase: erase no meio do fetch desanda a
-         * iteracao do driver. */
+        /* TABLE FULL (ESP_NOW_MAX_TOTAL_PEER_NUM = 20). Each new unicast
+         * destination occupies a slot forever; at number 21, every send to a
+         * new MAC would fail until C6 reboots. Release unicasts (keep broadcast)
+         * and try again. Collect before erasing: erasing during fetch breaks
+         * the driver's iteration. */
         uint8_t erase[ESP_NOW_MAX_TOTAL_PEER_NUM][ESP_NOW_ETH_ALEN];
         int n = 0;
         esp_now_peer_info_t q;
@@ -448,23 +449,22 @@ static esp_err_t garantir_par(const uint8_t mac[ESP_NOW_ETH_ALEN])
     return r;
 }
 
-/* No context da tarefa de WiFi: decide o dialeto, so copia e sai. */
+/* In the WiFi task context: choose the dialect, copy, and return. */
 static volatile bool s_repassar_cru = false;   /* C6_AJ_CRU */
 
-static void on_receber(const esp_now_recv_info_t *info, const uint8_t *data, int n)
+static void on_receive(const esp_now_recv_info_t *info, const uint8_t *data, int n)
 {
     if (!info || !data || n <= 0) { return; }
     if (s_repassar_cru) {
-        /* TUBO TRANSPARENTE: o frame inteiro, sem interpretar, com o RSSI.
-         * Formato novo de outro aparelho passa a ser problema so do P4 - sem
-         * regravar o C6. */
+        /* TRANSPARENT PIPE: the entire frame, uninterpreted, with RSSI. A new
+         * format from another device becomes the P4's problem, without reflashing C6. */
         uint8_t cab[9];
         memcpy(cab, info->src_addr, ESP_NOW_ETH_ALEN);
         cab[6] = info->rx_ctrl ? (uint8_t)info->rx_ctrl->rssi : 0;
         cab[7] = info->rx_ctrl ? (uint8_t)info->rx_ctrl->channel : 0;
         cab[8] = (memcmp(info->des_addr, DIFUSAO, ESP_NOW_ETH_ALEN) == 0) ? 1 : 0;
-        /* Ate 1470 B: o ESP-NOW v2.0 (IDF 5.4+, C6/S3 novos) passa de 250. */
-        enfileirar2(C6_MSG_RECEBIDO_CRU, cab, sizeof(cab), data,
+        /* Up to 1470 B: ESP-NOW v2.0 (IDF 5.4+, newer C6/S3) exceeds 250. */
+        queue_message_parts(C6_MSG_RECEBIDO_CRU, cab, sizeof(cab), data,
                     (size_t)(n > ESP_NOW_MAX_DATA_LEN_V2 ? ESP_NOW_MAX_DATA_LEN_V2 : n));
     }
     const uint8_t *texto = data;
@@ -476,16 +476,16 @@ static void on_receber(const esp_now_recv_info_t *info, const uint8_t *data, int
     if (n >= (int)sizeof(pacote_espressif_t) && p->version == ESPRESSIF_VERSAO
             && p->type < ESPNOW_DATA_TYPE_MAX
             && n == (int)(sizeof(pacote_espressif_t) + p->size)) {
-        /* FORMATO ESPRESSIF. So o tipo DATA e message; o resto (ACK, controle)
-         * e protocolo deles. Criptografado nao da para read. Retransmissao do
-         * mesmo 'magic' ja entregue e descartada. */
+        /* ESPRESSIF FORMAT. Only DATA is a message; the rest (ACK, control) is
+         * their protocol. Encrypted packets cannot be read. A retransmission
+         * with an already-delivered 'magic' is discarded. */
         if (p->type != ESPNOW_DATA_TYPE_DATA || p->frame_head.security) { return; }
         if (memcmp(p->src_addr, s_meu_mac, ESP_NOW_ETH_ALEN) == 0) { return; }
         if (magico_visto(p->frame_head.magic)) { return; }
         texto = p->payload;
         tam = p->size;
-        de = p->src_addr;   /* o autor (pode ter vindo repassado por outro) */
-        marca |= 2;         /* bit 1: veio no formato Espressif */
+        de = p->src_addr;   /* author (may have been forwarded by another device) */
+        marca |= 2;         /* bit 1: arrived in Espressif format */
         s_ouviu_espressif_us = esp_timer_get_time();
     } else {
         s_ouviu_cru_us = esp_timer_get_time();
@@ -496,34 +496,34 @@ static void on_receber(const esp_now_recv_info_t *info, const uint8_t *data, int
     memcpy(cab, de, ESP_NOW_ETH_ALEN);
     cab[6] = marca;
     const int c = tam > ESP_NOW_MAX_DATA_LEN ? ESP_NOW_MAX_DATA_LEN : tam;
-    enfileirar2(MSG_C6_RECEBIDO, cab, sizeof(cab), texto, (size_t)c);
+    queue_message_parts(MSG_C6_RECEBIDO, cab, sizeof(cab), texto, (size_t)c);
 }
 
-static void on_enviar(const esp_now_send_info_t *info, esp_now_send_status_t st)
+static void on_send(const esp_now_send_info_t *info, esp_now_send_status_t st)
 {
-    (void)info; (void)st;   /* o estado vai pelo retorno do esp_now_send (ver vTarefaEnvio) */
+    (void)info; (void)st;   /* status comes from esp_now_send's return (see send_task) */
 }
 
-/* ENVIO EM TAREFA PROPRIA: as copias do formato Espressif tem espera entre
- * elas, e o pedido chega no callback do peer_data, que nao pode wait. */
+/* SEND IN A DEDICATED TASK: Espressif-format copies need a delay between them,
+ * and the request arrives in the peer_data callback, which cannot wait. */
 typedef struct {
     uint8_t  mac[ESP_NOW_ETH_ALEN];
     uint16_t n;
-    bool     cru;              /* C6_MSG_HOST_CRU: uma vez, sem cabecalho, sem ESTADO */
-    /* Do tamanho do v2.0 (1470): o CRU pode mandar frame grande para quem fala
-     * v2.0; o texto (dois dialetos) continua cortado em 250. */
+    bool     cru;              /* C6_MSG_HOST_CRU: once, raw, no header, no ESTADO */
+    /* Sized for v2.0 (1470): raw mode can send a large frame to v2.0 peers;
+     * text (both dialects) remains capped at 250. */
     uint8_t  texto[ESP_NOW_MAX_DATA_LEN_V2];
 } envio_t;
 static QueueHandle_t s_envio = NULL;
 
-static void vTarefaEnvio(void *arg)
+static void send_task(void *arg)
 {
     (void)arg;
     static envio_t e;
     static uint8_t frame[ESP_NOW_MAX_DATA_LEN];
     for (;;) {
         if (xQueueReceive(s_envio, &e, portMAX_DELAY) != pdTRUE) { continue; }
-        bool ok = (garantir_par(e.mac) == ESP_OK);
+        bool ok = (ensure_peer(e.mac) == ESP_OK);
         if (e.cru) {
             if (ok) { esp_now_send(e.mac, e.texto, e.n); }
             continue;
@@ -532,15 +532,15 @@ static void vTarefaEnvio(void *arg)
         const int64_t now = esp_timer_get_time();
         bool espressif = s_ouviu_espressif_us && (now - s_ouviu_espressif_us) < DIALETO_VALIDADE_US;
         bool cru       = s_ouviu_cru_us       && (now - s_ouviu_cru_us)       < DIALETO_VALIDADE_US;
-        if (!espressif && !cru) { espressif = cru = true; }   /* ninguem ouvido: os dois */
+        if (!espressif && !cru) { espressif = cru = true; }   /* nothing heard: use both */
 
         bool algum = false;
         if (ok && cru) {
             algum |= (esp_now_send(e.mac, e.texto, e.n) == ESP_OK);
         }
         if (ok && espressif) {
-            /* Cabecalho + texto no MESMO limit de 250 bytes (ESP-NOW v1.0, o
-             * que os ESP32/S3 falam). */
+            /* Header + text within the SAME 250-byte limit (ESP-NOW v1.0,
+             * used by ESP32/S3 devices). */
             const size_t cab = sizeof(pacote_espressif_t);
             size_t t = e.n;
             if (cab + t > ESP_NOW_MAX_DATA_LEN) { t = ESP_NOW_MAX_DATA_LEN - cab; }
@@ -560,7 +560,7 @@ static void vTarefaEnvio(void *arg)
             memcpy(p->dest_addr, e.mac, ESP_NOW_ETH_ALEN);
             memcpy(p->src_addr, s_meu_mac, ESP_NOW_ETH_ALEN);
             memcpy(p->payload, e.texto, t);
-            magico_visto(m);   /* o nosso proprio eco repassado nao iteration como message */
+            magico_visto(m);   /* do not treat our own forwarded echo as a message */
             for (int k = 0; k < ESPRESSIF_REPETE; ++k) {
                 algum |= (esp_now_send(e.mac, frame, cab + t) == ESP_OK);
                 vTaskDelay(pdMS_TO_TICKS(10));
@@ -570,43 +570,43 @@ static void vTarefaEnvio(void *arg)
         uint8_t st[ESP_NOW_ETH_ALEN + 1];
         memcpy(st, e.mac, ESP_NOW_ETH_ALEN);
         st[6] = algum ? 1 : 0;
-        enfileirar(MSG_C6_ESTADO, st, sizeof(st));
+        queue_message(MSG_C6_ESTADO, st, sizeof(st));
     }
 }
 
-/* LIGAR O ESP-NOW E DECISAO DO HOST (ele manda when o WiFi ja subiu), e NADA
- * aqui aborta: falhou, desiste calado - o host pede de novo em 5 s. */
+/* ENABLE ESP-NOW AND HONOR THE HOST'S DECISION (it sends this when WiFi is up).
+ * Nothing aborts here: on failure, give up quietly—the host retries in 5 s. */
 static bool s_espnow_no_ar = false;
 
-static void ligar_espnow(void)
+static void enable_espnow(void)
 {
-    /* O ESP-NOW sobrevive a esp_wifi_stop/start, mas NAO a um esp_wifi_deinit:
-     * o handler do esp_hosted faz deinit+init when o host manda uma config de
-     * init diferente, e o P4 pode disable o WiFi no nivel 2 (deinit). Sem esta
-     * conferencia, s_espnow_no_ar ficaria true com o ESP-NOW morto por baixo, e
-     * todo envio/recepcao sumiria calado ate o C6 reiniciar. */
+    /* ESP-NOW survives esp_wifi_stop/start, but NOT esp_wifi_deinit:
+     * esp_hosted's handler does deinit+init when the host sends a different
+     * init config, and the P4 may disable WiFi at level 2 (deinit). Without
+     * this check, s_espnow_no_ar would remain true with ESP-NOW dead underneath,
+     * and all traffic would silently disappear until C6 rebooted. */
     uint32_t ver;
     if (s_espnow_no_ar && esp_now_get_version(&ver) != ESP_OK) {
-        ESP_LOGW(TAG, "ESP-NOW caiu por baixo (WiFi reiniciado) - religando");
+        ESP_LOGW(TAG, "ESP-NOW went down underneath (WiFi restarted) - re-enabling");
         s_espnow_no_ar = false;
     }
     if (!s_espnow_no_ar) {
         const esp_err_t r = esp_now_init();
         if (r != ESP_OK) {
-            ESP_LOGW(TAG, "esp_now_init: %s - o WiFi ja subiu mesmo?", esp_err_to_name(r));
+            ESP_LOGW(TAG, "esp_now_init: %s - is WiFi really up?", esp_err_to_name(r));
             return;
         }
-        esp_now_register_recv_cb(on_receber);
-        esp_now_register_send_cb(on_enviar);
-        garantir_par(DIFUSAO);
+        esp_now_register_recv_cb(on_receive);
+        esp_now_register_send_cb(on_send);
+        ensure_peer(DIFUSAO);
         esp_wifi_get_mac(WIFI_IF_STA, s_meu_mac);
         if (!s_envio) {
             s_envio = xQueueCreate(4, sizeof(envio_t));
-            if (s_envio) { xTaskCreate(vTarefaEnvio, "c6envio", 4096, NULL, 4, NULL); }
+            if (s_envio) { xTaskCreate(send_task, "c6send", 4096, NULL, 4, NULL); }
         }
         s_espnow_no_ar = true;
     }
-    /* PRONTO sempre (o host repete o pedido ate ver este aviso). */
+    /* Always send PRONTO (the host repeats the request until it sees this). */
     uint8_t canal = 0; wifi_second_chan_t sec;
     esp_wifi_get_channel(&canal, &sec);
     uint8_t msg[ESP_NOW_ETH_ALEN + 3];
@@ -614,29 +614,29 @@ static void ligar_espnow(void)
     msg[6] = canal;
     msg[7] = C6_PROTO_VERSAO;
     msg[8] = caps_reais();
-    enfileirar(MSG_C6_PRONTO, msg, sizeof(msg));
-    ESP_LOGI(TAG, "ESP-NOW no ar (formato Espressif + texto puro): canal %u", (unsigned)canal);
+    queue_message(MSG_C6_PRONTO, msg, sizeof(msg));
+    ESP_LOGI(TAG, "ESP-NOW active (Espressif format + raw text): channel %u", (unsigned)canal);
 }
 
 /* ---------------------------------------------------------------------------
- * FAREJADOR - modo promiscuo, resumido no C6
+ * SNIFFER - promiscuous mode, summarized on the C6
  * ---------------------------------------------------------------------------
- * O contrato (formato, validade, canais) esta em tab5_c6.h. Aqui, o como:
+ * The contract (format, validity, channels) is in tab5_c6.h. This is the how:
  *
- * QUEM MEXE NO QUE. O callback do promiscuo roda na tarefa de WiFi, a cada
- * frame - mil ou mais por segundo num canal movimentado. Ele so acha o MAC na
- * tabela e soma; nada de alocar, logar ou falar com o host. Ligar, disable,
- * saltar de canal e mandar o lote e tudo da tarefa c6farejo, a UNICA que chama
- * esp_wifi_set_promiscuous*. O pedido do host (que chega na tarefa do RPC) so
- * deixa a configuracao nova e acorda a c6farejo.
+ * WHO TOUCHES WHAT. The promiscuous callback runs in the WiFi task for every
+ * frame—one thousand or more per second on a busy channel. It only finds the
+ * MAC in the table and updates it; no allocation, logging, or host traffic.
+ * Enabling, disabling, channel hopping, and sending batches all happen in the
+ * sniffer task, the ONLY caller of esp_wifi_set_promiscuous*. The host request
+ * (arriving in the RPC task) only stores the new configuration and wakes the sniffer.
  *
- * DUAS TABELAS. O callback escreve na active; ao close o lote a c6farejo troca
- * a active (uma linha dentro da trava) e le a outra sem trava none, com
- * calma, enquanto os quadros seguem caindo na nova.
+ * TWO TABLES. The callback writes to the active table; when a batch closes,
+ * The sniffer swaps the active table (one line under the lock) and reads the
+ * other without a lock, calmly, while frames continue arriving in the new one.
  *
- * Tabela por hash do MAC com sondagem linear: 128 vagas para no maximum 96 MACs
- * por periodo (3/4 cheia, a busca para em poucas comparacoes). Passou de 96,
- * conta como perdido - o P4 ve no lote e pode encurtar o periodo.
+ * MAC hash table with linear probing: 128 slots for at most 96 MACs per period
+ * (3/4 full, so searches stop after few comparisons). Beyond 96, count it as
+ * lost—the P4 sees that in the batch and can shorten the period.
  */
 #define FJ_VAGAS   128
 #define FJ_MAX      96
@@ -644,7 +644,7 @@ static void ligar_espnow(void)
 typedef struct {
     uint8_t mac[6];
     int8_t  ult, max;
-    int16_t soma;       /* 255 x -128 cabe */
+    int16_t soma;       /* 255 x -128 fits */
     uint8_t n, tipos, canal, usado;
 } fj_ent_t;             /* 16 B */
 
@@ -658,30 +658,31 @@ static fj_tab_t s_fj[2];
 static volatile uint8_t s_fj_ativa = 0;
 static portMUX_TYPE s_fj_mux = portMUX_INITIALIZER_UNLOCKED;
 
-/* Lidos pelo callback a cada frame: copias simples do s_cfg em vigor. */
+/* Read by the callback for each frame: simple copies of the active s_cfg. */
 static volatile int8_t s_fj_rssi_min = -128;
 static volatile bool   s_fj_tem_alvo = false;
 static uint8_t         s_fj_alvo[6];
 static volatile uint32_t s_fj_quadros_total = 0;
 
-/* Pedido do host -> c6farejo (sob s_fj_mux). */
+/* Host request -> sniffer (under s_fj_mux). */
 static c6_farejo_cfg_t s_fj_pedido;
 static bool            s_fj_tem_pedido = false;
 static int64_t         s_fj_validade_us = 0;
 
 static volatile bool s_farejando = false;
 static TaskHandle_t  s_fj_tarefa = NULL;
-/* Para onde o radio iteration when o farejo para: o canal de when ele ligou,
- * ou o que o host pediu DEPOIS (C6_MSG_HOST_CANAL no meio do farejo). Sem isso,
- * disable o farejo desfazia o "canal fixo" do ESP-NOW pedido no meio do caminho. */
+/* Where the radio returns when the sniffer stops: the channel used when it
+ * started, or the one the host requested AFTERWARD (C6_MSG_HOST_CANAL during
+ * sniffing). Without this, disabling the sniffer would undo ESP-NOW's requested
+ * "fixed channel" midway through operation. */
 static volatile uint8_t s_canal_volta = 0;
 
-static void radio_guarda(int64_t now);   /* extras do radio, mais abaixo */
+static void radio_watchdog(int64_t now);   /* radio extras, below */
 
-static void on_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
+static void on_sniff(void *buf, wifi_promiscuous_pkt_type_t tipo)
 {
     const wifi_promiscuous_pkt_t *pk = (const wifi_promiscuous_pkt_t *)buf;
-    if (!pk || pk->rx_ctrl.sig_len < 16) { return; }   /* sem addr2 */
+    if (!pk || pk->rx_ctrl.sig_len < 16) { return; }   /* no addr2 */
     const int8_t rssi = (int8_t)pk->rx_ctrl.rssi;
     if (rssi < s_fj_rssi_min) { return; }
 
@@ -699,11 +700,11 @@ static void on_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
         return;
     }
 
-    const uint8_t *ta = q + 10;   /* addr2 = transmissor, em gerencia e data */
+    const uint8_t *ta = q + 10;   /* addr2 = transmitter, in management and data frames */
     if (s_fj_tem_alvo && memcmp(ta, s_fj_alvo, 6) != 0) { return; }
     const uint8_t canal = (uint8_t)pk->rx_ctrl.channel;
 
-    /* Os 3 ultimos bytes variam entre aparelhos; os 3 primeiros sao do fabricante. */
+    /* The last 3 bytes vary between devices; the first 3 identify the manufacturer. */
     unsigned h = ((unsigned)ta[5] * 31u + ta[4] * 7u + ta[3]) & (FJ_VAGAS - 1);
 
     portENTER_CRITICAL(&s_fj_mux);
@@ -736,8 +737,8 @@ static void on_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
     s_fj_quadros_total++;
 }
 
-/* Troca a tabela active e manda o que a velha juntou, em pedacos de LOTE_MAX. */
-static void fechar_lote(void)
+/* Swap the active table and send what the old one collected, in LOTE_MAX-sized chunks. */
+static void close_batch(void)
 {
     static uint8_t msg[sizeof(c6_farejo_lote_t) + C6_FAREJO_LOTE_MAX * sizeof(c6_farejo_reg_t)];
 
@@ -777,27 +778,27 @@ static void fechar_lote(void)
             eh_cp_feat_peer_data_send(C6_MSG_FAREJO, msg, sizeof(*cab) + n * sizeof(*r));
         }
     }
-    /* Nada ouvido: nada enviado. Silencio no SDIO e o P4 dormindo. */
+    /* Nothing heard: nothing sent. Silence on SDIO and the P4 can sleep. */
     memset(tb, 0, sizeof(*tb));
 }
 
-static bool associado(void)
+static bool is_associated(void)
 {
     wifi_ap_record_t ap;
     return esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
 }
 
-static void vTarefaFarejo(void *arg)
+static void sniffer_task(void *arg)
 {
     (void)arg;
-    c6_farejo_cfg_t cfg = { 0 };   /* o pedido CRU em vigor: so para comparar */
+    c6_farejo_cfg_t cfg = { 0 };   /* current RAW request: only used for comparison */
     uint16_t lote_ms = 250, perm_ms = 200, mascara = 0;
     bool saltou = false;
     int64_t prox_lote = 0, prox_salto = 0;
     int canal_idx = 0;
 
     for (;;) {
-        /* 1. Pedido novo do host? */
+        /* 1. New host request? */
         c6_farejo_cfg_t novo;
         bool tem = false;
         int64_t validade;
@@ -807,25 +808,25 @@ static void vTarefaFarejo(void *arg)
         portEXIT_CRITICAL(&s_fj_mux);
 
         const int64_t now = esp_timer_get_time();
-        /* Tambem e esta tarefa que desliga CSI/802.15.4 abandonados pelo host:
-         * o esp_timer do vigia so a acorda (ver radio_guarda_cb). */
-        radio_guarda(now);
+        /* This task also disables CSI/802.15.4 abandoned by the host; the
+         * watchdog's esp_timer only wakes it (see radio_watchdog_cb). */
+        radio_watchdog(now);
         bool stop = s_farejando && now > validade;
-        if (stop) { ESP_LOGW(TAG, "farejo: o host nao renovou - desligando"); }
+        if (stop) { ESP_LOGW(TAG, "sniffer: host did not renew - disabling"); }
 
         if (tem && !novo.liga) { stop = s_farejando; tem = false; }
 
         if (stop) {
             esp_wifi_set_promiscuous(false);
             s_farejando = false;
-            if (saltou && s_canal_volta && !associado()) {
+            if (saltou && s_canal_volta && !is_associated()) {
                 esp_wifi_set_channel(s_canal_volta, WIFI_SECOND_CHAN_NONE);
             }
             saltou = false;
             portENTER_CRITICAL(&s_fj_mux);
             memset(s_fj, 0, sizeof(s_fj));
             portEXIT_CRITICAL(&s_fj_mux);
-            ESP_LOGI(TAG, "farejo desligado");
+            ESP_LOGI(TAG, "sniffer disabled");
         }
 
         if (tem) {
@@ -836,7 +837,7 @@ static void vTarefaFarejo(void *arg)
                 if (lote_ms < 50) { lote_ms = 50; }
                 perm_ms = cfg.permanencia_ms ? cfg.permanencia_ms : 200;
                 if (perm_ms < 50) { perm_ms = 50; }
-                mascara = cfg.canais & 0x3FFE;   /* canais 1..13 */
+                mascara = cfg.canais & 0x3FFE;   /* channels 1..13 */
                 s_fj_rssi_min = cfg.rssi_min ? cfg.rssi_min : -128;
                 static const uint8_t zero[6] = { 0 };
                 memcpy(s_fj_alvo, cfg.alvo, 6);
@@ -853,40 +854,40 @@ static void vTarefaFarejo(void *arg)
                 uint8_t canal_antes = 0;
                 esp_wifi_get_channel(&canal_antes, &sec);
                 s_canal_volta = canal_antes;
-                esp_wifi_set_promiscuous_rx_cb(on_farejar);
+                esp_wifi_set_promiscuous_rx_cb(on_sniff);
                 const esp_err_t r = esp_wifi_set_promiscuous(true);
                 if (r != ESP_OK) {
-                    /* WiFi parado, por exemplo. O host renova em segundos e
-                     * a gente tenta de novo - nada de abortar. */
-                    ESP_LOGW(TAG, "farejo: promiscuo recusado (%s)", esp_err_to_name(r));
+                    /* WiFi may be stopped, for example. The host renews in
+                     * seconds and we try again—never abort. */
+                    ESP_LOGW(TAG, "sniffer: promiscuous mode rejected (%s)", esp_err_to_name(r));
                 } else {
                     s_farejando = true;
                     prox_lote = now + (int64_t)lote_ms * 1000;
                     prox_salto = now;
                     canal_idx = 0;
-                    ESP_LOGI(TAG, "farejo ligado: canal %u, mascara 0x%04x, lote %u ms",
+                    ESP_LOGI(TAG, "sniffer enabled: channel %u, mask 0x%04x, batch %u ms",
                              (unsigned)s_canal_volta, (unsigned)mascara, (unsigned)lote_ms);
                 }
             } else {
-                /* Renovacao: o WiFi pode ter sido parado e religado no meio,
-                 * e esp_wifi_stop desliga o promiscuo por baixo. */
+                /* Renewal: WiFi may have been stopped and restarted, and
+                 * esp_wifi_stop disables promiscuous mode underneath. */
                 bool enabled = false;
                 if (esp_wifi_get_promiscuous(&enabled) == ESP_OK && !enabled) {
-                    esp_wifi_set_promiscuous_rx_cb(on_farejar);
+                    esp_wifi_set_promiscuous_rx_cb(on_sniff);
                     esp_wifi_set_promiscuous(true);
                 }
             }
         }
 
         if (!s_farejando) {
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* parado: zero CPU */
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* stopped: zero CPU */
             continue;
         }
 
-        /* 2. Salto de canal - so solto do roteador. */
+        /* 2. Channel hopping—only when free of the router. */
         const bool um_so = mascara && !(mascara & (mascara - 1));
         if (mascara && now >= prox_salto) {
-            if (!associado()) {
+            if (!is_associated()) {
                 int c = 0;
                 for (int k = 0; k < 14 && !c; ++k) {
                     canal_idx = canal_idx % 13 + 1;
@@ -899,19 +900,19 @@ static void vTarefaFarejo(void *arg)
                     saltou = true;
                 }
             }
-            /* Um canal so: confere de segundo em segundo (alguem pode ter
-             * mudado); varios: o ritmo e a permanencia. */
+            /* One channel: check every second (someone may have changed it);
+             * multiple channels: use the hop interval. */
             prox_salto = now + (int64_t)(um_so ? 1000 : perm_ms) * 1000;
         }
 
-        /* 3. Lote. */
+        /* 3. Batch. */
         if (now >= prox_lote) {
-            fechar_lote();
+            close_batch();
             prox_lote += (int64_t)lote_ms * 1000;
             if (prox_lote <= now) { prox_lote = now + (int64_t)lote_ms * 1000; }
         }
 
-        /* 4. Dorme ate o proximo evento - ou ate um pedido do host. */
+        /* 4. Sleep until the next event—or a host request. */
         int64_t prox = prox_lote;
         if (mascara && prox_salto < prox) { prox = prox_salto; }
         if (validade < prox) { prox = validade + 1000; }
@@ -921,8 +922,8 @@ static void vTarefaFarejo(void *arg)
     }
 }
 
-/* Chamado na tarefa do RPC: so anota e acorda a c6farejo. */
-static void pedir_farejo(const uint8_t *data, size_t n)
+/* Called in the RPC task: only record the request and wake the sniffer. */
+static void request_sniffer(const uint8_t *data, size_t n)
 {
     c6_farejo_cfg_t c = { 0 };
     memcpy(&c, data, n < sizeof(c) ? n : sizeof(c));
@@ -934,7 +935,7 @@ static void pedir_farejo(const uint8_t *data, size_t n)
     if (s_fj_tarefa) { xTaskNotifyGive(s_fj_tarefa); }
 }
 
-static void responder_info(void)
+static void send_info(void)
 {
     c6_info_t i = { 0 };
     uint8_t canal = 0; wifi_second_chan_t sec;
@@ -962,19 +963,20 @@ static void responder_info(void)
 #if CONFIG_IEEE802154_ENABLED
     i.z154_estado = s_z154_lig ? 1 : (s_z154_habilitado ? 2 : 0);
 #endif
-    enfileirar(C6_MSG_INFO, (const uint8_t *)&i, sizeof(i));
+    queue_message(C6_MSG_INFO, (const uint8_t *)&i, sizeof(i));
 }
 
 /* ===========================================================================
- * EXTRAS DO RADIO - CSI, FTM, 802.15.4
+ * RADIO EXTRAS - CSI, FTM, 802.15.4
  * ===========================================================================
- * Cada um dorme ate o P4 pedir (C6_MSG_HOST_RADIO), e cada bit de CAPS so
- * acende se o modulo foi compilado - um firmware gravado sem a flag no
- * sdkconfig deixa o P4 esconder a funcao, sem reabrir o aparelho.
+ * Each sleeps until the P4 requests it (C6_MSG_HOST_RADIO), and each CAPS bit
+ * is set only when compiled in—a firmware flashed without the sdkconfig flag
+ * lets the P4 hide the feature without reopening the device.
  *
- * Mesma disciplina do farejo: o repasse cru sai do callback (tarefa do radio)
- * so pela queue de saida, nunca bloqueia; CSI e 802.15.4 desligam sozinhos se o
- * P4 nao renovar em C6_RADIO_VALIDADE_MS; FTM e disparo unico.
+ * The same discipline as the sniffer: raw forwarding leaves the callback
+ * (radio task) only through the output queue and never blocks; CSI and 802.15.4
+ * disable themselves if the P4 does not renew within C6_RADIO_VALIDADE_MS;
+ * FTM is one-shot.
  */
 
 /* ---- CSI ---- */
@@ -995,11 +997,11 @@ static void on_csi(void *ctx, wifi_csi_info_t *info)
     if (rssi < s_csi_rssi_min) { return; }
     if (s_csi_so_alvo && memcmp(info->mac, s_csi_alvo, 6) != 0) { return; }
     const int64_t now = esp_timer_get_time();
-    /* RITMO POR CADENCIA, nao "intervalo since o ultimo". Com a fonte no mesmo
-     * ritmo do limit (ping de 10 Hz, limit de 100 ms), o atraso variavel do
-     * ar fazia metade dos quadros chegar a 95 ms do anterior e ser descartada:
-     * o teste deu 64 records de 110. A cadencia anda em passos fixos e aceita
-     * o primeiro frame de cada passo; atrasou demais, recomeca de now. */
+    /* CADENCE RATE, not "interval since the last one". When the source and
+     * limit have the same rate (10 Hz ping, 100 ms limit), variable air delay
+     * made half the frames arrive 95 ms after the previous one and be dropped:
+     * a test produced 64 records out of 110. Cadence advances in fixed steps
+     * and accepts the first frame of each step; after a long delay, restart at now. */
     const int64_t passo = (int64_t)s_csi_intervalo_ms * 1000;
     if (now < s_csi_prox_us) { return; }
     s_csi_prox_us = (now - s_csi_prox_us > passo) ? now + passo : s_csi_prox_us + passo;
@@ -1010,10 +1012,10 @@ static void on_csi(void *ctx, wifi_csi_info_t *info)
     cab.channel = (uint8_t)info->rx_ctrl.channel;
     cab.sec_canal = (uint8_t)info->rx_ctrl.second;
     int len = info->len;
-    /* O que o P4 precisa para interpretar os bytes: o formato do frame (cada
-     * um traz um conjunto diferente de subportadoras), se ha 40 MHz, e se a
-     * primeira palavra presta - no C6 ela pode vir invalidate por limit do
-     * hardware, e quem nao sabe disso le 2 subportadoras de lixo. */
+    /* What the P4 needs to interpret the bytes: frame format (each has a
+     * different set of subcarriers), whether 40 MHz is used, and whether the
+     * first word is valid. On C6 it may be invalid due to a hardware limit;
+     * readers unaware of this would interpret two garbage subcarriers. */
     cab.flags = (uint8_t)((info->rx_ctrl.cur_bb_format & 0x0F) << 4)
               | (info->rx_ctrl.second ? C6_CSI_F_HT40 : 0)
               | (info->first_word_invalid ? C6_CSI_F_W0_RUIM : 0)
@@ -1021,36 +1023,36 @@ static void on_csi(void *ctx, wifi_csi_info_t *info)
     if (len > C6_CSI_MAX) { len = C6_CSI_MAX; }
     cab.len = (uint16_t)len;
     cab.t_us = (uint32_t)now;
-    if (enfileirar2(C6_MSG_CSI, (const uint8_t *)&cab, sizeof(cab),
+    if (queue_message_parts(C6_MSG_CSI, (const uint8_t *)&cab, sizeof(cab),
                     (const uint8_t *)info->buf, (size_t)len)) {
         s_csi_env++;
     }
 }
 
-/* POR QUE O CSI DAVA ESP_FAIL (resolvido do lado do P4)
+/* WHY CSI RETURNED ESP_FAIL (fixed on the P4 side)
  *
- * O esp_wifi_set_csi* do driver confere um field guardado no esp_wifi_init: o
- * csi_enable do wifi_init_config_t. Zerado, loga "CSI not enabled in
- * menuconfig!" e devolve ESP_FAIL - antes de olhar qualquer outra coisa. Com o
- * esp_hosted, quem chama o esp_wifi_init aqui e o handler do RPC, com os campos
- * que o P4 MANDA (get_merged_init_config: "always use value from host"), e o P4
- * mandava 0. O CONFIG_ESP_WIFI_CSI_ENABLED deste sdkconfig so muda o
- * WIFI_INIT_CONFIG_DEFAULT, que o handler sobrescreve.
+ * The driver's esp_wifi_set_csi* checks a field saved by esp_wifi_init:
+ * wifi_init_config_t's csi_enable. When zero, it logs "CSI not enabled in
+ * menuconfig!" and returns ESP_FAIL before doing anything else. With
+ * esp_hosted, the RPC handler calls esp_wifi_init here using the fields sent
+ * by the P4 (get_merged_init_config: "always use value from host"), and the
+ * P4 was sending zero. CONFIG_ESP_WIFI_CSI_ENABLED in this sdkconfig only
+ * changes WIFI_INIT_CONFIG_DEFAULT, which the handler overwrites.
  *
- * Nao era a order das chamadas nem o modo promiscuo: depois da checagem, o
- * driver so grava o filtro no hardware e nao falha mais. Um caminho so, o do
- * exemplo da Espressif; o INFO conta em que etapa parou, se stop. */
+ * It was neither call order nor promiscuous mode: after the check, the driver
+ * only writes the filter to hardware and no longer fails. One path, following
+ * Espressif's example; INFO records the step where it stopped, if any. */
 static esp_err_t csi_aplicar(uint8_t *etapa)
 {
-    /* Parte do que o driver tem; os campos que a gente nao mexe ficam como ele quer. */
+    /* Start with the driver's configuration; untouched fields remain as it expects. */
     wifi_csi_config_t cfg;
     if (esp_wifi_get_csi_config(&cfg) != ESP_OK) { memset(&cfg, 0, sizeof(cfg)); }
     cfg.enable = 1;
-    cfg.acquire_csi_legacy = 1;    /* L-LTF: beacons e quadros 11b/g - todo aparelho */
+    cfg.acquire_csi_legacy = 1;    /* L-LTF: beacons and 11b/g frames—every device */
     cfg.acquire_csi_ht20 = 1;      /* HT-LTF: 802.11n */
     cfg.acquire_csi_ht40 = 1;
-    cfg.acquire_csi_su = 1;        /* HE-LTF: 802.11ax SU, o que um roteador WiFi 6 manda ao C6 */
-    cfg.acquire_csi_he_stbc = 2;   /* como o esp-csi da Espressif para o C6 */
+    cfg.acquire_csi_su = 1;        /* HE-LTF: 802.11ax SU, sent by a WiFi 6 router to C6 */
+    cfg.acquire_csi_he_stbc = 2;   /* as in Espressif's esp-csi for C6 */
     esp_err_t r;
     *etapa = 1; r = esp_wifi_set_csi_config(&cfg);        if (r != ESP_OK) { return r; }
     *etapa = 2; r = esp_wifi_set_csi_rx_cb(on_csi, NULL); if (r != ESP_OK) { return r; }
@@ -1058,7 +1060,7 @@ static esp_err_t csi_aplicar(uint8_t *etapa)
     *etapa = 0; return ESP_OK;
 }
 
-static void csi_ligar(const c6_csi_cfg_t *c)
+static void enable_csi(const c6_csi_cfg_t *c)
 {
     s_csi_intervalo_ms = c->min_intervalo_ms ? c->min_intervalo_ms : 100;
     s_csi_rssi_min = c->rssi_min ? c->rssi_min : -128;
@@ -1066,48 +1068,48 @@ static void csi_ligar(const c6_csi_cfg_t *c)
     s_csi_so_alvo = c->so_alvo && memcmp(c->alvo, zero, 6) != 0;
     memcpy(s_csi_alvo, c->alvo, 6);
     s_csi_validade = esp_timer_get_time() + (int64_t)C6_RADIO_VALIDADE_MS * 1000;
-    /* Reaplicado a CADA renovacao, nao so na primeira: o P4 pode stop e
-     * religar o WiFi no meio (Config), e o esp_wifi_stop desfaz o CSI por baixo.
-     * Com o "so na primeira", o P4 renovaria para sempre um CSI ja morto - a
-     * mesma armadilha que o farejo trata na renovacao dele. */
+    /* Reapplied on EVERY renewal, not only the first: the P4 may stop and
+     * restart WiFi midway (Config), and esp_wifi_stop disables CSI underneath.
+     * With "first time only," the P4 would renew a dead CSI forever—the same
+     * trap handled by the sniffer during its renewal. */
     uint8_t etapa = 0;
     const esp_err_t r = csi_aplicar(&etapa);
-    s_csi_err = s_csi_err2 = (int16_t)r;   /* a ultima vez; o P4 le no INFO */
+    s_csi_err = s_csi_err2 = (int16_t)r;   /* latest attempt; P4 reads this in INFO */
     s_csi_etapa = etapa;
     if (r == ESP_OK) {
         if (!s_csi_lig) {
-            ESP_LOGI(TAG, "CSI ligado (intervalo %u ms)", (unsigned)s_csi_intervalo_ms);
+            ESP_LOGI(TAG, "CSI enabled (interval %u ms)", (unsigned)s_csi_intervalo_ms);
         }
         s_csi_lig = true;
     } else {
         if (!s_csi_lig) {
-            ESP_LOGW(TAG, "CSI recusado: %s (etapa %u)%s", esp_err_to_name(r), (unsigned)etapa,
-                     r == ESP_FAIL ? " - o host iniciou o WiFi com csi_enable 0" : "");
+            ESP_LOGW(TAG, "CSI rejected: %s (step %u)%s", esp_err_to_name(r), (unsigned)etapa,
+                     r == ESP_FAIL ? " - host initialized WiFi with csi_enable 0" : "");
         }
         s_csi_lig = false;
     }
     s_csi_modo = s_csi_lig ? 1 : 0;
 }
-static void csi_desligar(void)
+static void disable_csi(void)
 {
-    if (s_csi_lig) { esp_wifi_set_csi(false); s_csi_lig = false; ESP_LOGI(TAG, "CSI desligado"); }
+    if (s_csi_lig) { esp_wifi_set_csi(false); s_csi_lig = false; ESP_LOGI(TAG, "CSI disabled"); }
     s_csi_modo = 0;
 }
-static void csi_guarda(int64_t now)
+static void csi_watchdog(int64_t now)
 {
-    if (s_csi_lig && now > s_csi_validade) { ESP_LOGW(TAG, "CSI: host nao renovou"); csi_desligar(); }
+    if (s_csi_lig && now > s_csi_validade) { ESP_LOGW(TAG, "CSI: host did not renew"); disable_csi(); }
 }
 #else
-static void csi_ligar(const c6_csi_cfg_t *c) { (void)c; }
-static void csi_desligar(void) {}
-static void csi_guarda(int64_t a) { (void)a; }
+static void enable_csi(const c6_csi_cfg_t *c) { (void)c; }
+static void disable_csi(void) {}
+static void csi_watchdog(int64_t a) { (void)a; }
 #endif
 
-/* ---- FTM (disparo unico) ---- */
+/* ---- FTM (one-shot) ---- */
 #if CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT
 static bool s_ftm_evt = false;
 
-static void ftm_evento(void *arg, esp_event_base_t base, int32_t id, void *data)
+static void on_ftm_report(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base;
     if (id != WIFI_EVENT_FTM_REPORT || !data) { return; }
@@ -1119,15 +1121,15 @@ static void ftm_evento(void *arg, esp_event_base_t base, int32_t id, void *data)
     rep.rtt_est_ns = r->rtt_est;
     rep.dist_est_cm = r->dist_est;
     rep.rtt_raw_ns = r->rtt_raw;
-    enfileirar(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
-    /* O relatorio detalhado nao vai ao P4 (so o summary); libera para nao vazar. */
+    queue_message(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
+    /* The detailed report does not go to the P4 (only the summary); free it to avoid leaking. */
     if (r->ftm_report_data) { free(r->ftm_report_data); }
 }
 
-static void ftm_disparar(const c6_ftm_cfg_t *c)
+static void start_ftm(const c6_ftm_cfg_t *c)
 {
     if (!s_ftm_evt) {
-        esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_FTM_REPORT, ftm_evento, NULL);
+        esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_FTM_REPORT, on_ftm_report, NULL);
         s_ftm_evt = true;
     }
     wifi_ftm_initiator_cfg_t cfg = {
@@ -1136,42 +1138,43 @@ static void ftm_disparar(const c6_ftm_cfg_t *c)
     memcpy(cfg.resp_mac, c->peer, 6);
     const esp_err_t r = esp_wifi_ftm_initiate_session(&cfg);
     if (r != ESP_OK) {
-        ESP_LOGW(TAG, "FTM recusado (%s)", esp_err_to_name(r));
+        ESP_LOGW(TAG, "FTM rejected (%s)", esp_err_to_name(r));
         c6_ftm_rep_t rep;
         memset(&rep, 0, sizeof(rep));
         memcpy(rep.peer, c->peer, 6);
         rep.status = C6_FTM_NAO_INICIOU;
-        rep.rtt_raw_ns = (uint32_t)(int32_t)r;   /* o reason: sem ele o P4 so saberia "falhou" */
-        enfileirar(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
+        rep.rtt_raw_ns = (uint32_t)(int32_t)r;   /* reason; without it P4 would only know "failed" */
+        queue_message(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
     }
 }
 #else
-static void ftm_disparar(const c6_ftm_cfg_t *c) { (void)c; }
+static void start_ftm(const c6_ftm_cfg_t *c) { (void)c; }
 #endif
 
-/* ---- 802.15.4 (o outro radio: Thread/Zigbee cru) ---- */
+/* ---- 802.15.4 (the other radio: raw Thread/Zigbee) ---- */
 #if CONFIG_IEEE802154_ENABLED
 static volatile int64_t  s_z154_validade = 0, s_z154_ult_us = 0;
 static volatile uint16_t s_z154_intervalo_ms = 0;
 
-/* Simbolo FRACO do driver: o nosso vence e e chamado a cada frame recebido.
+/* WEAK driver symbol: ours wins and is called for every received frame.
  *
- * ATENCAO: o driver chama isto DIRETO da ISR do radio 802.15.4 (nao ha tarefa no
- * meio). Por isso aqui so valem as variantes FromISR: um xQueueSend comum
- * (enfileirar2) estoura o assert do FreeRTOS no primeiro frame e derruba o C6.
- * O buffer e estatico: a ISR nao reentra, e a stack de ISR e curta. */
+ * WARNING: the driver calls this DIRECTLY from the 802.15.4 radio ISR (there
+ * is no task in between). Only FromISR variants are valid here: a normal
+ * xQueueSend (queue_message_parts) triggers a FreeRTOS assertion on the first frame
+ * and takes down C6. The buffer is static: the ISR does not re-enter, and its
+ * stack is small. */
 void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *info)
 {
-    /* msg_id + cabecalho + frame, montado aqui e copiado de uma vez para o
-     * ring (a variante FromISR nao tem o Acquire). Estatico: a ISR nao reentra,
-     * e a stack de ISR e curta. */
+    /* msg_id + header + frame, assembled here and copied once into the ring
+     * (the FromISR variant has no Acquire). Static: the ISR does not re-enter,
+     * and its stack is small. */
     static uint8_t it[4 + sizeof(c6_154_cab_t) + C6_154_MAX];
     s_z154_rx++;
     if (frame && info && s_saida) {
         const int64_t now = esp_timer_get_time();
         if (!s_z154_intervalo_ms || now - s_z154_ult_us >= (int64_t)s_z154_intervalo_ms * 1000) {
             s_z154_ult_us = now;
-            uint8_t len = frame[0];            /* frame[0] = tamanho; segue o frame (FCS trocado por RSSI/LQI) */
+            uint8_t len = frame[0];            /* frame[0] = length; frame follows (FCS replaced by RSSI/LQI) */
             if (len > C6_154_MAX) { len = C6_154_MAX; }
             const uint32_t id = C6_MSG_154;
             c6_154_cab_t cab;
@@ -1193,42 +1196,41 @@ void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *in
     esp_ieee802154_receive_handle_done(frame);
 }
 
-/* SO OUVIR, NUNCA RESPONDER. O driver nasce com ACK automatico enabled, e no
- * modo promiscuo (sem filtro de endereco) ele responderia ACK a frame de
- * QUALQUER aparelho da malha que pedisse confirmacao: o emissor acharia que o
- * destino recebeu when talvez nao tenha, e a rede Zigbee/Thread vizinha
- * passaria a perder message por nossa causa. Nao ha API publica para isto; as
- * duas abaixo sao do driver (esp_ieee802154_pib.h, privado) e valem na proxima
- * esp_ieee802154_receive(), que relê a configuracao pending. */
+/* LISTEN ONLY, NEVER RESPOND. The driver starts with automatic ACK enabled;
+ * in promiscuous mode (no address filter), it would ACK frames from ANY mesh
+ * device requesting confirmation. The sender would believe the destination
+ * received a frame when it may not have, and the neighboring Zigbee/Thread
+ * network would lose messages because of us. No public API exists for this;
+ * the two functions below are private driver APIs (esp_ieee802154_pib.h) and
+ * take effect on the next esp_ieee802154_receive(), which reloads pending config. */
 extern void ieee802154_pib_set_auto_ack_tx(bool enable);
 extern void ieee802154_pib_set_enhance_ack_tx(bool enable);
 
-/* LIGAR E DESLIGAR - os dois pontos onde o WiFi caia.
+/* ENABLE AND DISABLE - the two points where WiFi used to fail.
  *
- * 1. COEXISTENCIA (ao enable). WiFi, BLE e 802.15.4 dividem UM caminho de RF no
- *    C6, e quem reparte o time e o arbitro de coexistencia. Ele so leva o
- *    802.15.4 em conta depois de esp_coex_wifi_i154_enable() (coex_enable +
- *    esp_coex_ieee802154_status_enable); o driver do 802.15.4 nunca faz isso
- *    sozinho - os exemplos oficiais ot_br e esp_zigbee_gateway, os dois "WiFi +
- *    802.15.4 num C6", chamam a funcao na aplicacao. Com ela, ouvindo, o
- *    802.15.4 pede o radio com a priority "txrx" do driver (baixa); o WiFi
- *    passa na frente when tem trafego e o 802.15.4 ouve nas sobras.
+ * 1. COEXISTENCE (on enable). WiFi, BLE, and 802.15.4 share ONE RF path on
+ *    C6, and the coexistence arbiter allocates time. It accounts for
+ *    802.15.4 only after esp_coex_wifi_i154_enable() (coex_enable +
+ *    esp_coex_ieee802154_status_enable); the 802.15.4 driver never does this
+ *    itself—the official ot_br and esp_zigbee_gateway examples, both "WiFi +
+ *    802.15.4 on C6," call it from the application. While listening, 802.15.4
+ *    requests the radio with the driver's low "txrx" priority; WiFi goes first
+ *    when traffic exists and 802.15.4 listens in the gaps.
  *
- * 2. DESLIGAR PELO SLEEP, NUNCA PELO DISABLE. Medido no aparelho: com a
- *    coexistencia certa, o WiFi passava data COM o 802.15.4 enabled e morria
- *    logo DEPOIS de disable. esp_ieee802154_disable() corta o clock do MAC
- *    (modem_clock_module_disable) e muda o estado sem stop_current_operation():
- *    com o receptor enabled (rx_when_idle), o MAC e congelado no meio de uma
- *    recepcao, com o pedido de radio feito ao arbitro. esp_ieee802154_sleep()
- *    e o caminho limpo - para a operacao em curso (CMD_STOP), entra em SLEEP e
- *    released o RF (esp_phy_disable) - e e o que o OpenThread usa o time todo com
- *    o WiFi enabled. O driver fica habilitado e dormindo: o MAC parado custa
- *    so o clock dele, e religar e um receive().
+ * 2. DISABLE WITH SLEEP, NEVER WITH DISABLE. Device measurements showed that
+ *    with correct coexistence, WiFi carried data WITH 802.15.4 enabled and
+ *    failed immediately AFTER disable. esp_ieee802154_disable() cuts the MAC
+ *    (modem_clock_module_disable) and changes state without
+ *    stop_current_operation(): with the receiver enabled (rx_when_idle), the
+ *    MAC freezes mid-reception while its radio request is with the arbiter.
+ *    esp_ieee802154_sleep() is the clean path—it stops the current operation
+ *    (CMD_STOP), enters SLEEP, and releases RF (esp_phy_disable)—and OpenThread
+ *    uses it continuously with WiFi enabled. The driver remains enabled and
+ *    sleeping: an idle MAC costs only its clock, and re-enabling is receive().
  *
- * Tarefas diferentes chamam isto (RPC do host e o vigia de 1 s): a trava
- * s_radio_mtx serializa. */
+ * Different tasks call this (host RPC and the 1 s watchdog); s_radio_mtx serializes them. */
 
-static void z154_ligar(const c6_154_cfg_t *c)
+static void enable_z154(const c6_154_cfg_t *c)
 {
     s_z154_intervalo_ms = c->min_intervalo_ms;
     s_z154_validade = esp_timer_get_time() + (int64_t)C6_RADIO_VALIDADE_MS * 1000;
@@ -1239,7 +1241,7 @@ static void z154_ligar(const c6_154_cfg_t *c)
         const esp_err_t r = esp_ieee802154_enable();
         s_z154_err = (int16_t)r;
         if (r != ESP_OK) {
-            ESP_LOGW(TAG, "802.15.4 enable recusado: %s", esp_err_to_name(r));
+            ESP_LOGW(TAG, "802.15.4 enable rejected: %s", esp_err_to_name(r));
             esp_coex_ieee802154_status_disable();
             return;
         }
@@ -1248,7 +1250,7 @@ static void z154_ligar(const c6_154_cfg_t *c)
         esp_coex_ieee802154_status_enable();
     }
     s_z154_lig = true;
-    /* A cada receive() o driver relê a configuracao pending (pib). */
+    /* Each receive() reloads the pending configuration (PIB). */
     ieee802154_pib_set_auto_ack_tx(false);
     ieee802154_pib_set_enhance_ack_tx(false);
     esp_ieee802154_set_channel(canal);
@@ -1256,45 +1258,45 @@ static void z154_ligar(const c6_154_cfg_t *c)
     esp_ieee802154_set_rx_when_idle(true);
     const esp_err_t rr = esp_ieee802154_receive();
     s_z154_err = (int16_t)rr;
-    /* Renovacao chega a cada poucos segundos: so loga o que muda. */
-    if (novo) { ESP_LOGI(TAG, "802.15.4 ouvindo: canal %u", (unsigned)canal); }
+    /* Renewal arrives every few seconds: log only changes. */
+    if (novo) { ESP_LOGI(TAG, "802.15.4 listening: channel %u", (unsigned)canal); }
 }
-static void z154_desligar(void)
+static void disable_z154(void)
 {
     if (!s_z154_lig) { return; }
-    esp_ieee802154_set_rx_when_idle(false);   /* senao o driver iteration a ouvir sozinho */
+    esp_ieee802154_set_rx_when_idle(false);   /* otherwise the driver would keep listening by itself */
     esp_ieee802154_sleep();
-    esp_coex_ieee802154_status_disable();     /* fora do arbitro: o WiFi tem o radio so para ele */
+    esp_coex_ieee802154_status_disable();     /* outside the arbiter: WiFi gets the radio exclusively */
     s_z154_lig = false;
-    ESP_LOGI(TAG, "802.15.4 dormindo");
+    ESP_LOGI(TAG, "802.15.4 sleeping");
 }
-static void z154_guarda(int64_t now)
+static void z154_watchdog(int64_t now)
 {
-    if (s_z154_lig && now > s_z154_validade) { ESP_LOGW(TAG, "802.15.4: host nao renovou"); z154_desligar(); }
+    if (s_z154_lig && now > s_z154_validade) { ESP_LOGW(TAG, "802.15.4: host did not renew"); disable_z154(); }
 }
 #else
-static void z154_ligar(const c6_154_cfg_t *c) { (void)c; }
-static void z154_desligar(void) {}
-static void z154_guarda(int64_t a) { (void)a; }
+static void enable_z154(const c6_154_cfg_t *c) { (void)c; }
+static void disable_z154(void) {}
+static void z154_watchdog(int64_t a) { (void)a; }
 #endif
 
-/* Vigia unico: desliga CSI/802.15.4 que o host deixou de renovar.
+/* Single watchdog: disables CSI/802.15.4 that the host stopped renewing.
  *
- * O TRABALHO NAO RODA NO esp_timer. A tarefa do esp_timer e compartilhada - o
- * controlador BLE usa ela (CONFIG_BT_LE_USE_ESP_TIMER), assim como o proprio
- * esp_hosted. Esperar uma trava ali (ate 50 ms) e chamar o driver de WiFi ou do
- * 802.15.4 (que esperam a tarefa do radio) atrasava todos os outros timers. O
- * callback so acorda a c6farejo, que ja dorme parada e faz a conta com calma. */
-static void radio_guarda(int64_t now)
+ * The WORK DOES NOT RUN IN esp_timer. The esp_timer task is shared—the BLE
+ * controller uses it (CONFIG_BT_LE_USE_ESP_TIMER), as does esp_hosted. Waiting
+ * for a lock there (up to 50 ms) and calling the WiFi or 802.15.4 driver (which
+ * wait for the radio task) delayed every other timer. The callback only wakes
+ * the sniffer task, which is already sleeping and performs the check calmly. */
+static void radio_watchdog(int64_t now)
 {
     if (!s_radio_mtx) { return; }
     xSemaphoreTake(s_radio_mtx, portMAX_DELAY);
-    csi_guarda(now);
-    z154_guarda(now);
+    csi_watchdog(now);
+    z154_watchdog(now);
     xSemaphoreGive(s_radio_mtx);
 }
 
-static void radio_guarda_cb(void *arg)
+static void radio_watchdog_cb(void *arg)
 {
     (void)arg;
 #if CONFIG_ESP_WIFI_CSI_ENABLED
@@ -1302,12 +1304,12 @@ static void radio_guarda_cb(void *arg)
 #else
     const bool csi = false;
 #endif
-    /* Nada enabled: nem acorda ninguem (o C6 ocioso fica ocioso). */
+    /* Nothing enabled: wake nobody (an idle C6 stays idle). */
     if ((csi || s_z154_lig) && s_fj_tarefa) { xTaskNotifyGive(s_fj_tarefa); }
 }
 
 /* ---------------------------------------------------------------------------
- * Vindo do P4
+ * FROM THE P4
  * --------------------------------------------------------------------------- */
 
 static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
@@ -1316,14 +1318,14 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
 
     switch (msg_id) {
     case MSG_HOST_VIVO:
-        host_falou();
+        host_confirmed();
         break;
 
     case MSG_HOST_ENVIAR: {
         if (n <= ESP_NOW_ETH_ALEN) { return; }
-        /* ESTATICO: o envio_t tem 1,5 KB e esta e a stack da pserial_task do
-         * esp_hosted (4 KB, nao e nossa). So ela chama o do_host; o xQueueSend
-         * copia antes de voltar. */
+        /* STATIC: envio_t is 1.5 KB and this is esp_hosted's pserial_task
+         * stack (4 KB, not ours). Only it calls do_host; xQueueSend copies
+         * before returning. */
         static envio_t e;
         memcpy(e.mac, data, ESP_NOW_ETH_ALEN);
         size_t tam = n - ESP_NOW_ETH_ALEN;
@@ -1331,28 +1333,28 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
         memcpy(e.texto, data + ESP_NOW_ETH_ALEN, tam);
         e.n = (uint16_t)tam;
         e.cru = false;
-        /* Sem ESP-NOW no ar, ou queue cheia: falha IMEDIATA - senao a screen do
-         * Tab5 esperaria a confirmacao para sempre. */
+        /* ESP-NOW inactive or queue full: fail IMMEDIATELY, or the Tab5 screen
+         * would wait for confirmation forever. */
         if (!s_espnow_no_ar || !s_envio || xQueueSend(s_envio, &e, 0) != pdTRUE) {
             uint8_t st[ESP_NOW_ETH_ALEN + 1];
             memcpy(st, e.mac, ESP_NOW_ETH_ALEN);
             st[6] = 0;
-            enfileirar(MSG_C6_ESTADO, st, sizeof(st));
+            queue_message(MSG_C6_ESTADO, st, sizeof(st));
         }
         break;
     }
 
     case MSG_HOST_ESPNOW:
-        ligar_espnow();
+        enable_espnow();
         break;
 
     case C6_MSG_HOST_FAREJO:
-        pedir_farejo(data, n);
+        request_sniffer(data, n);
         break;
 
     case C6_MSG_HOST_CRU: {
         if (n <= ESP_NOW_ETH_ALEN || !s_espnow_no_ar || !s_envio) { return; }
-        static envio_t e;   /* estatico: ver MSG_HOST_ENVIAR */
+        static envio_t e;   /* static: see MSG_HOST_ENVIAR */
         memcpy(e.mac, data, ESP_NOW_ETH_ALEN);
         size_t tam = n - ESP_NOW_ETH_ALEN;
         if (tam > ESP_NOW_MAX_DATA_LEN_V2) { tam = ESP_NOW_MAX_DATA_LEN_V2; }
@@ -1366,9 +1368,9 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
     case C6_MSG_HOST_AJUSTE:
         if (n < 1) { return; }
         switch (data[0]) {
-        case C6_AJ_INFO: responder_info(); break;
+        case C6_AJ_INFO: send_info(); break;
         case C6_AJ_CRU:  s_repassar_cru = (n >= 2 && data[1]); break;
-        default: break;   /* chave nova de um P4 mais novo: ignora */
+        default: break;   /* key added by a newer P4: ignore */
         }
         break;
 
@@ -1381,26 +1383,26 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
         xSemaphoreTake(s_radio_mtx, portMAX_DELAY);
         switch (sub) {
         case C6_RX_CSI: { c6_csi_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          if (c.liga) { csi_ligar(&c); } else { csi_desligar(); } break; }
+                          if (c.liga) { enable_csi(&c); } else { disable_csi(); } break; }
         case C6_RX_FTM: { c6_ftm_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          ftm_disparar(&c); break; }
+                          start_ftm(&c); break; }
         case C6_RX_154: { c6_154_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          if (c.liga) { z154_ligar(&c); } else { z154_desligar(); } break; }
-        default: break;   /* sub-comando novo de um P4 mais novo: ignora */
+                          if (c.liga) { enable_z154(&c); } else { disable_z154(); } break; }
+        default: break;   /* subcommand added by a newer P4: ignore */
         }
         xSemaphoreGive(s_radio_mtx);
         break;
     }
 
     case MSG_HOST_CANAL:
-        /* TODO MUNDO TEM QUE ESTAR NO MESMO CANAL, e este e o reason numero um
-         * de "nao funciona". Se o C6 estiver associado a um AP, quem manda no
-         * canal e o AP - mudar aqui derrubaria a connection. Por isso so mexemos
-         * when o P4 pede explicitamente. */
+        /* EVERYONE MUST BE ON THE SAME CHANNEL; this is the number-one reason
+         * for "it does not work." If C6 is associated with an AP, the AP owns
+         * the channel—changing it here would drop the connection. Therefore we
+         * change it only when the P4 explicitly asks. */
         if (n >= 1) {
             esp_err_t r = esp_wifi_set_channel(data[0], WIFI_SECOND_CHAN_NONE);
-            ESP_LOGI(TAG, "canal -> %u: %s", (unsigned)data[0], esp_err_to_name(r));
-            if (r == ESP_OK) { s_canal_volta = data[0]; }   /* o farejo iteration para este */
+            ESP_LOGI(TAG, "channel -> %u: %s", (unsigned)data[0], esp_err_to_name(r));
+            if (r == ESP_OK) { s_canal_volta = data[0]; }   /* sniffer returns to this */
         }
         break;
 
@@ -1413,59 +1415,59 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "firmware do C6 do Tab5 (esp_hosted + ESP-NOW + farejo), contrato v%d", C6_PROTO_VERSAO);
+    ESP_LOGI(TAG, "Tab5 C6 firmware (esp_hosted + ESP-NOW + sniffer), contract v%d", C6_PROTO_VERSAO);
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         nvs_flash_erase();
         ret = nvs_flash_init();
     }
-    /* Sem ESP_ERROR_CHECK, pelo mesmo reason do registro abaixo: nada aqui pode
-     * derrubar o coprocessador. Falhar a NVS e ruim; abortar e MUITO pior. */
+    /* No ESP_ERROR_CHECK, for the same reason as the registration below:
+     * nothing here may take down the coprocessor. NVS failure is bad; aborting is MUCH worse. */
     if (ret != ESP_OK) { ESP_LOGE(TAG, "nvs_flash_init: %s", esp_err_to_name(ret)); }
     esp_event_loop_create_default();
 
-    /* Guarda de imagem nova ANTES de qualquer coisa que possa dar errado. */
-    guarda_iniciar();
+    /* New image guard BEFORE anything that could fail. */
+    start_image_guard();
 
     s_saida = xRingbufferCreate(SAIDA_RING_BYTES, RINGBUF_TYPE_NOSPLIT);
     if (s_saida) {
-        xTaskCreate(vTarefaSaida, "c6saida", 4096, NULL, 5, NULL);
+        xTaskCreate(output_task, "c6output", 4096, NULL, 5, NULL);
     }
-    /* A trava antes da c6farejo: e ela que roda o vigia dos extras do radio. */
+    /* Lock before the sniffer: it runs the radio-extra watchdog. */
     s_radio_mtx = xSemaphoreCreateMutex();
-    /* Dorme num ulTaskNotifyTake ate o host pedir farejo (ou o vigia acordar):
-     * parada, custa so a stack. 4096 como a c6saida: as duas chamam
-     * eh_cp_feat_peer_data_send, que codifica o evento RPC na stack de quem chama. */
-    xTaskCreate(vTarefaFarejo, "c6farejo", 4096, NULL, 4, &s_fj_tarefa);
+    /* Sleeps in ulTaskNotifyTake until the host requests sniffing (or the
+     * watchdog wakes it): stopped, it costs only stack. 4096 like the output task:
+     * both call eh_cp_feat_peer_data_send, which encodes the RPC event on the caller's stack. */
+    xTaskCreate(sniffer_task, "c6sniffer", 4096, NULL, 4, &s_fj_tarefa);
 
-    /* Vigia dos extras do radio (CSI/802.15.4): 1x/s acorda a c6farejo se algum
-     * deles estiver enabled. */
+    /* Radio-extra watchdog (CSI/802.15.4): once per second, wake the sniffer if
+     * either is enabled. */
     esp_timer_handle_t guarda = NULL;
-    const esp_timer_create_args_t ga = { .callback = radio_guarda_cb, .name = "radio_guarda" };
+    const esp_timer_create_args_t ga = { .callback = radio_watchdog_cb, .name = "radio_watchdog" };
     if (esp_timer_create(&ga, &guarda) == ESP_OK) {
         esp_timer_start_periodic(guarda, 1000000);
     }
 
-    /* NADA DE ESP_ERROR_CHECK AQUI. Foi o defeito.
+    /* NO ESP_ERROR_CHECK HERE. That was the bug.
      *
-     * As features do coprocessador (peer_data inclusive) sobem numa TAREFA
-     * PROPRIA - o auto_feat_init_task do eh_cp_core -, nao antes do app_main.
-     * Enquanto ela nao rodou, o register_callback devolve ESP_ERR_INVALID_STATE
-     * ("Not initialized"), e ESP_ERROR_CHECK sobre isso ABORTA o C6.
+     * Coprocessor features (including peer_data) start in a DEDICATED TASK—the
+     * auto_feat_init_task in eh_cp_core—not before app_main. Until it runs,
+     * register_callback returns ESP_ERR_INVALID_STATE ("Not initialized"),
+     * and ESP_ERROR_CHECK on that result ABORTS C6.
      *
-     * Abortar aqui e o pior desfecho possivel: o C6 entra em loop de reinicio,
-     * o enlace SDIO negocia e morre a cada iteration, TODO RPC do host expira - e
-     * como o aparelho nunca fica de pe time suficiente, nao da nem para gravar
-     * firmware novo por OTA para consertar. O sintoma foi exatamente esse.
+     * Aborting here is the worst possible outcome: C6 enters a reboot loop,
+     * the SDIO link negotiates and dies on every iteration, EVERY host RPC
+     * expires, and because the device never stays up long enough, new firmware
+     * cannot even be flashed over OTA to fix it. That was exactly the symptom.
      *
-     * Regra: NADA no app_main de um coprocessador pode abortar. Ele e a unica
-     * via de recuperacao dele mesmo. */
+     * Rule: NOTHING in a coprocessor's app_main may abort. It is its only
+     * recovery path. */
     for (int tent = 0; ; ++tent) {
         const esp_err_t r = eh_cp_feat_peer_data_register_callback(MSG_HOST_VIVO, do_host, NULL);
         if (r == ESP_OK) { break; }
         if (tent == 0) {
-            ESP_LOGW(TAG, "peer_data ainda nao subiu (%s) - esperando",
+            ESP_LOGW(TAG, "peer_data is not up yet (%s) - waiting",
                      esp_err_to_name(r));
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -1473,11 +1475,11 @@ void app_main(void)
     eh_cp_feat_peer_data_register_callback(MSG_HOST_ENVIAR, do_host, NULL);
     eh_cp_feat_peer_data_register_callback(MSG_HOST_CANAL,  do_host, NULL);
     eh_cp_feat_peer_data_register_callback(MSG_HOST_ESPNOW, do_host, NULL);
-    /* Tabela do peer_data: 8 de 8 vagas, ja contado o VIVO (ver tab5_c6.h). */
+    /* peer_data table: 8 of 8 slots, including VIVO (see tab5_c6.h). */
     eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_FAREJO, do_host, NULL);
     eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_CRU,    do_host, NULL);
     eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_AJUSTE, do_host, NULL);
-    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_RADIO,  do_host, NULL);  /* 8o: tabela cheia */
+    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_RADIO,  do_host, NULL);  /* 8th: table full */
 
-    ESP_LOGI(TAG, "pronto - esperando o host mandar ligar o ESP-NOW");
+    ESP_LOGI(TAG, "ready - waiting for host to enable ESP-NOW");
 }

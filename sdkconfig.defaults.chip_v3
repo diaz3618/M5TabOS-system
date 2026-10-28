@@ -1,15 +1,15 @@
-# P4 REVISAO v3.x (M5_CHIP=v3). Somado ao sdkconfig.defaults pelo
-# CMakeLists.txt da raiz. Compilar:
+# P4 REVISION v3.x (M5_CHIP=v3). Added on top of sdkconfig.defaults by the
+# root CMakeLists.txt. To build:
 #     idf.py -B build_v3 -DM5_CHIP=v3 build
-# (ou ./flash.sh, que le a revisao do aparelho e escolhe sozinho).
+# (or ./flash.sh, which reads the device's revision and picks on its own).
 #
-# O IDF avisa no proprio Kconfig: v3.0 em diante e v1.x tem "huge hardware
-# difference" - um binario de um NAO roda no outro (o bootloader recusa a
-# revisao). Nada no codigo do sistema depende da revisao alem do clock maximo
-# (400 MHz aqui, 360 no v1 - lido de CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, ver
-# TAB5_CPU_MAX_MHZ em hal/tab5_power.hpp).
+# The IDF warns in its own Kconfig: v3.0 onward and v1.x have "huge hardware
+# difference" - a binary for one does NOT run on the other (the bootloader
+# rejects the revision). Nothing in the system's code depends on the
+# revision beyond the max clock (400 MHz here, 360 on v1 - read from
+# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, see TAB5_CPU_MAX_MHZ in hal/tab5_power.hpp).
 #
-# ESTE PERFIL COMPILA, MAS NAO FOI TESTADO EM APARELHO: nao temos um P4 v3.
+# THIS PROFILE BUILDS, BUT HAS NOT BEEN TESTED ON HARDWARE: we don't have a P4 v3.
 # CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
 CONFIG_ESP32P4_REV_MIN_300=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_400=y

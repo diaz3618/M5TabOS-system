@@ -16,23 +16,23 @@
 
 static const char *TAG = "registro";
 
-// Uma sample por minuto: uma descarga complete (5 a 15 horas) rende of 300 a
-// 900 pontos, resolucao of sobra para tracar a curva e calibrar a battery.
-// A cada 10 minutos vai para o cartao.
+// One sample per minute: a complete discharge (5 to 15 hours) yields 300 to
+// 900 points, enough resolution to plot the curve and calibrate the battery.
+// Data is sent to the card every 10 minutes.
 static const uint32_t AMOSTRA_MS = 60000;
 static const int      LOTE       = 5;       // amostras por descarga (era 10; o grafico HOJE of app Energia le daqui)
 static const int      CAPACIDADE = 32;      // folga: se o cartao falhar, segura mais
 
 typedef struct {
-  uint32_t t;        // segundos since o boot
-  uint32_t epoch;    // hora real UTC of sample; 0 = clock nao acertado
+  uint32_t t;        // seconds since boot
+  uint32_t epoch;    // sample's UTC time; 0 = clock not set
   float    volts;
   float    mA;
   float    mW;
   int16_t  pct;
   int16_t  mhz;
   uint8_t  sleep;
-  float    temp;     // silicio of P4, -273 when nao measured
+  float    temp;     // P4 silicon temperature, -273 when not measured
   char     app[12];
 } sample_t;
 
@@ -44,7 +44,7 @@ static char      s_app[12] = "home";
 
 void registro_app_current(const char* name)
 {
-  // Copia por valor: o ponteiro of app pode morrer when ele fecha.
+  // Copy by value: the app pointer may become invalid when the app closes.
   snprintf(s_app, sizeof(s_app), "%s", name ? name : "home");
 }
 
@@ -56,32 +56,31 @@ void registro_estado(int* in_ram, uint32_t* gravadas, uint32_t* falhas)
 }
 
 // ---------------------------------------------------------------------------
-// SAUDE DAS TAREFAS E DO HEAP - ver a explicacao complete em energy_log.h.
+// TASK AND HEAP HEALTH - see the full explanation in energy_log.h.
 // ---------------------------------------------------------------------------
-// Ate 32 tarefas simultaneas - o mesmo teto que o app Tarefas ja usa
-// (tarefas/app_tasks.cpp). Repetido aqui em vez of shared of
-// proposito: e uma CONSTANTE, nao one estado, e as duas leituras sao
-// independentes uma of outra - o app pode nao estar nem open.
+// Up to 32 simultaneous tasks, matching the limit already used by the Tasks
+// app (tarefas/app_tasks.cpp). Repeated here intentionally rather than shared:
+// this is a CONSTANT, not state, and the two readings are independent—the app
+// may not even be open.
 // (O instantaneo of tarefas em tarefas.csv, a cada descarga, exited em
 // o monitor of sistema (services/tab5_monitor) mede as tarefas a
 // cada segundo, com picos e eventos, e grava no cartao o que importa.)
 
-// UM ARQUIVO POR DIA, COM A HORA REAL. Ate aqui era one
-// energia.csv unico, crescendo since sempre, com o time em segundos since o
-// BOOT - impossivel recortar "o dia" dele. Agora:
+// ONE FILE PER DAY, WITH REAL TIME. Previously one energia.csv grew forever,
+// with timestamps in seconds since BOOT, making a single day impossible to
+// extract. Now:
 //   Sistema/energia/energia-AAAA-MM-DD.csv   (data LOCAL - o dia of quem usa)
 //   ENE3,<epoch UTC>,<HH:MM local>,<V>,<mA>,<mW>,<pct>,<MHz>,<sleep>,<temp>,<app>
-// Sem clock acertado (sem GPS/malha since o boot) as amostras vao para
-// energia-sem-data.csv, com epoch 0. O energia.csv antigo stays no cartao,
-// intocado.
+// Without a valid clock (no GPS/mesh since boot), samples go to
+// energia-sem-data.csv with epoch 0. The old energia.csv remains untouched.
 static void name_of_dia(uint32_t epoch, char* out, size_t size)
 {
   tab5_day_filename(epoch, "energia-", ".csv", out, size);
 }
 
-// Pelo gravador of sistema (hal/tab5_sd.hpp): cada sample vira uma line
-// entregue in hora; montar, open e write e com a tarefa "cartao". O
-// cabecalho vai junto e so e escrito se o arquivo of dia estiver vazio.
+// The system writer (hal/tab5_sd.hpp) receives each sample as a line; the
+// "card" task handles mounting, opening, and writing. The header is included
+// and written only when the day's file is empty.
 static void descarregar(void)
 {
   if (s_n == 0) { return; }
@@ -104,9 +103,9 @@ static void descarregar(void)
   s_n = 0;
 }
 
-// SEM TAREFA PROPRIA: uma sample por minuto nao paga 4 KB of stack parada.
-// Pega carona in tarefa "cartao" (tab5_sd_carona), que ja acorda a cada 1 s e
-// e quem grava no cartao of qualquer jeito; aqui so se conta o minuto.
+// NO DEDICATED TASK: one sample per minute does not justify 4 KB of idle
+// stack. Ride on the "card" task (tab5_sd_carona), which already wakes every
+// second and writes to the card; this callback only tracks the minute.
 static void registro_in_carona(void)
 {
   static int64_t next_us = esp_timer_get_time() + (int64_t)AMOSTRA_MS * 1000;
@@ -115,9 +114,9 @@ static void registro_in_carona(void)
   next_us += (int64_t)AMOSTRA_MS * 1000;
   if (next_us <= now_us) { next_us = now_us + (int64_t)AMOSTRA_MS * 1000; }   // atrasou demais: recomeca
   {
-    // Le of CACHE, nunca of I2C: o barramento e of tarefa of interface, que
-    // atualiza este valor a cada segundo. Ir on I2C daqui reproduziria a
-    // corrida que ja nos custou uma tarde (tensao alternando 4.37/8.37V).
+    // Read the CACHE, never I2C: the bus belongs to the interface task, which
+    // updates this value every second. Reading I2C here would recreate the
+    // race that already cost us an afternoon (voltage alternating 4.37/8.37V).
     tab5_measurement_t m = tab5_power_latest();
 
     if (s_n >= CAPACIDADE) {
@@ -167,6 +166,6 @@ void registro_start(void)
   // Uma vez por minuto le o cache of energia e, of lote em lote, entrega as
   // lines on gravador - everything dentro of tarefa "cartao".
   tab5_sd_piggyback(registro_in_carona);
-  ESP_LOGI(TAG, "no ar: amostra a cada %lus, descarga a cada %d amostras",
+  ESP_LOGI(TAG, "running: sample every %lus, flush every %d samples",
            (unsigned long)(AMOSTRA_MS / 1000), LOTE);
 }

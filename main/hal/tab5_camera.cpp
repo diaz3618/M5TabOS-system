@@ -337,7 +337,7 @@ static bool start_hardware(int width, int height)
   // grande no .hpp. Pega o handle ja instalado, NAO cria one novo.
   i2c_master_bus_handle_t i2c_handle = nullptr;
   if (i2c_master_get_bus_handle(I2C_NUM_1, &i2c_handle) != ESP_OK || !i2c_handle) {
-    ESP_LOGE(TAG, "barramento I2C interno (I2C_NUM_1) nao esta de pe - M5.begin() ja rodou?");
+    ESP_LOGE(TAG, "internal I2C bus (I2C_NUM_1) is not ready - has M5.begin() run?");
     vSemaphoreDelete(s_cam.trava);
     s_cam.trava = nullptr;
     return false;
@@ -384,7 +384,7 @@ static bool start_hardware(int width, int height)
       ESP_LOGE(TAG, "VIDIOC_G_FMT failed");
       goto erro;
     }
-    ESP_LOGI(TAG, "formato padrao do sensor: %ux%u, fourcc 0x%08lx (RAW = Bayer, sem ISP ainda)",
+    ESP_LOGI(TAG, "sensor default format: %ux%u, fourcc 0x%08lx (RAW Bayer data, ISP not applied yet)",
              (unsigned)fmt.fmt.pix.width, (unsigned)fmt.fmt.pix.height,
              (unsigned long)fmt.fmt.pix.pixelformat);
 
@@ -395,7 +395,7 @@ static bool start_hardware(int width, int height)
       request.fmt.pix.height      = fmt.fmt.pix.height;
       request.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565;
       if (ioctl(s_cam.fd, VIDIOC_S_FMT, &request) != 0) {
-        ESP_LOGE(TAG, "VIDIOC_S_FMT(RGB565) failed - o ISP nao aceitou a conversao");
+        ESP_LOGE(TAG, "VIDIOC_S_FMT(RGB565) failed - the ISP rejected the conversion");
         goto erro;
       }
       // Confirma o que realmente became valendo - o driver pode ajustar.
@@ -412,7 +412,7 @@ static bool start_hardware(int width, int height)
     ESP_LOGI(TAG, "capturando: %ux%u, fourcc 0x%08lx", (unsigned)s_cam.bruto_width,
              (unsigned)s_cam.bruto_height, (unsigned long)fmt.fmt.pix.pixelformat);
     if (fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_RGB565) {
-      ESP_LOGE(TAG, "driver ficou em fourcc 0x%08lx, nao RGB565 - PPA vai receber lixo",
+      ESP_LOGE(TAG, "driver selected fourcc 0x%08lx, not RGB565 - PPA would receive invalid data",
                (unsigned long)fmt.fmt.pix.pixelformat);
       goto erro;
     }
@@ -430,7 +430,7 @@ static bool start_hardware(int width, int height)
       s_cam.escala    = (float)s16 / 16.0f;
       s_cam.recorte_h = (L * 16) / s16; if (s_cam.recorte_h > H) { s_cam.recorte_h = H; }
       s_cam.recorte_w = (A * 16) / s16; if (s_cam.recorte_w > W) { s_cam.recorte_w = W; }
-      ESP_LOGI(TAG, "preview %dx%d: escala %d/16, usa %dx%d do quadro de %dx%d",
+      ESP_LOGI(TAG, "preview %dx%d: scale %d/16, using %dx%d from the %dx%d frame",
                L, A, s16, s_cam.recorte_w, s_cam.recorte_h, W, H);
     }
 
@@ -505,7 +505,7 @@ static bool start_hardware(int width, int height)
   // So DQBUF, PPA e QBUF - a gravacao of foto exited daqui (ver
   // tab5_camera_request_photo), entao a stack iteration aos 4 KB originais.
   if (!app_task_create(&s_cam.tarefa, laco_captura, "cam", 4096, 3)) {
-    ESP_LOGE(TAG, "nao consegui start a tarefa de captura");
+    ESP_LOGE(TAG, "could not start the capture task");
     { const int type = V4L2_BUF_TYPE_VIDEO_CAPTURE; ioctl(s_cam.fd, VIDIOC_STREAMOFF, &type); }
     goto erro;
   }
@@ -598,7 +598,7 @@ static void stop_hardware(void)
     }
     esp_log_level_set("ppa_core", ESP_LOG_INFO);
 
-    if (err != ESP_OK) { ESP_LOGW(TAG, "ppa_unregister_client nao confirmou (%s) - seguindo assim mesmo (cliente PPA vazado)", esp_err_to_name(err)); }
+    if (err != ESP_OK) { ESP_LOGW(TAG, "ppa_unregister_client did not confirm (%s) - continuing anyway (PPA client leaked)", esp_err_to_name(err)); }
     s_cam.ppa = nullptr;
   }
   if (s_cam.ppa_end) { vSemaphoreDelete(s_cam.ppa_end); s_cam.ppa_end = nullptr; }

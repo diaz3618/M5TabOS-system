@@ -89,7 +89,7 @@ screen without registering it anywhere: your app lives right next to these.
 
    The script auto-detects the serial port (`/dev/cu.usbmodem*` on macOS,
    `/dev/ttyACM*` on Linux) and opens the serial monitor. To specify a port
-   manually: `PORTA=/dev/xxx ./flash.sh`.
+   manually: `PORT=/dev/xxx ./flash.sh`.
 
 ### ESP32-C6 firmware (optional)
 
@@ -131,7 +131,7 @@ adapter (such as the M5Stack ESP32 Downloader):
    ```
 
    The script auto-detects the programmer port (`/dev/cu.usbserial-*` on macOS,
-   `/dev/ttyUSB*` on Linux). To override: `PORTA=/dev/xxx c6/flash.sh`.
+   `/dev/ttyUSB*` on Linux). To override: `PORT=/dev/xxx c6/flash.sh`.
 
 5. Power on the Tab5. The boot log should show
    `host=3.0.9 coprocessor=3.0.9 (match)`.

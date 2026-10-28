@@ -1,15 +1,16 @@
-# MESMA tabela dos exemplos do esp_hosted para 4MB com OTA duplo.
+# SAME table as esp_hosted's examples for 4MB with dual OTA.
 #
-# A gravacao pelo cabo (idf.py flash / flash.sh) escreve ESTA tabela no C6,
-# junto com o bootloader e o otadata: e ela que vale no aparelho. (Uma OTA nao
-# regravaria a tabela - so a imagem no slot livre.)
+# Flashing over the cable (idf.py flash / flash.sh) writes THIS table to the
+# C6, along with the bootloader and otadata: this is the one that counts on
+# the device. (An OTA would not rewrite the table - only the image in the
+# free slot.)
 #
-# SO MUDA PELO CABO. Por isso ela ja nasce com o que uma OTA futura pode
-# precisar, usando os 4 MB inteiros:
-#   - slots de 1,875 MB (a imagem tem ~1,4 MB: ~25% de folga para crescer);
-#   - coredump: o C6 grava aqui o retrato de um travamento, que sobrevive ao
-#     reinicio - sem ele, um panico do C6 so se ve no Downloader;
-#   - dados: NVS livre para uma versao futura guardar o que quiser.
+# ONLY CHANGES OVER THE CABLE. That's why it's built from the start with
+# whatever a future OTA might need, using the full 4 MB:
+#   - 1.875 MB slots (the image is ~1.4 MB: ~25% headroom to grow);
+#   - coredump: the C6 writes a snapshot of a crash here, which survives a
+#     restart - without it, a C6 panic is only visible through the Downloader;
+#   - data: free NVS for a future version to store whatever it needs.
 #
 # Name,     Type, SubType,  Offset,   Size
 nvs,        data, nvs,      0x9000,   0x4000

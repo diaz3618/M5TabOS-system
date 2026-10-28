@@ -382,7 +382,7 @@ powers the C6). Step-by-step instructions, factory backup commands, and recovery
 steps are in the [README](README.md#esp32-c6-firmware-optional).
 
 ```bash
-c6/flash.sh   # auto-detects the serial port; use PORTA=/dev/xxx c6/flash.sh to override
+c6/flash.sh   # auto-detects the serial port; use PORT=/dev/xxx c6/flash.sh to override
 ```
 
 The C6 firmware includes two safety nets: bootloader rollback and a 120-second

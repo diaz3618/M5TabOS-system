@@ -1,29 +1,29 @@
-// FAREJO - o WiFi em modo promiscuo, visto of P4.
+// SNIFFING - WiFi promiscuous mode, as seen by the P4.
 //
-// O esp_hosted nao repassa o modo promiscuo, entao ele roda DENTRO of C6
-// (firmware nosso, pasta c6/) e chega aqui ja RESUMIDO: o C6 junta por MAC
-// durante o periodo of lote e manda one lote so (ver FAREJADOR em
-// shared/tab5_c6.h). Este servico guarda o ultimo estado of cada MAC
-// ouvido; quem usa (Radar, console) le a tabela when quiser.
+// esp_hosted does not forward promiscuous mode, so it runs INSIDE the C6
+// (our firmware, in c6/) and arrives here already SUMMARIZED: the C6 groups
+// by MAC during each batch period and sends one batch (see SNIFFER in
+// shared/tab5_c6.h). This service stores the latest state for every heard MAC;
+// users (Radar, console) read the table when needed.
 //
-// CUSTO PARADO: zero. Nao ha tarefa permanente nem tabela: on enable, pega uma
-// vaga of pool (renova o request no C6 e espera) e aloca a tabela in PSRAM; on
-// disable, devolve as duas.
+// IDLE COST: zero. There is no permanent task or table: on enable, it takes a
+// pool slot (renews the C6 request) and allocates the table in PSRAM; on
+// disable, it returns both.
 //
-// ENERGIA: farejar deixa o receptor of C6 enabled o time todo. Por isso o C6
-// DESLIGA SOZINHO se este servico stop of renovar (app fechou, travou) - e
-// por isso quem liga tem que disable when a screen que usa o farejo close.
+// POWER: sniffing keeps the C6 receiver enabled continuously. The C6 therefore
+// DISABLES ITSELF if this service stops renewing (the app closed or crashed),
+// so callers must disable it when the screen using sniffing closes.
 //
-// CANAIS: com o WiFi conectado o C6 stays no canal of roteador (switch
-// derrubaria a connection). Para varrer varios canais, solte o roteador antes
-// (tab5_wifi_radio_only_mode) - e o que o canal fixo of ESP-NOW ja faz.
+// CHANNELS: with WiFi connected, the C6 stays on the router's channel (switching
+// would drop the connection). To scan several channels, release the router
+// first (tab5_wifi_radio_only_mode), as fixed-channel ESP-NOW already does.
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include "tab5_c6.h"
 
-#define FAREJO_MAX 128   // MACs guardados; cheio, exit o ouvido ha mais time
+#define FAREJO_MAX 128   // Stored MACs; when full, the least recently heard is evicted
 
 typedef struct {
   uint8_t  mac[6];
@@ -36,36 +36,36 @@ typedef struct {
   uint32_t seen_ms;       // tab5_now_ms() of ultimo lote em que apareceu
 } farejo_item_t;
 
-// Liga, ou troca a configuracao (c6_farejo_cfg_t em tab5_c6.h; cfg->liga e
-// ignorado). Nao bloqueia. false = C6 sem o firmware nosso, ou sem vaga.
+// Enable or replace the configuration (c6_farejo_cfg_t in tab5_c6.h; cfg->liga
+// is ignored). Non-blocking. false = C6 lacks our firmware, or no slot exists.
 bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg);
 void tab5_farejo_disable(void);
 bool tab5_farejo_active(void);
 
-// O firmware of C6 sabe farejar? Lido of PRONTO/INFO; false ate saber.
+// Does the C6 firmware support sniffing? Read from PRONTO/INFO; false until known.
 bool tab5_farejo_c6_suporta(void);
-// Todas as capacidades of C6 gravado (C6_CAP_*), of PRONTO/INFO; 0 ate saber.
+// All capabilities reported by the C6 (C6_CAP_*), from PRONTO/INFO; 0 until known.
 uint8_t tab5_farejo_caps_c6(void);
 
-// CADA REGISTRO DE CADA LOTE, para quem precisa of RSSI no time (o Radar casa
-// cada one com o rumo of aparelho naquele instante). Na tarefa of eventos of
-// esp_hosted: so copiar e exit. 't_us' e o MEIO of periodo of lote (esp_timer),
-// o melhor palpite of when aquele RSSI medio foi measured. Um ouvinte so;
-// nullptr tira.
+// EACH RECORD FROM EACH BATCH, for users that need RSSI over time (Radar pairs
+// each one with the device bearing at that instant). Called from the esp_hosted
+// event task: copy and return. 't_us' is the MIDDLE of the batch period
+// (esp_timer), the best estimate of when that average RSSI was measured.
+// One listener only; nullptr removes it.
 typedef void (*tab5_farejo_ouvinte_t)(const c6_farejo_reg_t* reg, int64_t t_us);
 void tab5_farejo_ouvinte(tab5_farejo_ouvinte_t cb);
 
-// Tabela. Copia (o lote chega em outra tarefa). Ordem: a of chegada.
+// Table. Copy returned because batches arrive in another task. Arrival order.
 int      tab5_farejo_n(void);
 bool     tab5_farejo_item(int i, farejo_item_t* out);
 bool     tab5_farejo_achar(const uint8_t mac[6], farejo_item_t* out);
-uint32_t tab5_farejo_lotes(void);      // so sobe: "chegou lote novo since que olhei"
-uint32_t tab5_farejo_perdidos(void);   // MACs que nao couberam no C6, acumulado
+uint32_t tab5_farejo_lotes(void);      // only increases: "a new batch arrived since I looked"
+uint32_t tab5_farejo_perdidos(void);   // MACs that did not fit in the C6 table, accumulated
 void     tab5_farejo_limpar(void);
 
-// Pergunta on C6 (versao of contrato, heap, quadros). BLOQUEIA ate 'espera_ms'
-// - so of tarefa que pode wait (console), nunca of interface.
+// Query the C6 (contract version, heap, frames). BLOCKS for up to 'espera_ms'
+// - only from a task that may wait (console), never the interface.
 bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms);
 
-// Chamado pelo servico ESP-NOW when chega o PRONTO (traz versao e capacidades).
+// Called by the ESP-NOW service when PRONTO arrives (version and capabilities).
 void tab5_farejo_anotar_pronto(const uint8_t* data, uint16_t n);

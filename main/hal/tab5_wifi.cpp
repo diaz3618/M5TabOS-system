@@ -558,7 +558,7 @@ static bool raise_stack(void)
   int rc = esp_hosted_init();
   tab5_memory_marco("esp_hosted_init (SDIO)");
   if (rc != 0) {
-    ESP_LOGE(TAG, "esp_hosted_init failed: %d - o C6 nao respondeu no SDIO. "
+    ESP_LOGE(TAG, "esp_hosted_init failed: %d - the C6 did not respond on SDIO. "
                   "Para ver o log raw: 'log eh_sdio 4' e 'log sdmmc_io 4'", rc);
     return false;
   }
@@ -572,11 +572,11 @@ static bool raise_stack(void)
     tab5_memory_marco("C6: link + RPC");
   }
   if (rc != 0) {
-    ESP_LOGE(TAG, "conexao com o C6 failed: %d.", rc);
-    ESP_LOGE(TAG, "Se voce acabou de write firmware no C6, ELE SE RECUPERA "
-                  "SOZINHO: sem confirmacao em %d s ele volta para a imagem "
-                  "anterior. Deixe LIGADO ate la - cada reinicio rearma a "
-                  "contagem do zero.", C6_PRAZO_HOST_S);
+    ESP_LOGE(TAG, "connection to the C6 failed: %d.", rc);
+    ESP_LOGE(TAG, "If you just flashed firmware to the C6, IT RECOVERS "
+                  "AUTOMATICALLY: without confirmation within %d s it returns to the "
+                  "previous image. Leave it powered on until then; each reboot resets "
+                  "the countdown.", C6_PRAZO_HOST_S);
     return false;
   }
 
@@ -595,10 +595,10 @@ static bool raise_stack(void)
   esp_hosted_coprocessor_fwver_t ver = { };
   if (esp_hosted_get_coprocessor_fwversion(&ver) != 0)
   {
-    ESP_LOGE(TAG, "o C6 aceitou o link mas NAO RESPONDE A RPC.");
-    ESP_LOGE(TAG, "O firmware dele precisa ser regravado pelo conector "
+    ESP_LOGE(TAG, "the C6 accepted the link but does NOT RESPOND TO RPC.");
+    ESP_LOGE(TAG, "Its firmware must be reflashed through the board's "
                   "reservado da placa (docs.m5stack.com, restore_factory). "
-                  "O resto do sistema continua funcionando - so o WiFi cai.");
+                  "The rest of the system continues running; only Wi-Fi is lost.");
     s_estado = TAB5_WIFI_C6_UNRESPONSIVE;
     return false;
   }
@@ -653,8 +653,8 @@ static bool raise_stack(void)
   cfg.csi_enable = 1;
   const esp_err_t erri = esp_wifi_init(&cfg);
   if (erri != ESP_OK && erri != ESP_ERR_INVALID_STATE) {
-    ESP_LOGE(TAG, "esp_wifi_init: %s - o C6 respondeu ao link mas nao ao RPC. "
-                  "Se voce acabou de write firmware nele, DEIXE PARADO: sem "
+    ESP_LOGE(TAG, "esp_wifi_init: %s - the C6 answered on the link but not to RPC. "
+                  "If you just flashed firmware, LEAVE IT ALONE: without "
                   "resetar o C6, ele volta sozinho para a imagem anterior em "
                   "%d s. Reiniciar o P4 RESETA o C6 e rearma essa contagem.",
              esp_err_to_name(erri), C6_PRAZO_HOST_S);
@@ -992,14 +992,14 @@ static void varrer_e_listar(void)
   esp_wifi_scan_get_ap_num(&n);
   if (n == 0)
   {
-    printf("NENHUMA network encontrada.\n"
-           "  Se ha networks 2.4GHz por perto, o problema e o radio do C6, nao a sua network.\n");
+    printf("NO NETWORKS FOUND.\n"
+           "  If nearby 2.4 GHz networks are visible, the C6 radio is the problem, not your network.\n");
     s_varrendo = false;
     return;
   }
 
   wifi_ap_record_t* aps = (wifi_ap_record_t*) calloc(n, sizeof(wifi_ap_record_t));
-  if (!aps) { printf("sem memoria para %u networks\n", (unsigned)n); s_varrendo = false; return; }
+  if (!aps) { printf("out of memory for %u networks\n", (unsigned)n); s_varrendo = false; return; }
 
   esp_wifi_scan_get_ap_records(&n, aps);
   printf("%u network(s):\n", (unsigned)n);
@@ -1009,13 +1009,13 @@ static void varrer_e_listar(void)
     printf("  %-32s %5d %3d %s\n",
            aps[i].ssid[0] ? (const char*)aps[i].ssid : "(oculta)",
            (int)aps[i].rssi, (int)aps[i].primary,
-           aps[i].authmode == WIFI_AUTH_OPEN ? "open" : "com password");
+           aps[i].authmode == WIFI_AUTH_OPEN ? "open" : "password");
   }
   free(aps);
 
-  printf("\nO Tab5 so enxerga 2.4GHz (o radio e um ESP32-C6).\n"
-         "Se a sua network nao esta na lista, ela e 5GHz ou o name esta diferente -\n"
-         "compare LETRA POR LETRA, maiuscula conta.\n");
+  printf("\nThe Tab5 can see only 2.4 GHz networks (its radio is an ESP32-C6).\n"
+         "If your network is not listed, it is 5 GHz or its name differs -\n"
+         "compare every letter; capitalization matters.\n");
   s_varrendo = false;
 }
 
@@ -1339,12 +1339,12 @@ const char* tab5_wifi_description(void)
   switch (s_estado)
   {
     case TAB5_WIFI_OFF:      return "WiFi";
-    case TAB5_WIFI_STARTING:        return "ligando";
-    case TAB5_WIFI_CONNECTING:     return "conectando";
+    case TAB5_WIFI_STARTING:        return "starting";
+    case TAB5_WIFI_CONNECTING:     return "connecting";
     case TAB5_WIFI_CONNECTED:      return s_ssid;
-    case TAB5_WIFI_NO_CREDENTIALS: return "sem network";
+    case TAB5_WIFI_NO_CREDENTIALS: return "no credentials";
     case TAB5_WIFI_FAILED:         return "failed";
-    case TAB5_WIFI_C6_UNRESPONSIVE:        return "C6 nao responde";
+    case TAB5_WIFI_C6_UNRESPONSIVE:        return "C6 not responding";
   }
   return "WiFi";
 }

@@ -3,7 +3,7 @@
 #include "tab5_wifi.hpp"
 #include "tab5_time.hpp"      // tab5_now_ms
 #include "task_pool.h"
-#include "service_stop.hpp"      // request/confirm a saida of tarefa (o mesmo of GPS e of Mesh)
+#include "service_stop.hpp"      // request/confirm task exit (same mechanism as GPS and Mesh)
 #include "tab5_mutex.hpp"
 #include "eh_host_feat_peer_data.h"
 #include "esp_heap_caps.h"
@@ -16,8 +16,8 @@
 
 static const char* TAG = "farejo";
 
-// O C6 desliga sozinho em C6_FAREJO_VALIDADE_MS sem renovacao. Renovar a cada
-// 3 s aguenta dois pedidos perdidos seguidos.
+// The C6 disables itself after C6_FAREJO_VALIDADE_MS without renewal. Renewing
+// every 3 seconds tolerates two consecutive lost requests.
 #define RENOVA_MS 3000
 
 static StaticSemaphore_t s_mtx_buf;
@@ -27,9 +27,9 @@ static SemaphoreHandle_t s_info_sem = nullptr;
 
 static c6_farejo_cfg_t s_cfg;          // o request em vigor (sob s_mtx)
 static volatile bool   s_quer = false; // o P4 quer farejar
-// LIGAR E DESLIGAR, SEM CORRIDA (o mesmo of CSI). Antes, religar logo
-// depois of disable achava 's_rodando' ainda of pe, nao voltava s_quer a
-// true, e a tarefa que estava saindo desligava o farejo e LIBERAVA A TABELA
+// ENABLE AND DISABLE, WITHOUT A RACE (same as CSI). Previously, enabling right
+// after disable found 's_rodando' still set, did not restore s_quer to true,
+// and the exiting task disabled sniffing and FREED THE TABLE
 // depois of 'enable' ter respondido true. Agora disable PEDE a saida
 // (parada_t) e enable com uma execucao saindo espera ela confirm antes of
 // alocar a tabela e create a nova.
@@ -55,7 +55,7 @@ static void start_travas(void)
 }
 
 // ---------------------------------------------------------------------------
-// Vindo of C6 - in tarefa of eventos of esp_hosted: so junta e exit.
+// From the C6 - in the esp_hosted event task: aggregate and return.
 // ---------------------------------------------------------------------------
 static int achar_mac(const uint8_t mac[6])   // sob s_mtx
 {
@@ -122,7 +122,7 @@ static void juntar_lote(const uint8_t* d, size_t n)
     s_perdidos += cab.perdidos;
   }
   xSemaphoreGive(s_mtx);
-  s_lotes = s_lotes + 1;   // volatile: nao usar ++ (deprecado em C++)
+  s_lotes = s_lotes + 1;   // volatile: do not use ++ (deprecated in C++)
 }
 
 static void on_peer_data(uint32_t msg_id, const uint8_t* data, size_t n, void*)
@@ -133,7 +133,7 @@ static void on_peer_data(uint32_t msg_id, const uint8_t* data, size_t n, void*)
       break;
     case C6_MSG_INFO:
       if (n >= C6_INFO_V1_TAM) {
-        // Um C6 mais velho manda o INFO curto (sem o diagnostics): o resto stays zero.
+        // An older C6 sends the short INFO record (without diagnostics); the rest stays zero.
         memset((void*)&s_info, 0, sizeof(c6_info_t));
         memcpy((void*)&s_info, data, n < sizeof(c6_info_t) ? n : sizeof(c6_info_t));
         s_proto = s_info.proto;
@@ -166,7 +166,7 @@ static void vTarefaRenova(void*)
     }
   }
 
-  // Desliga no C6 e released a tabela.
+  // Disable the C6 and release the table.
   c6_farejo_cfg_t off = { 0 };
   eh_host_peer_data_send(C6_MSG_HOST_FAREJO, (const uint8_t*)&off, sizeof(off));
 
@@ -176,8 +176,8 @@ static void vTarefaRenova(void*)
   xSemaphoreGive(s_mtx);
 
   tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, false);
-  ESP_LOGI(TAG, "farejo desligado");
-  stop_confirm(&s_parada);   // a ULTIMA coisa: daqui em diante one enable pode create outra
+  ESP_LOGI(TAG, "sniffing disabled");
+  stop_confirm(&s_parada);   // LAST action: from here another enable may create one
 }
 
 // ---------------------------------------------------------------------------
@@ -210,12 +210,12 @@ bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg)
   tab5_mutex_lock(&s_trava_cmd);
   const bool vivo = stop_running(&s_parada);
   if (vivo && stop_requested(&s_parada) && !stop_request(&s_parada, 1500)) {
-    // Saindo e nao exited: enable now dividiria a tabela com quem a libera.
+    // Still exiting: enabling now would race with the task releasing the table.
     tab5_mutex_destravar(&s_trava_cmd);
-    ESP_LOGE(TAG, "a tarefa anterior do farejo ainda nao saiu - nao liguei");
+    ESP_LOGE(TAG, "the previous sniffing task has not exited - not enabled");
     return false;
   }
-  const bool of_pe = vivo && stop_running(&s_parada);   // nao estava saindo
+  const bool of_pe = vivo && stop_running(&s_parada);   // it was not exiting
 
   xSemaphoreTake(s_mtx, portMAX_DELAY);
   s_cfg = *cfg;
@@ -227,9 +227,9 @@ bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg)
   }
   const bool sem_tab = (s_tab == nullptr);
   xSemaphoreGive(s_mtx);
-  if (sem_tab) { tab5_mutex_destravar(&s_trava_cmd); ESP_LOGE(TAG, "sem PSRAM para a tabela"); return false; }
+  if (sem_tab) { tab5_mutex_destravar(&s_trava_cmd); ESP_LOGE(TAG, "no PSRAM for the table"); return false; }
 
-  // Receptor sempre enabled: o promiscuo perde o que chega durante o cochilo.
+  // Keep the receiver enabled: promiscuous mode misses traffic during sleep.
   tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, true);
 
   s_quer = true;
@@ -241,7 +241,7 @@ bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg)
       s_quer = false;
       tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, false);
       tab5_mutex_destravar(&s_trava_cmd);
-      ESP_LOGE(TAG, "sem vaga para a tarefa do farejo");
+      ESP_LOGE(TAG, "no slot for the sniffing task");
       return false;
     }
   } else {
@@ -249,7 +249,7 @@ bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg)
     pool_wake(&s_id);
   }
   tab5_mutex_destravar(&s_trava_cmd);
-  ESP_LOGI(TAG, "farejo ligado: mascara 0x%04x, lote %u ms",
+  ESP_LOGI(TAG, "sniffing enabled: mask 0x%04x, batch %u ms",
            (unsigned)cfg->canais, (unsigned)cfg->lote_ms);
   return true;
 }

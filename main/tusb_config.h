@@ -1,12 +1,12 @@
-// Configuracao of TinyUSB (componente espressif/tinyusb) para o modo pendrive
-// - services/tab5_flashdrive.cpp. O main/CMakeLists.txt passa esta pasta para
-// a biblioteca of TinyUSB, que procura "tusb_config.h" pelo name.
+// TinyUSB configuration (espressif/tinyusb component) for flash drive mode
+// - services/tab5_flashdrive.cpp. The main/CMakeLists.txt passes this folder to
+// the TinyUSB library, which looks for "tusb_config.h" by name.
 //
-// SO DISPOSITIVO, SO MSC, SO A PORTA FULL SPEED. O USB-C of Tab5 esta enabled
-// no PHY full speed 0 of P4 - o mesmo of USB-Serial-JTAG (o console). A porta
-// 0 of TinyUSB e o controlador OTG full speed (dwc2_esp32.h: "Port0 to
-// OTG_FS, Port1 to OTG_HS"); o of alta velocidade tem PHY proprio, em outros
-// pins, e nao chega no conector.
+// DEVICE ONLY, MSC ONLY, FULL SPEED PORT ONLY. The Tab5's USB-C is enabled
+// on the P4's full-speed PHY 0 - the same one used by USB-Serial-JTAG (the console).
+// TinyUSB port 0 is the full-speed OTG controller (dwc2_esp32.h: "Port0 to
+// OTG_FS, Port1 to OTG_HS"); the high-speed controller has its own PHY, on different
+// pins, and is not connected to the connector.
 #pragma once
 
 #include "sdkconfig.h"
@@ -23,27 +23,28 @@ extern "C" {
 #define CFG_TUD_MAX_SPEED           OPT_MODE_FULL_SPEED
 #define CFG_TUSB_RHPORT0_MODE       (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
 
-// DMA DO CONTROLADOR, como o esp_tinyusb of Espressif usa por default (o modo
-// mais testado no P4). Era o modo escravo (a CPU copiando of FIFO, one pacote
-// of 64 bytes por interrupcao): 64 interrupcoes por bloco of 4 KB, e o
-// caminho menos usado of biblioteca neste chip. O escravo stays enabled como
-// reserva: o TinyUSB so usa o DMA se o controlador tiver (GHWCFG2).
+// CONTROLLER DMA, as Espressif's esp_tinyusb uses by default (the most
+// tested mode on the P4). Previously, it was in slave mode (the CPU copying
+// from the FIFO, one 64-byte packet per interrupt): 64 interrupts per 4 KB
+// block, and the less commonly used library path on this chip. Slave mode
+// remains enabled as a fallback: TinyUSB only uses DMA if the controller
+// supports it (GHWCFG2).
 #define CFG_TUD_DWC2_SLAVE_ENABLE   1
 #define CFG_TUD_DWC2_DMA_ENABLE     1
 
-// Com DMA o controlador le e escreve a RAM por fora of cache: os buffers of
-// TinyUSB ficam in RAM interna (DRAM_ATTR - a biblioteca nao entra no
-// linker.lf) e alinhados a line of cache of P4 (64 bytes), e a biblioteca
-// sincroniza o cache antes e depois of cada transferencia (no P4 isso ja vem
-// enabled junto com o DMA: CFG_TUD_MEM_DCACHE_ENABLE, line of 64). O buffer
-// of MSC tambem vai direto para o DMA of SDMMC - desalinhado, o driver of
-// cartao cairia num buffer intermediario, one setor por vez.
+// With DMA, the controller reads and writes RAM outside the cache: TinyUSB's
+// buffers reside in internal RAM (DRAM_ATTR - the library is not included in
+// linker.lf) and are aligned to the P4's cache line (64 bytes), and the library
+// synchronizes the cache before and after each transfer (on the P4, this is
+// already enabled along with DMA: CFG_TUD_MEM_DCACHE_ENABLE, 64-byte line).
+// The MSC buffer also goes directly to SDMMC DMA - if misaligned, the SD card
+// driver would fall back to an intermediate buffer, one sector at a time.
 #define CFG_TUSB_MEM_SECTION        __attribute__((aligned(64))) DRAM_ATTR
 #define CFG_TUSB_MEM_ALIGN          __attribute__((aligned(64)))
 
 #define CFG_TUD_ENDPOINT0_SIZE      64
 
-// So o MSC.
+// MSC only.
 #define CFG_TUD_MSC                 1
 #define CFG_TUD_CDC                 0
 #define CFG_TUD_HID                 0
@@ -58,8 +59,8 @@ extern "C" {
 #define CFG_TUD_NCM                 0
 #define CFG_TUD_USBTMC              0
 
-// Quanto o MSC pede on cartao of uma vez: 8 setores. Multiplo of 512 of
-// proposito - cada chamada of leitura/escrita cai em setores inteiros.
+// How many sectors the MSC requests from the card at once: 8 sectors. Multiple of 512 on
+// purpose - each read/write call falls on whole sectors.
 #define CFG_TUD_MSC_EP_BUFSIZE      4096
 
 #ifdef __cplusplus

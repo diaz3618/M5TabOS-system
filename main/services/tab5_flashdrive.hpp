@@ -1,31 +1,33 @@
-// MODO PENDRIVE: o cartao SD of Tab5 aparece no computador como one disco USB.
+// USB-drive mode: the Tab5 SD card appears on the computer as a USB disk.
 //
 // -------------------------------------------------------------------------
 // COMO, NO HARDWARE
 // -------------------------------------------------------------------------
-// O USB-C of Tab5 vai on PHY full speed 0 of P4, que normalmente e of
-// USB-Serial-JTAG (o console, a gravacao). O P4 tem one segundo controlador,
-// o OTG full speed (o "USB_WRAP"), e one seletor que troca qual dos dois
-// controladores fala com qual PHY (LP_SYS.usb_ctrl.sw_usb_phy_sel). Ligar o
-// pendrive = o JTAG released o PHY 0, o OTG pega, e o TinyUSB se anuncia on
-// computador como armazenamento em massa. Desligar desfaz, e o console iteration.
-// E a mesma receita of M5Launcher (src/massStorage.cpp), que ja roda no Tab5.
+// The Tab5 USB-C port uses P4 full-speed PHY 0, normally owned by
+// USB-Serial-JTAG (the console and flashing). P4 also has a second controller,
+// the full-speed OTG controller ("USB_WRAP"), and a selector that assigns the
+// PHY to either controller (LP_SYS.usb_ctrl.sw_usb_phy_sel). Enabling the
+// USB drive releases PHY 0 from JTAG, assigns it to OTG, and makes TinyUSB
+// advertise mass storage to the computer. Disabling it reverses that process
+// and restores the console. This is the same approach used by M5Launcher
+// (src/massStorage.cpp), which already runs on the Tab5.
 //
-// DURANTE O PENDRIVE NAO HA CONSOLE nem gravacao pelo cabo: o computador ve
-// one disco, nao a porta serial. O log continua sendo gravado no cartao assim
-// que ele voltar (tab5_sd_enqueue_append segura o que chegar).
+// While USB-drive mode is active there is no console or cable flashing: the
+// computer sees a disk instead of the serial port. Logging resumes on the card
+// as soon as it is returned (tab5_sd_enqueue_append queues incoming records).
 //
 // -------------------------------------------------------------------------
 // O CARTAO
 // -------------------------------------------------------------------------
-// Nunca dois donos on mesmo time - ver tab5_sd_emprestar(). A sessao abaixo
-// empresta o cartao ANTES of enable o USB e so devolve DEPOIS of desliga-lo.
+// There must never be two owners at once; see tab5_sd_emprestar(). The session
+// borrows the card BEFORE enabling USB and returns it only AFTER USB is off.
 //
-// O computador recebe SETORES, nao arquivos: le e grava direto no cartao,
-// sem cache nenhum of lado of Tab5 (cada escrita ja esta no cartao when o
-// computador recebe o "ok"). O que pode ficar no middle of caminho e o cache DO
-// COMPUTADOR - por isso o certo e ejetar la antes of puxar o cabo. Ajustes >
-// USB diz isso e so devolve o cartao sem ejecao se a pessoa insistir.
+// The computer receives SECTORS, not files: it reads and writes the card
+// directly, with no cache on the Tab5 side (each write is already on the card
+// when the computer receives "ok"). Only the COMPUTER'S cache can still be
+// pending, so the disk should be ejected there before unplugging the cable.
+// Settings > USB explains this and returns the card without an eject only if
+// the user insists.
 #pragma once
 
 #include <stdint.h>
@@ -34,33 +36,33 @@
 // ---------------------------------------------------------------------------
 // A SESSAO (em segundo plano - o Tab5 segue usavel durante o pendrive)
 // ---------------------------------------------------------------------------
-// Ligar: o cartao e emprestado (tab5_sd_emprestar: o pending e gravado, a
-// foto e tirada, as portas of gravacao passam a ir para o diario in flash) e
-// o USB sobe. Na barra of status stays o aviso "Cartao no computador" enquanto
-// durar; touch nele abre Ajustes > USB.
+// Start: the card is borrowed (tab5_sd_emprestar writes the pending state,
+// takes a snapshot, and redirects writes to the flash journal), then USB starts.
+// The status bar shows "Card connected to computer" for the duration; tapping it
+// opens Settings > USB.
 //
-// Termina of dois jeitos: o computador EJETA (o cartao iteration sozinho - nada
-// mais em cache of lado of la) ou a pessoa manda return em Ajustes > USB (a
-// screen confirma antes, se o computador ainda estiver com o disco montado). O
-// USB exit first, o cartao iteration, o diario e aplicado e o resultado stays in
-// screen e, se houve conflito, in barra of status.
+// It ends in either of two ways: the computer ejects the disk (the card returns
+// automatically because no computer-side cache remains), or the user requests
+// a return in Settings > USB (the screen asks for confirmation while the disk is
+// still mounted). USB stops first, then the card returns and the journal is
+// applied; the result remains on screen and conflicts appear in the status bar.
 //
-// Regras of sistema, nao of one app:
-//   - nao comeca com one app que EXIGE o cartao open (app_t.exige_sd), e esse
-//     app nao abre enquanto durar (o kernel mostra o reason);
-//   - com o disco montado no computador a screen nao entra em sleep
+// System rules, not app rules:
+//   - do not start while an app that requires the card is open (app_t.exige_sd),
+//     and do not open that app during the session (the kernel explains why);
+//   - while the disk is mounted, keep the screen awake
 //     (SISTEMA_ACORDADO_PENDRIVE);
-//   - durante o pendrive o cabo nao e console nem gravacao, e a CPU stays no
-//     clock maximum enquanto o computador estiver falando;
-//   - barramento parado (cabo puxado sem ejetar, computador dormindo) por
-//     mais of 2 s: a sessao continua, mas a screen pode erase e o clock exit -
-//     voltam sozinhos com o computador. Ligado sem computador nenhum, o
-//     clock exit depois of 10 s.
+//   - during USB-drive mode the cable is neither console nor flashing, and CPU
+//     frequency stays at maximum while the computer is communicating;
+//   - if the bus is idle for more than 2 s (unplugged without ejecting or the
+//     computer sleeping), the session continues but the screen and CPU may
+//     enter low-power mode and wake automatically when the computer returns;
+//     with no computer connected, the CPU slows after 10 s.
 typedef enum {
   PENDRIVE_PARADO = 0,
-  PENDRIVE_PREPARANDO,   // emprestando o cartao, subindo o USB
-  PENDRIVE_ATIVO,        // o cartao esta com o computador
-  PENDRIVE_DEVOLVENDO,   // USB saindo, cartao voltando, diario sendo aplicado
+  PENDRIVE_PREPARANDO,   // borrowing the card and starting USB
+  PENDRIVE_ATIVO,        // the card is connected to the computer
+  PENDRIVE_DEVOLVENDO,   // stopping USB, returning the card, applying the journal
 } tab5_pendrive_fase_t;
 
 // Por que a ultima tentativa nao ligou (PENDRIVE_OK = ligou ou nunca tentou).

@@ -710,13 +710,13 @@ void tab5_monitor_start(void)
 {
   if (s_mutex) { return; }
 #if ( configGENERATE_RUN_TIME_STATS != 1 )
-  ESP_LOGE(TAG, "CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS desligado - sem CPU por tarefa");
+  ESP_LOGE(TAG, "CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS disabled - no per-task CPU data");
 #endif
   s_mutex  = xSemaphoreCreateMutex();
   // Na PSRAM: so a tarefa of monitor le isto, e o uxTaskGetSystemState
   // suspende o escalonador, nao desliga o cache.
   s_status = (TaskStatus_t*)heap_caps_malloc(MON_MAX_TAREFAS * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM);
-  if (!s_mutex || !s_status) { ESP_LOGE(TAG, "sem memoria"); return; }
+  if (!s_mutex || !s_status) { ESP_LOGE(TAG, "no memory"); return; }
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskMonitor, "monitor", 6144, nullptr, 1, &h, tskNO_AFFINITY);

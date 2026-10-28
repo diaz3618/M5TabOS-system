@@ -215,7 +215,7 @@ bool tab5_gps_stop(void)
   ESP_LOGI(TAG, "parando o service...");
   // A tarefa le a UART em fatias of 50 ms: a output custa isso no pior caso.
   if (!stop_request(&s_parada, 1000, gps_cutucar)) {
-    ESP_LOGE(TAG, "a tarefa nao confirmou em 1s - segue parando, nada foi desmontado");
+    ESP_LOGE(TAG, "task did not confirm within 1 s - stopping anyway; nothing was torn down");
     return false;
   }
 
@@ -238,15 +238,15 @@ bool tab5_gps_start(void)
 {
   if (s_servico_active) {
     if (stop_em_progress(&s_parada)) {
-      ESP_LOGW(TAG, "ainda parando o service anterior - nao vou start por cima");
+      ESP_LOGW(TAG, "previous service is still stopping - will not start another one");
     } else {
-      ESP_LOGI(TAG, "service ja esta de pe - nada a fazer");
+      ESP_LOGI(TAG, "service is already running - nothing to do");
     }
     return true;
   }
 
   if (!tab5_grove_acquire(GROVE_OWNER_GPS)) {
-    ESP_LOGE(TAG, "Grove ocupado - service nao vai start");
+    ESP_LOGE(TAG, "Grove is busy - service will not start");
     return false;
   }
 
@@ -266,7 +266,7 @@ bool tab5_gps_start(void)
    || uart_set_pin(GPS_UART, GPS_TX_PIN, GPS_RX_PIN,
                    UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK)
   {
-    ESP_LOGE(TAG, "nao consegui abrir a UART do Grove");
+    ESP_LOGE(TAG, "could not open the Grove UART");
     uart_driver_delete(GPS_UART);
     s_uart_ev = nullptr;   // a queue of eventos vai junto com o driver
     tab5_grove_release(GROVE_OWNER_GPS);
@@ -283,7 +283,7 @@ bool tab5_gps_start(void)
     uart_driver_delete(GPS_UART);
     s_uart_ev = nullptr;   // a queue of eventos vai junto com o driver
     tab5_grove_release(GROVE_OWNER_GPS);
-    ESP_LOGE(TAG, "sem memoria para a tarefa do GPS");
+    ESP_LOGE(TAG, "out of memory for the GPS task");
     return false;
   }
   s_iniciado_em_ms = tab5_now_ms();   // ver o aviso em tab5_gps_silence_ms()

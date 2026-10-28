@@ -207,7 +207,7 @@ static void carregar_of_cartao(void)
       ++lidas;
     }
     fclose(f);
-    if (lidas) { ESP_LOGI(TAG, "cartao: %d mensagem(ns) no historico", lidas); }
+    if (lidas) { ESP_LOGI(TAG, "card: %d message(s) in history", lidas); }
   }
   s_lendo_cartao = false;
   tab5_sd_unmount();
@@ -261,7 +261,7 @@ static void tratar(const evento_t* ev)
       tab5_farejo_anotar_pronto(ev->data, ev->n);
       if (!s_pronto) {
         s_pronto = true;
-        ESP_LOGI(TAG, "no ar: MAC %02X:%02X:%02X:%02X:%02X:%02X, canal %u",
+        ESP_LOGI(TAG, "running: MAC %02X:%02X:%02X:%02X:%02X:%02X, channel %u",
                  s_mac[0], s_mac[1], s_mac[2], s_mac[3], s_mac[4], s_mac[5], (unsigned)s_canal);
         // O CANAL FIXO SOBREVIVE A VOLTA DO RADIO. Desligar e religar o WiFi
         // (ou a desistencia) para o radio, e o C6 iteration no canal default dele -
@@ -386,7 +386,7 @@ static void tratar(const evento_t* ev)
         // De iteration on roteador: o canal passa a ser o dele (o loop confere).
         tab5_wifi_radio_only_mode(false);
         notification_limpar(s_notif_canal);
-        ESP_LOGI(TAG, "canal: o do roteador");
+        ESP_LOGI(TAG, "channel: router channel");
       } else {
         // O radio so muda of canal SOLTO of roteador: pede e espera release.
         tab5_wifi_radio_only_mode(true);
@@ -405,11 +405,11 @@ static void tratar(const evento_t* ev)
           if (esp_wifi_get_channel(&real, &sec) == ESP_OK && real == c) { break; }
         }
         s_canal = real ? real : c;
-        if (real == c) { ESP_LOGI(TAG, "canal fixo %u (WiFi solto do roteador)", (unsigned)c); }
-        else           { ESP_LOGW(TAG, "canal fixo %u pedido, mas o C6 ficou no %u", (unsigned)c, (unsigned)real); }
+        if (real == c) { ESP_LOGI(TAG, "fixed channel %u (WiFi released from router)", (unsigned)c); }
+        else           { ESP_LOGW(TAG, "fixed channel %u requested, but C6 stayed on %u", (unsigned)c, (unsigned)real); }
         // VISIVEL NO SISTEMA: sem isto, o WiFi released parecia WiFi quebrado.
         char summary[NOTIF_RESUMO];
-        snprintf(summary, sizeof(summary), "canal %u - sem WiFi", (unsigned)s_canal);
+        snprintf(summary, sizeof(summary), "channel %u - no WiFi", (unsigned)s_canal);
         notification_publicar(s_notif_canal, 1, NOTIF_ESTADO, summary);
       }
       system_notify(AVISO_ESPNOW);
@@ -470,7 +470,7 @@ static void vTaskEspnow(void*)
     if (!no_ar && s_pronto) {
       s_pronto = false;
       falhar_pendentes();
-      ESP_LOGI(TAG, "radio parado - ESP-NOW fora do ar");
+      ESP_LOGI(TAG, "radio stopped - ESP-NOW unavailable");
       system_notify(AVISO_ESPNOW);
     }
 
@@ -551,7 +551,7 @@ void tab5_espnow_start(void)
   // E one ESTADO (o WiFi released of roteador), nao uma message: mudar of canal
   // nao pode soar como notification nova.
   notification_silenciar(s_notif_canal, true);
-  if (!s_trava || !s_fila) { ESP_LOGE(TAG, "sem memoria - servico fora do ar"); return; }
+  if (!s_trava || !s_fila) { ESP_LOGE(TAG, "no memory - service unavailable"); return; }
   // O canal escolhido of ultima vez. Nao aplica aqui: quem aplica e o PRONTO
   // of C6 (ele reaplica o canal fixo toda vez que o radio iteration), entao basta
   // a vontade estar em s_canal_fixo antes disso.
@@ -569,7 +569,7 @@ void tab5_espnow_start(void)
     xTaskCreatePinnedToCore(vTaskEspnow, "espnow", 6144, nullptr, 3, &h, tskNO_AFFINITY);
     tab5_owner_register(h, OWNER_SERVICE, "ESP-NOW");   // ver hal/tab5_owners.hpp
   }
-  ESP_LOGI(TAG, "servico no ar (espera o firmware nosso no C6)");
+  ESP_LOGI(TAG, "service running (waiting for our C6 firmware)");
 }
 
 bool    tab5_espnow_pronto(void)          { return s_pronto; }

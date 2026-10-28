@@ -53,7 +53,7 @@ grove_owner_t tab5_grove_owner(void) { return s_dono; }
 bool tab5_grove_acquire(grove_owner_t who)
 {
   if (s_dono != GROVE_OWNER_NONE && s_dono != who) {
-    ESP_LOGW(TAG, "Grove ja e do %s - %s nao pode assumir",
+    ESP_LOGW(TAG, "Grove is already owned by %s - %s cannot take it over",
              grove_owner_name(s_dono), grove_owner_name(who));
     return false;
   }
@@ -220,7 +220,7 @@ void tab5_grove_dump(int baud, int ms)
   // comentario of ESPERA_BOOT_MS - foi isso que fez o C6L parecer mudo.
   vTaskDelay(pdMS_TO_TICKS(ja_enabled ? 300 : ESPERA_BOOT_MS));
 
-  if (!open(baud)) { printf("nao consegui abrir a UART a %d\n", baud); return; }
+  if (!open(baud)) { printf("could not open UART at %d\n", baud); return; }
 
   // Pede apresentacao SEMPRE. Para o Meshtastic e obrigatorio (ele nao fala
   // sozinho); para one GPS e inofensivo. Sem isto o despejo mente: mostra zero
@@ -304,10 +304,10 @@ grove_type_t tab5_grove_detect(void)
   // junto com a auditoria of camadas - HAL pergunta a HAL, nunca
   // a one service (ver WRITING_APPS.md secao 8).
   if (tab5_power_grove_on()) {
-    ESP_LOGI(TAG, "trilho ja estava on - sondando sem esperar boot");
+    ESP_LOGI(TAG, "power rail was already on - probing without a boot wait");
   } else {
     tab5_power_grove(true);
-    ESP_LOGI(TAG, "liguei o trilho agora - esperando %dms o modulo bootar", ESPERA_BOOT_MS);
+    ESP_LOGI(TAG, "powered the rail on - waiting %d ms for the module to boot", ESPERA_BOOT_MS);
     vTaskDelay(pdMS_TO_TICKS(ESPERA_BOOT_MS));
   }
 

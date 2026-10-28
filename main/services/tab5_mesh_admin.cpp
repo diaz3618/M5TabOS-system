@@ -133,7 +133,7 @@ void mesh_admin_start_dump(void) { s_dump_ok = false; ++s_versao; }
 void mesh_admin_end_dump(void)
 {
   s_dump_ok = true;
-  if (s_gravando) { ESP_LOGI(TAG, "no se reapresentou - valores novos confirmados"); }
+  if (s_gravando) { ESP_LOGI(TAG, "node checked in again - new values confirmed"); }
   s_gravando = false;
   ++s_versao;
   system_notify(AVISO_MESH_NOS);
@@ -151,7 +151,7 @@ void mesh_admin_tique(uint32_t t)
   // com a pagina closed, one no que nunca iteration seria request of 20 em 20 s
   // para sempre.
   if (t - s_gravando_ms > GRAVANDO_PRAZO_MS) {
-    ESP_LOGW(TAG, "o no nao se reapresentou em %d s depois de gravar", GRAVANDO_PRAZO_MS / 1000);
+    ESP_LOGW(TAG, "the node did not check in again within %d s after saving", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
     ++s_versao;
     return;
@@ -159,7 +159,7 @@ void mesh_admin_tique(uint32_t t)
   if (t - s_gravando_ms < 35000) { return; }
   if (ultimo == 0 || t - ultimo >= 20000) {
     ultimo = t;
-    ESP_LOGI(TAG, "o no ainda nao voltou - pedindo a configuracao de novo");
+    ESP_LOGI(TAG, "the node has not returned yet - requesting configuration again");
     tab5_mesh_interno_reapresentar_em(0, true);
   }
 }
@@ -184,7 +184,7 @@ static int32_t precisao_of(const bruto_t& c)
 static mesh_cfg_estado_t estado(void)
 {
   if (s_gravando && (tab5_now_ms() - s_gravando_ms) > GRAVANDO_PRAZO_MS) {
-    ESP_LOGW(TAG, "o no nao se reapresentou em %d s depois de gravar", GRAVANDO_PRAZO_MS / 1000);
+    ESP_LOGW(TAG, "the node did not check in again within %d s after saving", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
   }
   if (s_gravando) { return MESH_CFG_GRAVANDO; }
@@ -289,8 +289,8 @@ static const char* comecar_of_bruto(pb_escritor_t* w, const bruto_t& b)
   const bool tem = b.tem;
   if (tem) { pb_w_cru(w, b.b, b.n); }
   taskEXIT_CRITICAL(&s_mux);
-  if (!tem)   { return "nao veio no dump"; }
-  if (!w->ok) { return "e grande demais para um pacote"; }
+  if (!tem)   { return "not present in the dump"; }
+  if (!w->ok) { return "too large for one packet"; }
   return nullptr;
 }
 
@@ -341,8 +341,8 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
 {
   s_reason[0] = 0;
   if (estado() != MESH_CFG_PRONTO) {
-    ESP_LOGW(TAG, "gravar recusado: sem no ou dump incompleto");
-    snprintf(s_reason, sizeof(s_reason), "sem o nó, ou a configuração ainda chegando");
+    ESP_LOGW(TAG, "save rejected: no node or incomplete dump");
+    snprintf(s_reason, sizeof(s_reason), "no node, or configuration is still arriving");
     return false;
   }
 
@@ -367,7 +367,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     EXT_RAM_BSS_ATTR static uint8_t body[ADM_MAX];
     pb_escritor_t wc = pb_escritor(body, sizeof(body));
     if (const char* porque = comecar_of_bruto(&wc, c.modulo ? s_mod[c.secao] : s_cfg[c.secao])) {
-      ESP_LOGW(TAG, "secao %s %d %s - nao da para gravar", c.modulo ? "modulo" : "config", c.secao, porque);
+      ESP_LOGW(TAG, "section %s %d %s - cannot save", c.modulo ? "module" : "config", c.secao, porque);
       return false;
     }
     for (int k = i; k < MESH_CFG_N; ++k) {
@@ -419,13 +419,13 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     EXT_RAM_BSS_ATTR static uint8_t body[ADM_MAX];
     pb_escritor_t wc = pb_escritor(body, sizeof(body));
     if (!montar_canal(&wc, m->precisao)) {
-      ESP_LOGW(TAG, "canal primario: nao veio no dump ou nao cabe - nada enviado");
-      snprintf(s_reason, sizeof(s_reason), "o canal principal do nó ainda não chegou");
+      ESP_LOGW(TAG, "primary channel: not in the dump or too large - nothing sent");
+      snprintf(s_reason, sizeof(s_reason), "the node's primary channel has not arrived yet");
       return false;
     }
     if (n_msgs >= MAX_MSGS) { return false; }
     size[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), ADM_SET_CHANNEL, &wc);
-    if (!size[n_msgs]) { ESP_LOGE(TAG, "canal grande demais para um pacote"); return false; }
+    if (!size[n_msgs]) { ESP_LOGE(TAG, "channel too large for one packet"); return false; }
     ++n_msgs;
   }
 
@@ -466,10 +466,10 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
       return false;
     }
     if (!tab5_mesh_interno_admin(msgs[msg_mqtt], size[msg_mqtt])) {
-      snprintf(s_reason, sizeof(s_reason), "o enlace com o nó recusou o envio");
+      snprintf(s_reason, sizeof(s_reason), "the link to the node rejected the send");
       return false;
     }
-    ESP_LOGI(TAG, "secao MQTT enviada sem transacao (Bluetooth) - o no grava, desliga o BLE e reinicia");
+    ESP_LOGI(TAG, "MQTT section sent without a transaction (Bluetooth) - node saves, disables BLE, and reboots");
     s_gravando = true;
     s_gravando_ms = tab5_now_ms();
     ++s_versao;
@@ -484,11 +484,11 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
   if (!ok) {
     // Transacao open sem commit. O firmware NAO a expira: as mudancas ficam
     // so in RAM of no, sem gravar, ate ele reiniciar.
-    ESP_LOGE(TAG, "enlace recusou no meio da transacao - o no fica sem gravar ate reiniciar");
-    snprintf(s_reason, sizeof(s_reason), "o enlace caiu no meio da gravação - reinicie o nó");
+    ESP_LOGE(TAG, "link rejected the transaction midway - the node will not save until rebooted");
+    snprintf(s_reason, sizeof(s_reason), "the link dropped during saving - reboot the node");
     return false;
   }
-  ESP_LOGI(TAG, "transacao enviada (%d mensagem(ns)) - o no grava e reinicia", n_msgs);
+  ESP_LOGI(TAG, "transaction sent (%d message(s)) - node saves and reboots", n_msgs);
   s_gravando = true;
   s_gravando_ms = tab5_now_ms();
   ++s_versao;
@@ -528,7 +528,7 @@ bool mesh_cfg_acertar_hora(void)
 {
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const uint32_t now = tab5_time_epoch();
-  if (!now) { ESP_LOGW(TAG, "hora do Tab5 ainda nao acertada"); return false; }
+  if (!now) { ESP_LOGW(TAG, "the Tab5 clock is not set yet"); return false; }
   uint8_t a[8];
   pb_escritor_t w = pb_escritor(a, sizeof(a));
   pb_w_fixo32(&w, ADM_SET_TIME_ONLY, now);

@@ -1,6 +1,6 @@
 #include "tab5_mesh_mqtt.hpp"
 #include "tab5_mutex.hpp"
-#include "mesh_pb.hpp"   // o codec of servico Mesh (leitura e escrita)
+#include "mesh_pb.hpp"   // Mesh service codec (reading and writing)
 #include "tab5_time.hpp"  // tab5_time_epoch
 
 #include "mqtt_client.h"
@@ -114,7 +114,7 @@ void mesh_mqtt_aprender_canal(int idx, int papel, const char* name, const uint8_
   if (memcmp(&s_cfg.canais[idx], &novo, sizeof(novo)) != 0) {
     s_cfg.canais[idx] = novo;
     gravar_cfg();
-    ESP_LOGI(TAG, "canal %d aprendido do no: \"%s\" (chave de %u bytes)", idx, novo.name, (unsigned)novo.n_psk);
+    ESP_LOGI(TAG, "channel %d learned from the node: \"%s\" (%u-byte key)", idx, novo.name, (unsigned)novo.n_psk);
   }
   destravar_cfg();
 }
@@ -220,7 +220,7 @@ static QueueHandle_t   s_fila = nullptr;
 static volatile bool   s_conectado = false, s_conectou_now = false;
 static uint32_t        s_num = 0;
 static char            s_curto[8] = "", s_longo[40] = "";
-static char            s_descr[96] = "internet: parado";
+static char            s_descr[96] = "Internet: stopped";
 
 // PROXY (ver o .hpp). O que o no disse of propria configuracao MQTT vem of
 // dump e mora so em RAM; a raiz e aprendida of PRIMEIRO topico que o no
@@ -255,7 +255,7 @@ static void perdeu(QueueHandle_t fila)
   const int64_t now = esp_timer_get_time();
   if (now - ultimo_us[k] >= 10000000) {
     ultimo_us[k] = now;
-    ESP_LOGW(TAG, "fila %s cheia - %lu pacote(s) descartado(s) desde o boot",
+    ESP_LOGW(TAG, "queue %s full - %lu packet(s) discarded since boot",
              k ? "internet" : "no", (unsigned long)s_perdidos[k]);
   }
 }
@@ -745,8 +745,8 @@ void mesh_mqtt_stop(void)
   s_proxy = false;
   s_px_raiz[0] = 0;
   if (s_fila) { xQueueReset(s_fila); }   // press_start of proxy para one no que nao vai mais receber
-  snprintf(s_descr, sizeof(s_descr), "internet: parado");
-  ESP_LOGI(TAG, "desconectado do servidor");
+  snprintf(s_descr, sizeof(s_descr), "Internet: stopped");
+  ESP_LOGI(TAG, "disconnected from the server");
 }
 
 bool mesh_mqtt_active(void)     { return s_cli != nullptr; }
@@ -893,7 +893,7 @@ static bool send_travado(const uint8_t* toradio, size_t n)
   // particular apareceria para a malha inteira (e no bot of Telegram). Melhor
   // recusar - o send_state falha in screen - of que vazar.
   if (t.para != MESH_PB_DIFUSAO) {
-    ESP_LOGW(TAG, "mensagem direta recusada: pela internet so vai mensagem de canal (falta PKI)");
+    ESP_LOGW(TAG, "direct message rejected: Internet supports channel messages only (PKI unavailable)");
     return false;
   }
 
@@ -1092,7 +1092,7 @@ bool mesh_mqtt_internet_start(void)
     return false;
   }
   tab5_memory_marco("MQTT internet (cliente + tarefa)");
-  ESP_LOGI(TAG, "internet: conectando a %s, raiz %s", INTERNET_SRV, INTERNET_RAIZ);
+  ESP_LOGI(TAG, "Internet: connecting to %s, root %s", INTERNET_SRV, INTERNET_RAIZ);
   return true;
 }
 

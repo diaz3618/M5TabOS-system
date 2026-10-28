@@ -149,7 +149,7 @@ static const uint8_t DESC_CONFIG[] = {
 // exigente com isso. Sai of MAC of proprio aparelho: unico e sempre o mesmo,
 // entao o computador reconhece o Tab5 of uma vez para a outra.
 static char s_serie[13] = "000000000000";
-static const char* const TEXTOS[] = { "", "M5Stack", "M5tabOS cartao SD", s_serie };
+static const char* const TEXTOS[] = { "", "M5Stack", "M5tabOS SD card", s_serie };
 
 extern "C" const uint8_t* tud_descriptor_device_cb(void) { return (const uint8_t*)&DESC_APARELHO; }
 extern "C" const uint8_t* tud_descriptor_configuration_cb(uint8_t) { return DESC_CONFIG; }
@@ -193,7 +193,7 @@ static void inquiry_count(void) { s_n_inquiry = s_n_inquiry + 1; }
 static void inquiry_textos(uint8_t vendor[8], uint8_t produto[16], uint8_t rev[4])
 {
   memset(vendor, ' ', 8);   memcpy(vendor, "M5Stack", 7);
-  memset(produto, ' ', 16); memcpy(produto, "Tab5 cartao SD", 14);
+  memset(produto, ' ', 16); memcpy(produto, "Tab5 SD card", 12);
   memset(rev, ' ', 4);      memcpy(rev, "1.0", 3);
 }
 
@@ -486,7 +486,7 @@ static bool usb_enable(sdmmc_card_t* cartao)
   snprintf(s_serie, sizeof(s_serie), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   s_ultimo_io_us = 0; s_ultima_escrita_us = 0;
 
-  ESP_LOGI(TAG, "ligando: o console sai do USB-C ate o pendrive acabar");
+  ESP_LOGI(TAG, "starting: console leaves USB-C until USB-drive mode ends");
   vTaskDelay(pdMS_TO_TICKS(50));   // deixa a line acima chegar on computador
 
   phy_para_o_otg();
@@ -521,7 +521,7 @@ static bool usb_enable(sdmmc_card_t* cartao)
   }
   xSemaphoreTake(s_iniciou, portMAX_DELAY);
   if (!s_init_ok) {
-    ESP_LOGE(TAG, "TinyUSB nao iniciou");
+    ESP_LOGE(TAG, "TinyUSB did not start");
     xSemaphoreTake(s_parou, portMAX_DELAY);   // a tarefa ja esta saindo
     s_tarefa = nullptr;
     usb_wrap_ll_phy_enable_pad(&USB_WRAP, false);
@@ -555,7 +555,7 @@ static void usb_disable(void)
   // montando por top of uma escrita of computador. Cada comando of cartao
   // tem o proprio timeout no driver: a tarefa sempre iteration.
   while (xSemaphoreTake(s_parou, pdMS_TO_TICKS(2000)) != pdTRUE) {
-    ESP_LOGW(TAG, "a tarefa do USB ainda nao parou (%s) - esperando",
+  ESP_LOGW(TAG, "the USB task has not stopped yet (%s) - waiting",
              s_no_cartao ? (s_gravando ? "escrita no cartao" : "leitura no cartao") : "USB");
   }
   s_tarefa = nullptr;
@@ -659,24 +659,24 @@ typedef struct {
 static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
 {
   if (u->n_config > d->config) {
-    ESP_LOGI(TAG, "computador reconheceu o aparelho USB%s", d->config ? " (de novo)" : "");
+  ESP_LOGI(TAG, "computer recognized the USB device%s", d->config ? " (again)" : "");
     d->config = u->n_config;
   }
-  if (u->n_inquiry && !d->inquiry) { ESP_LOGI(TAG, "computador perguntou o que e o disco (INQUIRY)"); }
+  if (u->n_inquiry && !d->inquiry) { ESP_LOGI(TAG, "computer asked what the disk is (INQUIRY)"); }
   d->inquiry = u->n_inquiry;
   if (u->n_capacidade && !d->capacidade) {
-    ESP_LOGI(TAG, "computador pediu o tamanho: %lu setores de %u",
+    ESP_LOGI(TAG, "computer requested the size: %lu sectors of %u",
              s_cartao ? (unsigned long)s_cartao->csd.capacity : 0UL, (unsigned)setor_size());
   }
   d->capacidade = u->n_capacidade;
-  if (u->n_leituras && !d->leituras) { ESP_LOGI(TAG, "computador comecou a ler o disco"); }
+  if (u->n_leituras && !d->leituras) { ESP_LOGI(TAG, "computer started reading the disk"); }
   d->leituras = u->n_leituras;
   for (int i = 0; i < 8; ++i) {
     const uint32_t novos_ok = s_ops_respondidos[i] & ~d->ops_ok[i];
     const uint32_t novas_recusas = s_ops_logados[i] & ~d->ops_recusa[i];
     for (int b = 0; b < 32; ++b) {
       if (novos_ok & (1u << b))      { ESP_LOGI(TAG, "resposta ao comando SCSI 0x%02X entregue", i * 32 + b); }
-      if (novas_recusas & (1u << b)) { ESP_LOGW(TAG, "comando SCSI 0x%02X nao suportado (recusado)", i * 32 + b); }
+      if (novas_recusas & (1u << b)) { ESP_LOGW(TAG, "SCSI command 0x%02X unsupported (rejected)", i * 32 + b); }
     }
     d->ops_ok[i] |= novos_ok;
     d->ops_recusa[i] |= novas_recusas;
@@ -686,7 +686,7 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
              (unsigned long)s_erro_setor, esp_err_to_name(s_erro_cod));
     d->erros = u->erros;
   }
-  if (u->n_soltou > d->soltou) { ESP_LOGI(TAG, "computador soltou o disco"); d->soltou = u->n_soltou; }
+  if (u->n_soltou > d->soltou) { ESP_LOGI(TAG, "computer released the disk"); d->soltou = u->n_soltou; }
   if (u->suspenso != d->suspenso) {
     // Sem SOF of computador por 3 ms: cabo fora, computador dormindo - ou o
     // computador deixou of ver o Tab5 (ver pad_conferir).
@@ -791,7 +791,7 @@ static void vTaskSessao(void*)
     return;
   }
   s_fase = PENDRIVE_ATIVO;
-  notify(1, NOTIF_INFO, "Cartão no computador");
+  notify(1, NOTIF_INFO, "Card connected to computer");
 
   // 3. Enquanto o computador estiver com o cartao. Sai when ele ejeta (nada
   //    mais em cache of lado of la) ou when a pessoa manda return (a screen
@@ -822,8 +822,8 @@ static void vTaskSessao(void*)
                     || (rr.journal_total && (uint64_t)rr.journal_used * 10 >= (uint64_t)rr.journal_total * 9);
     if (cheio != avisou_cheio) {
       avisou_cheio = cheio;
-      if (cheio) { notify(1, NOTIF_ATENCAO, "Memória do pendrive cheia"); }
-      else       { notify(1, NOTIF_INFO, "Cartão no computador"); }
+      if (cheio) { notify(1, NOTIF_ATENCAO, "USB-drive storage full"); }
+      else       { notify(1, NOTIF_INFO, "Card connected to computer"); }
     }
     // BARRAMENTO PARADO ha mais of BARRAMENTO_PARADO_US: cabo puxado sem
     // ejetar, ou computador dormindo. O TinyUSB continua "montado" (suspender
@@ -864,7 +864,7 @@ static void vTaskSessao(void*)
   //    so entao o cartao iteration on Tab5. O diario e aplicado aqui mesmo (a
   //    barreira of gravacao espera terminar) para o resultado ser o of now.
   s_fase = PENDRIVE_DEVOLVENDO;
-  notify(1, NOTIF_INFO, "Devolvendo o cartão...");
+  notify(1, NOTIF_INFO, "Returning the card...");
   usb_disable();
   system_sound_return_pins();
   system_manter_acordado(SISTEMA_ACORDADO_PENDRIVE, false);
@@ -879,7 +879,7 @@ static void vTaskSessao(void*)
     notify((int)r.conflicts, NOTIF_ATENCAO, t);   // stays ate a pessoa ver em Ajustes > USB
     s_resultado_aviso = true;
   } else if (r.in_journal) {
-    notify((int)r.in_journal, NOTIF_ATENCAO, "Gravações esperando cartão");   // cabe em NOTIF_RESUMO
+    notify((int)r.in_journal, NOTIF_ATENCAO, "Writes waiting for card");   // fits in NOTIF_RESUMO
     s_resultado_aviso = true;
   } else {
     notify(0, NOTIF_INFO, nullptr);
@@ -908,7 +908,7 @@ bool tab5_pendrive_start(void)
   s_oferta = false;
   s_resultado_aviso = false;
   if (system_app_requires_sd()) { recusou(PENDRIVE_RECUSA_APP); return false; }
-  notify(1, NOTIF_INFO, "Preparando o pendrive...");
+  notify(1, NOTIF_INFO, "Preparing the USB drive...");
   // Pilha of tarefa "cartao": emprestar fotografa o cartao (varre as pastas)
   // e o f_mount desce fundo. So existe enquanto durar a sessao.
   if (xTaskCreatePinnedToCore(vTaskSessao, "pendrive_sessao", 6144, nullptr, 3, nullptr, tskNO_AFFINITY) != pdPASS) {

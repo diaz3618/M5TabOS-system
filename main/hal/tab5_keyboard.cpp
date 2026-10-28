@@ -216,7 +216,7 @@ static bool search(bool falar)
   {
     // Nao e erro: o keyboard e acessorio, e a ausencia e o state normal.
     if (falar) {
-      ESP_LOGW(TAG, "nenhum keyboard em 0x%02X - vou continuar searching a cada %dms",
+      ESP_LOGW(TAG, "no keyboard at 0x%02X - will keep searching every %d ms",
                TAB5_KEYBOARD_ADDRESS, BUSCA_MS);
     }
     s_presente = false;
@@ -230,7 +230,7 @@ static bool search(bool falar)
   // no contador limpa a queue e released o INT).
   if (!M5.Ex_I2C.writeRegister8(TAB5_KEYBOARD_ADDRESS, REG_MODE_KEYBOARD, MODO_HID, FREQ))
   {
-    ESP_LOGE(TAG, "achei o keyboard mas nao consegui por em mode HID");
+    ESP_LOGE(TAG, "found the keyboard but could not switch it to HID mode");
     s_presente = false;
     return false;
   }
@@ -258,7 +258,7 @@ bool tab5_keyboard_init(void)
   M5.Ex_I2C.release();
   if (!M5.Ex_I2C.begin(TAB5_KEYBOARD_PORT, TAB5_KEYBOARD_SDA, TAB5_KEYBOARD_SCL))
   {
-    ESP_LOGE(TAG, "nao consegui abrir I2C em SDA=%d SCL=%d",
+    ESP_LOGE(TAG, "could not open I2C on SDA=%d SCL=%d",
              TAB5_KEYBOARD_SDA, TAB5_KEYBOARD_SCL);
     return false;
   }
@@ -272,7 +272,7 @@ bool tab5_keyboard_init(void)
 
   if (!s_habilitado)
   {
-    ESP_LOGI(TAG, "keyboard desativado em Ajustes - nao vou search");
+    ESP_LOGI(TAG, "keyboard disabled in Settings - will not search");
     return false;
   }
   return search(true);
@@ -314,7 +314,7 @@ static bool read_hid(uint8_t* mod, uint8_t* hid)
   uint8_t n = 0;
   if (!M5.Ex_I2C.readRegister(TAB5_KEYBOARD_ADDRESS, REG_EVENT_NUM, &n, 1, FREQ))
   {
-    ESP_LOGW(TAG, "keyboard RETIRADO (parou de responder)");
+    ESP_LOGW(TAG, "keyboard removed (stopped responding)");
     s_presente = false;
     s_next_busca = t + BUSCA_MS;
     return false;
@@ -324,12 +324,12 @@ static bool read_hid(uint8_t* mod, uint8_t* hid)
   // INT ja pode ter subido pela leitura anterior - essa nao conta).
   if (!s_pode_ter_mais && !s_int_traiu) {
     if (int_bottom) {
-      if (!s_int_confiavel) { ESP_LOGI(TAG, "o INT do keyboard (G%d) avisa: leitura so quando ha key", TAB5_KEYBOARD_INT); }
+      if (!s_int_confiavel) { ESP_LOGI(TAG, "keyboard INT (G%d) is reliable: read only when a key is pending", TAB5_KEYBOARD_INT); }
       s_int_confiavel = true;
     } else {
       s_int_confiavel = false;
       s_int_traiu = true;
-      ESP_LOGW(TAG, "evento com o INT (G%d) em cima - o pino nao avisa, leitura periodica", TAB5_KEYBOARD_INT);
+      ESP_LOGW(TAG, "event arrived with INT (G%d) high - pin is unreliable, using periodic reads", TAB5_KEYBOARD_INT);
     }
   }
   s_pode_ter_mais = true;
@@ -407,7 +407,7 @@ bool tab5_keyboard_read(tab5_key_t* ev)
   if (hid == s_seg_hid && !s_fw_repete) {
     // O mesmo code of novo, sem soltura no storage: e o firmware repetindo.
     s_fw_repete = true;
-    ESP_LOGI(TAG, "o firmware do keyboard ja repete a key segurada - a repeticao daqui fica desligada");
+    ESP_LOGI(TAG, "keyboard firmware already repeats held keys - local repetition disabled");
   }
 
   // Modificadores HID: esquerdo nos bits 0-2, direito nos 4-6.
@@ -419,7 +419,7 @@ bool tab5_keyboard_read(tab5_key_t* ev)
   if (ev->code == TAB5_KEY_NONE) {
     const char ch = caractere(hid, shift);
     if (!ch) {
-      ESP_LOGW(TAG, "key sem traducao: HID 0x%02X mod 0x%02X - ignorada", hid, m);
+      ESP_LOGW(TAG, "no translation for key: HID 0x%02X modifiers 0x%02X - ignored", hid, m);
       return false;
     }
     ev->text[0] = ch;

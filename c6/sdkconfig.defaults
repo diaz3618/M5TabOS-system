@@ -1,41 +1,42 @@
-# Alvo do projeto: sem isto um clone novo compila para o ESP32 padrao.
+# Project target: without this, a fresh clone builds for the default ESP32.
 CONFIG_IDF_TARGET="esp32c6"
 
-# --- papel: COPROCESSADOR ---------------------------------------------------
+# --- role: COPROCESSOR -------------------------------------------------------
 CONFIG_ESP_HOSTED=y
 CONFIG_ESP_HOSTED_CP=y
 CONFIG_ESP_HOSTED_CP_FOR_MCU=y
 CONFIG_ESP_HOSTED_CP_RPC_V2=y
 
-# WiFi: PRECISA ficar ligado. Este firmware substitui o que hoje faz o WiFi do
-# Tab5 funcionar - desligar aqui deixaria o aparelho sem rede.
+# WiFi: MUST stay on. This firmware replaces what currently makes the
+# Tab5's WiFi work - turning this off would leave the device with no network.
 CONFIG_ESP_HOSTED_CP_FEAT_WIFI=y
 CONFIG_ESP_WIFI_NVS_ENABLED=y
 CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
 
-# O canal de bytes opaco P4 <-> C6. E por ele que o ESP-NOW vai falar.
+# The opaque P4 <-> C6 byte channel. This is what ESP-NOW talks over.
 CONFIG_ESP_HOSTED_CP_FEAT_PEER_DATA=y
 
-# BLUETOOTH LIGADO - e a decisao mudou depois de MEDIR.
+# BLUETOOTH ON - this decision changed after MEASURING.
 #
-# A primeira versao disto deixava o BT fora, com dois argumentos que nao
-# sobreviveram:
+# The first version of this left BT out, for two reasons that didn't hold up:
 #
-#   "cabe mais folga no slot" - o BT custa 259KB. Com ele a imagem fica em
-#   1,40MB dos 1,75MB do slot padrao, 24% livres. Folga de sobra.
+#   "more headroom in the slot" - BT costs 259KB. With it, the image is
+#   1.40MB of the default slot's 1.75MB, 24% free. Plenty of headroom.
 #
-#   "menos coisa nova de uma vez" - ao contrario. O C6 e o UNICO radio do Tab5,
-#   e o firmware da M5Stack entrega BLE por ele. Tirar o BT nao e "menos
-#   mudanca", e uma REGRESSAO: some uma capacidade do aparelho. Manter deixa a
-#   imagem nova mais parecida com a que ja esta la, nao menos.
+#   "less new stuff at once" - the opposite, actually. The C6 is the Tab5's
+#   ONLY radio, and M5Stack's firmware delivers BLE through it. Dropping BT
+#   is not "less change", it's a REGRESSION: it removes a capability the
+#   device had. Keeping it makes the new image closer to what's already
+#   there, not further from it.
 #
-# E o risco que restava - "e se o slot real da M5Stack for menor que 1,75MB?" -
-# nao e risco: se a imagem nao couber, o esp_ota_write falha no meio, e falhar
-# no write e seguro (sem o `end`, a particao de boot nao muda). O pior caso e
-# uma tentativa perdida, e ai recompilamos sem BT.
+# The remaining risk - "what if M5Stack's real slot is smaller than
+# 1.75MB?" - isn't really a risk: if the image doesn't fit, esp_ota_write
+# fails partway through, and failing on write is safe (without the `end`
+# call, the boot partition doesn't change). The worst case is a wasted
+# attempt, and then we rebuild without BT.
 #
-# CONTROLLER_ONLY: o C6 roda so o controlador; a stack (NimBLE/Bluedroid) mora
-# do lado do P4, que e como o esp_hosted foi desenhado.
+# CONTROLLER_ONLY: the C6 only runs the controller; the stack (NimBLE/
+# Bluedroid) lives on the P4 side, which is how esp_hosted was designed.
 CONFIG_ESP_HOSTED_CP_FEAT_BT=y
 CONFIG_ESP_HOSTED_CP_BT_ENABLED=y
 CONFIG_ESP_HOSTED_CP_FEAT_BT_HCI_VHCI=y
@@ -44,41 +45,45 @@ CONFIG_BT_CONTROLLER_ONLY=y
 CONFIG_BT_LE_SLEEP_ENABLE=y
 CONFIG_BT_LE_HCI_INTERFACE_USE_RAM=y
 
-# --- flash e particoes ------------------------------------------------------
+# --- flash and partitions ----------------------------------------------------
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# --- REDE DE SEGURANCA ------------------------------------------------------
-# A imagem nova sobe em estado PENDENTE. Se ela nao se declarar valida, o
-# bootloader volta para a anterior no proximo boot.
+# --- SAFETY NET ---------------------------------------------------------------
+# A new image boots in PENDING state. If it doesn't declare itself valid,
+# the bootloader reverts to the previous one on the next boot.
 #
-# Quem faz essa checagem e o BOOTLOADER. A gravacao pelo cabo leva o nosso
-# (com esta opcao); uma OTA nao troca o bootloader. Por isso o app_main.c tem
-# uma SEGUNDA rede, no nivel do aplicativo, armada so para imagem vinda por OTA.
+# The BOOTLOADER does this check. Flashing over the cable carries our own
+# (with this option); an OTA does not replace the bootloader. That's why
+# app_main.c has a SECOND safety net, at the application level, armed only
+# for an image that arrived over OTA.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 CONFIG_FREERTOS_HZ=1000
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# --- EXTRAS DO RADIO (contrato v3): CSI, FTM, 802.15.4 -----------------------
-# Cada um dorme ate o P4 pedir. Ligados aqui porque regravar o C6 e fisico
-# (Downloader): a gravacao leva tudo que depende do radio de uma vez, e dai em
-# diante a evolucao e so do lado do P4. Um bit de CAPS so acende se a flag ficou.
+# --- RADIO EXTRAS (contract v3): CSI, FTM, 802.15.4 --------------------------
+# Each one sleeps until the P4 asks for it. Enabled here because reflashing
+# the C6 is physical (Downloader): the flash carries everything that
+# depends on the radio in one shot, and from then on evolution happens only
+# on the P4 side. A CAPS bit only lights up if the flag was set.
 CONFIG_ESP_WIFI_CSI_ENABLED=y
 CONFIG_ESP_WIFI_FTM_ENABLE=y
 CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT=y
-# O outro radio do C6 (802.15.4). No 1o teste ele derrubou o WiFi (associado,
-# mas o roteador parou de responder ao ping): faltava a COEXISTENCIA - o
-# app_main.c nao chamava esp_coex_wifi_i154_enable(), e sem ela o arbitro de
-# RF nao leva o 802.15.4 em conta. Corrigido la; o modulo dorme ate o P4 pedir.
-# Se um dia precisar tirar: =n aqui, o modulo some e o bit C6_CAP_154 apaga.
+# The C6's other radio (802.15.4). On the first test it took down WiFi
+# (still associated, but the router stopped answering pings): COEXISTENCE
+# was missing - app_main.c wasn't calling esp_coex_wifi_i154_enable(), and
+# without it the RF arbiter doesn't account for 802.15.4. Fixed there; the
+# module sleeps until the P4 asks for it. If it ever needs to come out:
+# =n here, the module disappears and the C6_CAP_154 bit turns off.
 CONFIG_IEEE802154_ENABLED=y
 
-# A tarefa de eventos (sys_evt) roda o tratador do relatorio FTM, que monta a
-# mensagem para o P4 na pilha (~300 B). Os 2304 padrao ficavam no limite.
+# The events task (sys_evt) runs the FTM report handler, which builds the
+# message for the P4 on the stack (~300 B). The default 2304 was cutting it
+# close.
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584
 
-# Retrato do travamento na particao 'coredump' (partitions.csv): sobrevive ao
-# reinicio, e o INFO avisa o P4 que ha um guardado.
+# Crash snapshot in the 'coredump' partition (partitions.csv): survives a
+# restart, and INFO tells the P4 one is saved.
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y

@@ -159,7 +159,7 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
   char line[160];
   line_of(&r, line, sizeof(line));
   tab5_sd_enqueue_append(PASTA, ARQ, line);
-  ESP_LOGW(TAG, "no reiniciou (contador %lu -> %lu, origem %u): %s", (unsigned long)ant, (unsigned long)contador,
+  ESP_LOGW(TAG, "node rebooted (counter %lu -> %lu, source %u): %s", (unsigned long)ant, (unsigned long)contador,
            (unsigned)r.origem, mesh_diario_veredito(&r));
 }
 
@@ -188,17 +188,17 @@ const char* mesh_diario_veredito(const mesh_reinicio_t* r)
 {
   switch (r->origem) {
     case MESH_REI_BASE:    return "ponto de partida (primeira leitura)";
-    case MESH_REI_PEDIDO:  return "pedido pelo Tab5 (gravar configuração ou reiniciar)";
-    case MESH_REI_AUSENTE: return "reiniciou com o Tab5 desconectado - sem como saber";
+    case MESH_REI_PEDIDO:  return "requested by the Tab5 (save configuration or reboot)";
+    case MESH_REI_AUSENTE: return "rebooted while the Tab5 was disconnected - timing unknown";
     default: break;
   }
-  if (r->grove_s >= 0 && r->grove_s <= JANELA_S) { return "o Tab5 mexeu no 5V do Grove na hora - provável causa"; }
+  if (r->grove_s >= 0 && r->grove_s <= JANELA_S) { return "the Tab5 changed Grove 5 V at that time - probable cause"; }
   if (r->profile_s >= 0 && r->profile_s <= JANELA_S) { return "o Tab5 reaplicou o perfil de energia na hora - suspeito"; }
   if (r->send_state_s >= 0 && r->send_state_s <= 10) {
     return r->send_state_tipo == MESH_ENV_ADMIN ? "logo depois de um comando de admin do Tab5 - suspeito"
-         : r->send_state_tipo == MESH_ENV_CONFIG ? "logo depois do pedido de configuração do Tab5 - suspeito"
+         : r->send_state_tipo == MESH_ENV_CONFIG ? "right after the Tab5 configuration request - suspicious"
          : "logo depois de um pacote enviado pelo Tab5 - suspeito";
   }
-  if (r->centivolts && r->centivolts < 650) { return "bateria do Tab5 baixa na hora - veja a alimentação"; }
-  return "sem indício do lado do Tab5: falha do próprio nó (firmware ou energia do módulo)";
+  if (r->centivolts && r->centivolts < 650) { return "Tab5 battery low at that time - check the power supply"; }
+  return "no evidence on the Tab5 side: node failure (module firmware or power)";
 }

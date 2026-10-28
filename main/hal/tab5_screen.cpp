@@ -7,7 +7,7 @@
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_ops.h"
 
-static const char *TAG = "tela";
+static const char *TAG = "screen";
 
 static esp_lcd_panel_handle_t s_handle = nullptr;   // panel com que fomos preparados
 static void*     s_fb[2]     = { nullptr, nullptr };
@@ -71,7 +71,7 @@ bool tab5_screen_init(void)
   void* fb1 = nullptr;
   if (esp_lcd_dpi_panel_get_frame_buffer(h, 2, &fb0, &fb1) != ESP_OK
    || fb0 == nullptr || fb1 == nullptr) {
-    ESP_LOGE(TAG, "o panel nao tem duas paginas");
+    ESP_LOGE(TAG, "panel does not have two framebuffers");
     return false;
   }
 
@@ -87,7 +87,7 @@ bool tab5_screen_init(void)
   // para a PSRAM - sao 5KB (1280 ponteiros) que saem of SRAM interna.
   uint8_t** meu = (uint8_t**)heap_caps_malloc(height * sizeof(uint8_t*), MALLOC_CAP_SPIRAM);
   if (meu == nullptr) {
-    ESP_LOGE(TAG, "sem memoria para o vetor de linhas (%d ponteiros)", height);
+    ESP_LOGE(TAG, "out of memory for the line-pointer array (%d pointers)", height);
     return false;
   }
   uint8_t* line = (uint8_t*)fb1;
@@ -106,7 +106,7 @@ bool tab5_screen_init(void)
   ++s_geracao;
   ++g_tab5_screen_epoch;
 
-  ESP_LOGI(TAG, "tela com page dupla (desenha numa, mostra a outra)");
+  ESP_LOGI(TAG, "double-buffered screen (draw on one page, display the other)");
   tab5_frame_init(h);
   return true;
 }

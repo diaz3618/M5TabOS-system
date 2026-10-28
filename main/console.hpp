@@ -1,15 +1,15 @@
-// Console serial - one punhado of commands digitados pelo monitor.
+// Serial console: a handful of commands entered through the monitor.
 //
-// Nasceu of uma necessidade concreta: switch a rede WiFi exigia disable o
-// aparelho, tirar o cartao, levar no PC, edit, e remontar everything. Para uma
-// line of text. Agora e one comando.
+// It was created for a practical need: changing the WiFi network used to mean
+// shutting down the device, removing the card, editing it on a PC, and remounting
+// everything. Now it takes one command.
 //
-// Funciona dentro of proprio `idf.py monitor` - ele encaminha o que voce digita
-// para a serial. Digite "help" para ver os commands.
+// It works inside `idf.py monitor`, which forwards what you type to the serial
+// port. Type "help" to see the commands.
 //
-// Nao substitui o cartao no PC para arquivo grande; e para ajuste pontual.
+// It does not replace using a PC for large files; it is for quick adjustments.
 
 #pragma once
 
-// Cria a tarefa of console. Chamar depois of tab5_sd_init().
+// Create the console task. Call this after tab5_sd_init().
 void console_start(void);

@@ -759,7 +759,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool everything)
       list_hide(&s_l_wifi);
       content_limpo(d, a);
       char rot[64];
-      snprintf(rot, sizeof(rot), "Senha de \"%s\"", s_wf_alvo);
+      snprintf(rot, sizeof(rot), "Password for \"%s\"", s_wf_alvo);
       text(d, a.x + MARGEM, a.y + CONTEUDO_Y, 24, false, color_sub(d), rot);
       paragrafo(d, a.x + MARGEM, a.y + y_field + 92, a.width - 2 * MARGEM,
                 "Tap SEND to save and connect. The password stays encrypted on the card. X cancels.");
@@ -786,7 +786,7 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool everything)
     text(d, a.x + MARGEM, a.y + y + 28, 32, false, con ? TFT_GREENYELLOW : TFT_WHITE, sub);
     text(d, a.x + a.width - MARGEM, a.y + y + 34, 22, false, color_sub(d), det, top_right);
     y += 84;
-    y = botao_largo(d, a, y, settings_wifi() ? "DESLIGAR O WI-FI" : "LIGAR O WI-FI",
+    y = botao_largo(d, a, y, settings_wifi() ? "TURN OFF WI-FI" : "TURN ON WI-FI",
                     settings_wifi() ? TFT_ORANGE : TFT_GREENYELLOW);
     y = botao_largo(d, a, y, tab5_wifi_searching() ? "PROCURANDO..." : "PROCURAR REDES",
                     tab5_wifi_searching() ? TFT_DARKGREY : TFT_SKYBLUE);
@@ -944,8 +944,8 @@ static void bt_item_draw(lgfx::LovyanGFX& d, int i, int x0, int y, int width, vo
                      : v.class_id == TAB5_BLE_TRACKER ? TFT_ORANGE : TFT_WHITE;
   char titulo[48];
   if (v.name[0])       { snprintf(titulo, sizeof(titulo), "%s", v.name); }
-  else if (v.brand[0]) { snprintf(titulo, sizeof(titulo), "%s %s", v.class_id == TAB5_BLE_TRACKER ? "Rastreador" : "Beacon", v.brand); }
-  else                 { snprintf(titulo, sizeof(titulo), "(sem nome)"); }
+  else if (v.brand[0]) { snprintf(titulo, sizeof(titulo), "%s %s", v.class_id == TAB5_BLE_TRACKER ? "Tracker" : "Beacon", v.brand); }
+  else                 { snprintf(titulo, sizeof(titulo), "(no name)"); }
   text(d, x0 + MARGEM, y + 12, 30, true, color, titulo);
   tab5_signal_distance_text(v.rssi, v.p1m ? v.p1m : TAB5_SIGNAL_P1M_BLE, dist, sizeof(dist));
   const char* tipo = v.meshtastic ? "  ·  Meshtastic" : "";
@@ -1001,7 +1001,7 @@ static void pag_bt(lgfx::LovyanGFX& d, const area_t& a, bool everything)
     y = info(d, a, y, "Mesh connection", enlace, mesh_ble_conectado() ? TFT_GREENYELLOW : TFT_WHITE);
     const bool enabled = tab5_ble_state() != TAB5_BLE_OFF;
     const bool descendo = tab5_ble_state() == TAB5_BLE_STOPPING;
-    y = botao_largo(d, a, y, descendo ? "DESLIGANDO..." : enabled ? "DESLIGAR O BLUETOOTH" : "LIGAR O BLUETOOTH",
+    y = botao_largo(d, a, y, descendo ? "TURNING OFF..." : enabled ? "TURN OFF BLUETOOTH" : "TURN ON BLUETOOTH",
                     descendo ? TFT_DARKGREY : enabled ? TFT_ORANGE : TFT_GREENYELLOW);
     y = botao_largo(d, a, y, varrendo ? "PROCURANDO..." : "PROCURAR APARELHOS",
                     pronto && !varrendo ? TFT_SKYBLUE : TFT_DARKGREY);
@@ -1204,7 +1204,7 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   y += 34;
   text(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, net ? TFT_GREENYELLOW : TFT_WHITE,
         net ? "On" : "Off", middle_left);
-  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, net ? "DESLIGAR" : "LIGAR",
+  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, net ? "TURN OFF" : "TURN ON",
              net ? TFT_ORANGE : TFT_SKYBLUE);
   y += BTN_A + 12;
   paragrafo(d, a.x + MARGEM, a.y + y, a.width - 2 * MARGEM, tab5_mesh_internet_estado());
@@ -1451,17 +1451,17 @@ static void pag_screen(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   y += 34;
   text(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true, bq ? TFT_GREENYELLOW : TFT_WHITE,
         bq ? "On" : "Off", middle_left);
-  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, bq ? "DESLIGAR" : "LIGAR",
+  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, bq ? "TURN OFF" : "TURN ON",
              bq ? TFT_ORANGE : TFT_SKYBLUE);
   y += BTN_A + 24;
-  // Papel of parede of start: TROCAR passa pelas opcoes em roda.
+  // Home screen wallpaper: CHANGE cycles through the options on a wheel.
   static const char* const PAREDE[] = { "Random", "Wires", "Waves", "Web", "Rays", "Circles", "None" };
   const uint8_t pp = settings_wallpaper();
   text(d, a.x + MARGEM, a.y + y, 22, false, color_sub(d), "Home screen wallpaper");
   y += 34;
   text(d, a.x + MARGEM, a.y + y + BTN_A / 2, 32, true,
         pp == SETTINGS_WALLPAPER_NONE ? TFT_WHITE : TFT_GREENYELLOW, PAREDE[pp], middle_left);
-  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, "TROCAR", TFT_SKYBLUE);
+  tab5_botao(d, a.x + a.width - MARGEM - 260, a.y + y, 260, BTN_A, "CHANGE", TFT_SKYBLUE);
   y += BTN_A + 24;
   text(d, a.x + MARGEM, a.y + y, 22, false, color_sub(d), "Panel clock");
   y += 34; menos_mais(d, a, y, v2); y += BTN_A + 12;
@@ -1647,7 +1647,7 @@ static void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   y = info(d, a, y, "PSRAM", ps);
   y = info(d, a, y, "Uptime", active);
   paragrafo(d, a.x + MARGEM, a.y + y, a.width - 2 * MARGEM,
-            "M5Stack Tab5: ESP32-P4 (sistema) e ESP32-C6 (Wi-Fi, Bluetooth e ESP-NOW).");
+            "M5Stack Tab5: ESP32-P4 (system) and ESP32-C6 (Wi-Fi, Bluetooth, and ESP-NOW).");
 }
 
 // ---- USB (pendrive) --------------------------------------------------------

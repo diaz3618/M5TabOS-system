@@ -1,35 +1,35 @@
-# Tabela de particoes do M5tabOS.
+# M5tabOS partition table.
 #
-# Saiu da "singleapp_large" do IDF (1500K de app) porque ela ja estava em 68% e
-# o chip do Tab5 tem 16MB - estavamos apertados numa fatia que usava 9% da
-# flash.
+# Moved off the IDF's "singleapp_large" (1500K app) because it was already
+# at 68% and the Tab5's chip has 16MB - we were squeezed into a slice that
+# used 9% of the flash.
 #
-# CRESCEU DE 2MB PARA 4MB, para caber a tabela de 1391 emoji
-# (~1,5MB de bitmap, ver tab5_emoji_dados.cpp) com folga de sobra. O chip tem
-# 16MB; mesmo com 4MB de app, sobram 12MB sem ninguem em cima - nao e motivo
-# para ficar espremendo bitmap.
+# GREW FROM 2MB TO 4MB, to fit the 1391-emoji table
+# (~1.5MB of bitmap, see tab5_emoji_dados.cpp) with plenty of headroom. The
+# chip has 16MB; even with a 4MB app, 12MB is left over with nothing on it
+# - that's no reason to keep squeezing the bitmap.
 #
-# nvs E phy_init FICAM NO MESMO LUGAR, DE PROPOSITO.
+# nvs AND phy_init STAY IN THE SAME PLACE, ON PURPOSE.
 #
-# A NVS guarda as preferencias do usuario: brilho, WiFi, teclado, Grove. Mudar
-# o offset dela apagaria tudo isso na primeira gravacao - o aparelho voltaria
-# ao brilho padrao e esqueceria a rede. Como so a particao do app cresce, e
-# ela vem DEPOIS das duas, os ajustes atravessam a mudanca intactos - inclusive
-# esta, de 2 para 4MB.
+# NVS holds the user's preferences: brightness, WiFi, keyboard, Grove.
+# Moving its offset would wipe all of that on the first flash - the device
+# would go back to default brightness and forget the network. Since only
+# the app partition grows, and it comes AFTER both of those, settings
+# survive the change intact - including this one, from 2 to 4MB.
 #
-# O 0x400000 (4096K) e redondo de proposito: particao de app quer offset
-# alinhado em 64K, e deixar o tamanho alinhado tambem evita surpresa no dia em
-# que alguem acrescentar uma particao depois desta.
+# The 0x400000 (4096K) is a round number on purpose: the app partition
+# wants a 64K-aligned offset, and keeping the size aligned too avoids
+# surprises the day someone adds a partition after this one.
 #
-# CRESCEU DE 4MB PARA 8MB, para as fontes suaves (Roboto em
-# ~20 alturas nativas, regular e negrito, ~2,4MB - ver generate_fonts.py). Mesma
-# regra: nvs e phy_init nao se mexem, so o app cresce.
+# GREW FROM 4MB TO 8MB, for the soft fonts (Roboto at
+# ~20 native heights, regular and bold, ~2.4MB - see generate_fonts.py).
+# Same rule: nvs and phy_init don't move, only the app grows.
 #
-# RESERVA (2 MB, depois do app): o diario das gravacoes feitas enquanto o
-# cartao esta emprestado ao computador (modo pendrive) - ver
-# hal/tab5_journal.hpp. Fica vazia quase sempre. Mesma regra de sempre: entra
-# DEPOIS das outras, nvs e phy_init nao se mexem, os ajustes continuam. Sobram
-# ~5,9 MB livres no fim da flash.
+# RESERVE (2 MB, after the app): the journal of writes made while the card
+# is lent to the computer (flash-drive mode) - see hal/tab5_journal.hpp.
+# Almost always empty. Same rule as always: it comes AFTER the others, nvs
+# and phy_init don't move, settings carry over. ~5.9 MB free at the end of
+# the flash.
 #
 # Name,     Type, SubType, Offset,   Size,     Flags
 nvs,        data, nvs,     0x9000,   24K,
