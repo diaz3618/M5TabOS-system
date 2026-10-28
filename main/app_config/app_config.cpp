@@ -1309,6 +1309,27 @@ static void teclar_mesh(const char* txt, uint8_t codigo)
 // Meshtastic: sao aparelhos e caminhos eletricos diferentes.
 static const int LORA_BOTAO_Y = 840;
 
+// Uma linha "sw2=G4* · sw3=G2 · sw4=G47" a partir da tabela do HAL - gerada,
+// nao copiada a mao, para nunca mais destoar dela (era assim que o "24/G35"
+// de NSS, que o esquematico provou nunca ter existido, tinha sobrevivido).
+// '*' marca o switch que bateria com a rota tentada agora (gpio_ativo).
+static void lora_linha_candidatos(char* out, size_t cap, const tab5_lora_pin_t* pinos, size_t n,
+                                  tab5_lora_sinal_t sinal, int gpio_ativo)
+{
+  size_t k = 0;
+  out[0] = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (pinos[i].sinal != sinal) { continue; }
+    char item[24];
+    const int len = snprintf(item, sizeof(item), "%ssw%u=G%d%s", k ? " · " : "",
+                             (unsigned)pinos[i].chave, pinos[i].gpio,
+                             pinos[i].gpio == gpio_ativo ? "*" : "");
+    if (len <= 0 || k + (size_t)len + 1 > cap) { break; }
+    memcpy(out + k, item, (size_t)len + 1);
+    k += (size_t)len;
+  }
+}
+
 static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
 {
   const tab5_lora_status_t s = tab5_lora_status();
@@ -1353,18 +1374,31 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   }
   y += 84;
 
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW1 · rotas candidatas no M5-Bus");
+  // CONFERIDO no esquematico do modulo e cruzado com o do Tab5 (M5_BUS) -
+  // ver o aviso grande em hal/tab5_lora.hpp. O switch 1 do SW1 (rotulado
+  // "ISO_G0" no modulo) nao aparece aqui de proposito: nao vai a pino
+  // nenhum do M5-Bus, so NSS tem 3 candidatos de verdade, nao 4.
+  char linha[128];
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW1 · switches 2-4 = NSS, 5-8 = BUSY");
   y += 30;
-  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
-        "BUSY  4/G17 · 8/G45 · 19/G3* · 22/G48");
+  lora_linha_candidatos(valor, sizeof(valor), pinos, n, TAB5_LORA_SINAL_NSS, s.gpio_nss);
+  snprintf(linha, sizeof(linha), "NSS   %s", valor);
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE, linha);
   y += 30;
-  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
-        "NSS   20/G4* · 21/G2 · 23/G47 · 24/G35");
-  y += 42;
-  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW3 · rota candidata do IRQ");
+  lora_linha_candidatos(valor, sizeof(valor), pinos, n, TAB5_LORA_SINAL_BUSY, s.gpio_busy);
+  snprintf(linha, sizeof(linha), "BUSY  %s", valor);
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE, linha);
   y += 30;
-  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE,
-        "IRQ   2/G16* · 10/G52 · 26/G51     (* padrão tentado)");
+  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "switch 1 do SW1 é interno do módulo - sem pino aqui");
+  y += 38;
+
+  texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "SW3 · switches 9-11 = IRQ");
+  y += 30;
+  lora_linha_candidatos(valor, sizeof(valor), pinos, n, TAB5_LORA_SINAL_IRQ, s.gpio_irq);
+  snprintf(linha, sizeof(linha), "IRQ   %s", valor);
+  texto(d, a.x + MARGEM, a.y + y, 24, false, TFT_WHITE, linha);
+  y += 30;
+  texto(d, a.x + MARGEM, a.y + y, 20, false, cor_sub(d), "* é a rota tentada agora - confira contra os seus switches");
   y += 46;
 
   texto(d, a.x + MARGEM, a.y + y, 22, false, cor_sub(d), "Sonda elétrica · pino M5-Bus / GPIO");

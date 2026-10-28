@@ -18,9 +18,10 @@ static constexpr int PINO_SCK  = 5;   // M-Bus 11
 static constexpr int PINO_MOSI = 18;  // M-Bus 7
 static constexpr int PINO_MISO = 19;  // M-Bus 9
 
-// ROTA PADRAO, toda reunida aqui para ser facil trocar depois da sondagem.
-// E a posicao demonstrada pela M5Stack no CoreS3, transposta pelos numeros
-// fisicos do M5-Bus: IRQ=2, BUSY=19, NSS=20.
+// ROTA PADRAO - CONFERIDA no esquematico (ver o aviso grande no .hpp), nao
+// mais um palpite: switches 2, 5 e 9 ligados (os mesmos que o dono deste
+// Tab5 leu na propria placa) dao exatamente NSS=M-Bus20/G4, BUSY=M-Bus19/G3,
+// IRQ=M-Bus2/G16 - a mesma rota que ja estava aqui, agora com certeza.
 static constexpr int PINO_IRQ_PADRAO  = 16;
 static constexpr int PINO_BUSY_PADRAO = 3;
 static constexpr int PINO_NSS_PADRAO  = 4;
@@ -49,14 +50,27 @@ static tab5_lora_status_t s_status = {
   .gpio_busy = PINO_BUSY_PADRAO,
 };
 
+// OS CANDIDATOS DE VERDADE, um por chave (switches 1 a 11) - ver o aviso no
+// .hpp. O switch 1 (NSS, "ISO_G0" no esquematico do modulo) nao tem pino de
+// M5-Bus: fica de fora desta lista de proposito, e nao e um 12o candidato
+// "que falta" - e so a posicao que nunca liga nada util aqui.
 static tab5_lora_pin_t s_pinos[] = {
-  {  2, 16, TAB5_LORA_PIN_BAIXO }, {  4, 17, TAB5_LORA_PIN_BAIXO },
-  {  8, 45, TAB5_LORA_PIN_BAIXO }, { 10, 52, TAB5_LORA_PIN_BAIXO },
-  { 16,  6, TAB5_LORA_PIN_BAIXO }, { 17, 31, TAB5_LORA_PIN_I2C_ALTO },
-  { 18, 32, TAB5_LORA_PIN_I2C_ALTO }, { 19,  3, TAB5_LORA_PIN_BAIXO },
-  { 20,  4, TAB5_LORA_PIN_BAIXO }, { 21,  2, TAB5_LORA_PIN_BAIXO },
-  { 22, 48, TAB5_LORA_PIN_BAIXO }, { 23, 47, TAB5_LORA_PIN_BAIXO },
-  { 24, 35, TAB5_LORA_PIN_BAIXO }, { 26, 51, TAB5_LORA_PIN_BAIXO },
+  // fixos (sem chave): I2C do M5IOE1
+  { 17, 31, 0, TAB5_LORA_SINAL_I2C, TAB5_LORA_PIN_I2C_ALTO },
+  { 18, 32, 0, TAB5_LORA_SINAL_I2C, TAB5_LORA_PIN_I2C_ALTO },
+  // SW1, switches 2-4: NSS
+  { 20,  4, 2, TAB5_LORA_SINAL_NSS, TAB5_LORA_PIN_BAIXO },
+  { 21,  2, 3, TAB5_LORA_SINAL_NSS, TAB5_LORA_PIN_BAIXO },
+  { 23, 47, 4, TAB5_LORA_SINAL_NSS, TAB5_LORA_PIN_BAIXO },
+  // SW1, switches 5-8: BUSY
+  { 19,  3, 5, TAB5_LORA_SINAL_BUSY, TAB5_LORA_PIN_BAIXO },
+  {  4, 17, 6, TAB5_LORA_SINAL_BUSY, TAB5_LORA_PIN_BAIXO },
+  { 22, 48, 7, TAB5_LORA_SINAL_BUSY, TAB5_LORA_PIN_BAIXO },
+  {  8, 45, 8, TAB5_LORA_SINAL_BUSY, TAB5_LORA_PIN_BAIXO },
+  // SW3, switches 9-11: IRQ
+  {  2, 16,  9, TAB5_LORA_SINAL_IRQ, TAB5_LORA_PIN_BAIXO },
+  { 26, 51, 10, TAB5_LORA_SINAL_IRQ, TAB5_LORA_PIN_BAIXO },
+  { 10, 52, 11, TAB5_LORA_SINAL_IRQ, TAB5_LORA_PIN_BAIXO },
 };
 
 static EspHal s_hal(PINO_SCK, PINO_MISO, PINO_MOSI, SPI2_HOST, 2000000);
