@@ -2,21 +2,21 @@
 #include <M5Unified.h>
 #include <sys/time.h>
 
-bool tab5_rtc_disponivel(void) { return M5.Rtc.isEnabled(); }
+bool tab5_rtc_available(void) { return M5.Rtc.isEnabled(); }
 
-bool tab5_rtc_definir(time_t epoch_utc)
+bool tab5_rtc_set(time_t epoch_utc)
 {
   if (!M5.Rtc.isEnabled()) { return false; }
 
   struct tm t = { };
   gmtime_r(&epoch_utc, &t);
 
-  // RTC_Class::setDateTime(const tm*) - a sobrecarga mais direta, devolve
-  // void (a classe trata falha de escrita por dentro, nao ha o que checar
-  // aqui).
+  // RTC_Class::setDateTime(const tm*) is the most direct overload and returns
+  // void. The class handles write failures internally, so there is nothing to
+  // check here.
   M5.Rtc.setDateTime(&t);
 
-  // O RELOGIO DO SISTEMA TAMBEM, na mesma chamada - ver o aviso no .hpp.
+  // Set the system clock too, in the same call; see the note in the header.
   struct timeval tv = { };
   tv.tv_sec  = epoch_utc;
   tv.tv_usec = 0;

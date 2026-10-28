@@ -72,13 +72,13 @@ static int vaga_para(const uint8_t mac[6])   // sob s_mtx; cheio: o mais antigo
   if (s_n < FAREJO_MAX) { return s_n++; }
   int pior = 0;
   for (int i = 1; i < s_n; ++i) {
-    if (s_tab[i].visto_ms < s_tab[pior].visto_ms) { pior = i; }
+    if (s_tab[i].seen_ms < s_tab[pior].seen_ms) { pior = i; }
   }
   memset(&s_tab[pior], 0, sizeof(s_tab[pior]));
   return pior;
 }
 
-static tab5_ouvinte_t<tab5_farejo_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
+static tab5_listener_t<tab5_farejo_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
 
 static void juntar_lote(const uint8_t* d, size_t n)
 {
@@ -99,7 +99,7 @@ static void juntar_lote(const uint8_t* d, size_t n)
     for (int i = 0; i < k; ++i) {
       c6_farejo_reg_t g;
       memcpy(&g, reg + i * sizeof(g), sizeof(g));
-      tab5_ouvinte_chamar(&s_ouvinte, (const c6_farejo_reg_t*)&g, t);
+      tab5_listener_call(&s_ouvinte, (const c6_farejo_reg_t*)&g, t);
     }
   }
 
@@ -115,9 +115,9 @@ static void juntar_lote(const uint8_t* d, size_t n)
       it->rssi_max = g.rssi_max;
       it->rssi_med = g.rssi_med;
       it->tipos   |= g.tipos;
-      it->canal    = g.canal;
-      it->quadros += g.n;
-      it->visto_ms = agora;
+      it->channel    = g.channel;
+      it->frames += g.n;
+      it->seen_ms = agora;
     }
     s_perdidos += cab.perdidos;
   }
@@ -175,7 +175,7 @@ static void vTarefaRenova(void*)
   s_n = 0;
   xSemaphoreGive(s_mtx);
 
-  tab5_wifi_manter_acordado(TAB5_ACORDADO_FAREJO, false);
+  tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, false);
   ESP_LOGI(TAG, "farejo desligado");
   parada_confirmar(&s_parada);   // a ULTIMA coisa: daqui em diante um ligar pode criar outra
 }
@@ -198,13 +198,13 @@ bool tab5_farejo_c6_suporta(void)
 
 uint8_t tab5_farejo_caps_c6(void) { return s_caps; }
 
-void tab5_farejo_ouvinte(tab5_farejo_ouvinte_t cb) { tab5_ouvinte_definir(&s_ouvinte, cb); }
+void tab5_farejo_ouvinte(tab5_farejo_ouvinte_t cb) { tab5_listener_set(&s_ouvinte, cb); }
 
 bool tab5_farejo_ligar(const c6_farejo_cfg_t* cfg)
 {
   if (!cfg) { return false; }
   iniciar_travas();
-  if (!tab5_wifi_c6_nosso() || !tab5_wifi_c6_enlace()) { return false; }
+  if (!tab5_wifi_c6_is_ours() || !tab5_wifi_c6_link()) { return false; }
   registrar();
 
   tab5_mutex_travar(&s_trava_cmd);
@@ -230,16 +230,16 @@ bool tab5_farejo_ligar(const c6_farejo_cfg_t* cfg)
   if (sem_tab) { tab5_mutex_destravar(&s_trava_cmd); ESP_LOGE(TAG, "sem PSRAM para a tabela"); return false; }
 
   // Receptor sempre ligado: o promiscuo perde o que chega durante o cochilo.
-  tab5_wifi_manter_acordado(TAB5_ACORDADO_FAREJO, true);
+  tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, true);
 
   s_quer = true;
   if (!de_pe) {
     if (!parada_preparar(&s_parada)
      || !pool_criar(&s_id, vTarefaRenova, nullptr, "farejo", 3072, 3,
-                    DONO_SERVICO, "Farejo")) {
+                    OWNER_SERVICE, "Farejo")) {
       parada_desistir(&s_parada);
       s_quer = false;
-      tab5_wifi_manter_acordado(TAB5_ACORDADO_FAREJO, false);
+      tab5_wifi_keep_awake(TAB5_AWAKE_SNIFFING, false);
       tab5_mutex_destravar(&s_trava_cmd);
       ESP_LOGE(TAG, "sem vaga para a tarefa do farejo");
       return false;
@@ -312,7 +312,7 @@ bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms)
 {
   if (!out) { return false; }
   iniciar_travas();
-  if (!tab5_wifi_c6_nosso() || !tab5_wifi_c6_enlace()) { return false; }
+  if (!tab5_wifi_c6_is_ours() || !tab5_wifi_c6_link()) { return false; }
   registrar();
   s_tem_info = false;
   if (s_info_sem) { xSemaphoreTake(s_info_sem, 0); }   // esvazia

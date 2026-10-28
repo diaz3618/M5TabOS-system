@@ -96,7 +96,7 @@ static void descarregar(void)
     snprintf(linha, sizeof(linha), "ENE3,%lu,%s,%.3f,%.1f,%.1f,%d,%d,%d,%.1f,%s\n",
              (unsigned long)a->epoch, hora, a->volts, a->mA, a->mW,
              (int)a->pct, (int)a->mhz, (int)a->repouso, a->temp, a->app);
-    if (tab5_sd_anexar(TAB5_SD_ENERGIA, nome, linha,
+    if (tab5_sd_enqueue_append(TAB5_SD_POWER, nome, linha,
                        "tipo,epoch,hora,volts,mA,mW,pct,mhz,repouso,temp_c,app\n")) { ++ok; }
   }
   if (ok == 0) { s_falhas++; return; }
@@ -118,7 +118,7 @@ static void registro_na_carona(void)
     // Le do CACHE, nunca do I2C: o barramento e da tarefa de interface, que
     // atualiza este valor a cada segundo. Ir ao I2C daqui reproduziria a
     // corrida que ja nos custou uma tarde (tensao alternando 4.37/8.37V).
-    tab5_medida_t m = tab5_power_ultima();
+    tab5_measurement_t m = tab5_power_latest();
 
     if (s_n >= CAPACIDADE) {
       // Buffer cheio (cartao ausente ha muito tempo): descarta a mais antiga.
@@ -135,8 +135,8 @@ static void registro_na_carona(void)
     a->mW      = m.mW;
     a->pct     = (int16_t)m.pct;
     a->mhz     = (int16_t)tab5_power_cpu_mhz();
-    a->repouso = tab5_power_em_repouso() ? 1 : 0;
-    { float c; a->temp = tab5_sensores_temp(&c) ? c : -273.0f; }
+    a->repouso = tab5_power_is_sleeping() ? 1 : 0;
+    { float c; a->temp = tab5_sensors_temp(&c) ? c : -273.0f; }
     snprintf(a->app, sizeof(a->app), "%s", s_app);
 
     // Descarrega SO no lote. Nao ha gravacao antecipada de propriedade: durante
@@ -166,7 +166,7 @@ void registro_iniciar(void)
 {
   // Uma vez por minuto le o cache de energia e, de lote em lote, entrega as
   // linhas ao gravador - tudo dentro da tarefa "cartao".
-  tab5_sd_carona(registro_na_carona);
+  tab5_sd_piggyback(registro_na_carona);
   ESP_LOGI(TAG, "no ar: amostra a cada %lus, descarga a cada %d amostras",
            (unsigned long)(AMOSTRA_MS / 1000), LOTE);
 }

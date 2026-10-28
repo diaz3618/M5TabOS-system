@@ -55,7 +55,7 @@ static const char *TAG = "app.arquivos";
 typedef enum { NIVEL_PASTAS, NIVEL_ARQUIVOS, NIVEL_CONTEUDO } nivel_t;
 
 typedef struct {
-  char     nome[40];
+  char     name[40];
   int      arquivos;      // so para pasta
   uint64_t bytes;
   bool     eh_pasta;      // controla a pastinha/folhinha do icone - ver desenhar()
@@ -246,7 +246,7 @@ static int comparar_itens(const void* pa, const void* pb)
   const item_t* a = (const item_t*)pa;
   const item_t* b = (const item_t*)pb;
   if (a->eh_pasta != b->eh_pasta) { return a->eh_pasta ? -1 : 1; }
-  return a->eh_pasta ? strcasecmp(a->nome, b->nome) : strcasecmp(b->nome, a->nome);
+  return a->eh_pasta ? strcasecmp(a->name, b->name) : strcasecmp(b->name, a->name);
 }
 
 // Arquivos e bytes de uma pasta, SUBPASTAS INCLUSIVE - a pasta Sistema quase
@@ -295,8 +295,8 @@ static void listar_em(item_t* dst, const char* pasta, bool raiz)
   const int64_t t0 = esp_timer_get_time();
   int n = 0, achados = 0;
   if (raiz) { s_l_total = s_l_livre = 0; }
-  if (tab5_sd_montado()) {
-    if (raiz) { tab5_sd_espaco((uint64_t*)&s_l_total, (uint64_t*)&s_l_livre); }
+  if (tab5_sd_mounted()) {
+    if (raiz) { tab5_sd_space((uint64_t*)&s_l_total, (uint64_t*)&s_l_livre); }
     DIR* d = opendir(pasta);
     if (d) {
       struct dirent* e;
@@ -305,7 +305,7 @@ static void listar_em(item_t* dst, const char* pasta, bool raiz)
         if (++achados > MAX_ITENS) { continue; }
         if (sistema_trabalho_cancelado()) { break; }
         item_t* it = &dst[n];
-        snprintf(it->nome, sizeof(it->nome), "%s", e->d_name);
+        snprintf(it->name, sizeof(it->name), "%s", e->d_name);
         it->arquivos = 0;
         it->bytes    = 0;
         it->eh_pasta = (e->d_type == DT_DIR);
@@ -327,7 +327,7 @@ static void listar_em(item_t* dst, const char* pasta, bool raiz)
 
 static void trabalho_listar(void*)
 {
-  tab5_sd_gravar_pendentes();   // tamanhos e arquivos novos: o que ja foi entregue ao gravador
+  tab5_sd_flush_pending();   // tamanhos e arquivos novos: o que ja foi entregue ao gravador
   listar_em(s_carga, s_l_pastas ? TAB5_SD_APPS : s_l_pasta, s_l_pastas);
   s_l_pronto = true;
 }
@@ -557,7 +557,7 @@ static void ler_pagina(void)
 // Roda NO WORKER.
 static void trabalho_ler(void*)
 {
-  tab5_sd_gravar_pendentes();   // o que o gravador ainda nao escreveu tem que aparecer aqui
+  tab5_sd_flush_pending();   // o que o gravador ainda nao escreveu tem que aparecer aqui
   if (s_c_contar) { esquecer_offsets(); contar_linhas(); }
   ler_pagina();
   s_c_pronto = true;
@@ -940,7 +940,7 @@ static void item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largura,
   const int nome_x = x + icone_l + 14;
   const int nome_max_l = contagem_x - nome_x - 12;
   char nome[40];
-  snprintf(nome, sizeof(nome), "%s", it.nome);
+  snprintf(nome, sizeof(nome), "%s", it.name);
   tab5_cortar_ao_caber(d, nome, nome_max_l);   // por caractere: nome de pasta com acento
   d.setTextColor(TFT_WHITE, TFT_BLACK);
   d.drawString(nome, nome_x, y);
@@ -1029,7 +1029,7 @@ static int desenhar_texto(lgfx::LovyanGFX& d, const area_t& a, int y)
     }
   }
   // Apaga o resto, para tela curta nao deixar resto da anterior.
-  if (y < fundo) { tab5_tela_limpar(a.x, y, a.largura, a.y + a.altura - y, TFT_BLACK); }
+  if (y < fundo) { tab5_screen_clear(a.x, y, a.largura, a.y + a.altura - y, TFT_BLACK); }
   tab5_fonte_corpo(d);
   return cabem > 0 ? cabem : 1;
 }
@@ -1065,7 +1065,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 
   s_nivel_desenhado = (int)s_nivel;
 
-  if (!tab5_sd_montado()) {
+  if (!tab5_sd_mounted()) {
     tab5_texto(d, 3.625f);
     d.setTextColor(TFT_RED, TFT_BLACK);
     d.drawString("CARTÃO NÃO MONTADO      ", x, a.y + 24);
@@ -1094,7 +1094,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   tab5_titulo(d, 36);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
-  texto_cabendo(d, (s_nivel == NIVEL_PASTAS) ? (tab5_sd_nome()[0] ? tab5_sd_nome() : "Cartão") : (s_nivel == NIVEL_ARQUIVOS) ? s_pasta : s_arquivo,
+  texto_cabendo(d, (s_nivel == NIVEL_PASTAS) ? (tab5_sd_name()[0] ? tab5_sd_name() : "Cartão") : (s_nivel == NIVEL_ARQUIVOS) ? s_pasta : s_arquivo,
                 titulo_x, a.y + TOPO_Y + TOPO_A / 2, titulo_fim - titulo_x);
   d.setTextDatum(top_left);
 
@@ -1103,7 +1103,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   if (s_nivel == NIVEL_PASTAS) {
     tamanho_txt(t1, sizeof(t1), (s_total > s_livre) ? (s_total - s_livre) : 0);
     tamanho_txt(t2, sizeof(t2), s_total);
-    snprintf(linha, sizeof(linha), "%s | usado %s de %s", tab5_sd_descricao(), t1, t2);
+    snprintf(linha, sizeof(linha), "%s | usado %s de %s", tab5_sd_description(), t1, t2);
   } else if (s_nivel == NIVEL_ARQUIVOS) {
     if (s_n_achados > s_n_itens) {
       snprintf(linha, sizeof(linha), "%d de %d item(s) - toque para abrir", s_n_itens, s_n_achados);
@@ -1302,19 +1302,19 @@ static void ao_tocar(int x, int y)
   if (i < 0) { return; }
 
   if (s_nivel == NIVEL_PASTAS) {
-    snprintf(s_pasta, sizeof(s_pasta), "%s", s_itens[i].nome);
+    snprintf(s_pasta, sizeof(s_pasta), "%s", s_itens[i].name);
     s_nivel = NIVEL_ARQUIVOS;
     listar_arquivos();
   } else if (s_itens[i].eh_pasta) {
     // SUBPASTA (Sistema/logs, Sistema/energia): entra nela e
     // continua no mesmo nivel de listagem; o VOLTAR sobe de volta.
     const size_t n = strlen(s_pasta);
-    if (n + 1 + strlen(s_itens[i].nome) < sizeof(s_pasta)) {
-      snprintf(s_pasta + n, sizeof(s_pasta) - n, "/%s", s_itens[i].nome);
+    if (n + 1 + strlen(s_itens[i].name) < sizeof(s_pasta)) {
+      snprintf(s_pasta + n, sizeof(s_pasta) - n, "/%s", s_itens[i].name);
       listar_arquivos();
     }
   } else {
-    snprintf(s_arquivo, sizeof(s_arquivo), "%s", s_itens[i].nome);
+    snprintf(s_arquivo, sizeof(s_arquivo), "%s", s_itens[i].name);
     s_nivel = NIVEL_CONTEUDO;
     s_linha = 0;
     s_cabem = 1;
@@ -1379,7 +1379,7 @@ static void icone_arquivos(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_FILES = {
-  .nome  = "Arquivos",
+  .name  = "Arquivos",
   .cor   = TFT_SKYBLUE,
   .perfil = { },
   .usa_sd = true,

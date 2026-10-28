@@ -7,7 +7,7 @@
 // NTP (internet, com o WiFi conectado) - servidor de hora de verdade, erro
 // de milissegundos. Sobe sozinho na primeira vez que o WiFi pega IP.
 //
-// GPS (tab5_gps_tempo()) - o receptor tem relogio proprio, sincronizado
+// GPS (tab5_gps_time()) - o receptor tem relogio proprio, sincronizado
 // pelos satelites. So vale COM FIX: antes disso muitos receptores mandam a
 // hora do relogio interno deles, que pode estar qualquer coisa.
 //

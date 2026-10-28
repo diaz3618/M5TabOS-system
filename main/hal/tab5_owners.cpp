@@ -1,50 +1,54 @@
 #include "tab5_owners.hpp"
 
-// Tabela pequena e fixa: sao poucas dezenas de tarefas no sistema inteiro, e
-// so as registradas entram (as do IDF ficam de fora - sao SISTEMA por padrao).
-#define DONOS_MAX 32
+// Small fixed table: the whole system has only a few dozen tasks, and only
+// registered tasks are stored (IDF tasks stay out and default to SYSTEM).
+#define OWNERS_MAX 32
 
 typedef struct {
   TaskHandle_t h;
-  dono_tipo_t  tipo;
-  const char*  dono;
-} dono_t;
+  owner_type_t  type;
+  const char*  owner;
+} owner_entry_t;
 
-static dono_t       s_d[DONOS_MAX];
+static owner_entry_t s_entries[OWNERS_MAX];
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-void tab5_dono_registrar(TaskHandle_t h, dono_tipo_t tipo, const char* dono)
+void tab5_owner_register(TaskHandle_t h, owner_type_t type, const char* owner)
 {
   if (!h) { return; }
   taskENTER_CRITICAL(&s_mux);
-  int livre = -1;
-  for (int i = 0; i < DONOS_MAX; ++i) {
-    if (s_d[i].h == h) { livre = i; break; }
-    if (!s_d[i].h && livre < 0) { livre = i; }
+  int free_space = -1;
+  for (int i = 0; i < OWNERS_MAX; ++i) {
+    if (s_entries[i].h == h) { free_space = i; break; }
+    if (!s_entries[i].h && free_space < 0) { free_space = i; }
   }
-  if (livre >= 0) { s_d[livre] = { h, tipo, dono }; }
+  if (free_space >= 0) { s_entries[free_space] = { h, type, owner }; }
   taskEXIT_CRITICAL(&s_mux);
 }
 
-void tab5_dono_esquecer(TaskHandle_t h)
+void tab5_owner_forget(TaskHandle_t h)
 {
   if (!h) { return; }
   taskENTER_CRITICAL(&s_mux);
-  for (int i = 0; i < DONOS_MAX; ++i) {
-    if (s_d[i].h == h) { s_d[i] = { nullptr, DONO_SISTEMA, nullptr }; }
+  for (int i = 0; i < OWNERS_MAX; ++i) {
+    if (s_entries[i].h == h) { s_entries[i] = { nullptr, OWNER_SYSTEM, nullptr }; }
   }
   taskEXIT_CRITICAL(&s_mux);
 }
 
-dono_tipo_t tab5_dono_de(TaskHandle_t h, const char** dono)
+owner_type_t tab5_owner_of(TaskHandle_t h, const char** owner)
 {
-  dono_tipo_t tipo = DONO_SISTEMA;
+  owner_type_t type = OWNER_SYSTEM;
   const char* d = nullptr;
   taskENTER_CRITICAL(&s_mux);
-  for (int i = 0; i < DONOS_MAX; ++i) {
-    if (s_d[i].h && s_d[i].h == h) { tipo = s_d[i].tipo; d = s_d[i].dono; break; }
+  for (int i = 0; i < OWNERS_MAX; ++i) {
+    if (s_entries[i].h && s_entries[i].h == h) {
+      type = s_entries[i].type;
+      d = s_entries[i].owner;
+      break;
+    }
   }
   taskEXIT_CRITICAL(&s_mux);
-  if (dono) { *dono = d; }
-  return tipo;
+  if (owner) { *owner = d; }
+  return type;
 }

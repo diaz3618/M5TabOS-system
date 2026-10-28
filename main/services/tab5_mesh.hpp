@@ -174,7 +174,7 @@ const char* mesh_erro_nome(uint8_t erro);
 typedef struct {
   uint32_t de;                         // no de origem
   uint32_t para;                       // 0xFFFFFFFF = canal; nosso num = direta
-  uint8_t  canal;                      // indice do canal (0 = o primario)
+  uint8_t  channel;                    // indice do canal (0 = o primario)
   bool     direta;                     // conveniencia: para == nosso numero
   char     texto[MESH_TEXTO];
   uint32_t quando;                     // rx_time do radio
@@ -408,10 +408,10 @@ int  tab5_mesh_nao_lidas_diretas(void);
 #define MESH_NOME_CONVERSA 24
 
 typedef struct {
-  bool     canal;                       // true = canal; false = mensagem direta
+  bool     channel;                     // true = canal; false = mensagem direta
   uint8_t  idx;                         // indice do canal, se canal
   uint32_t no;                          // numero do no, se direta
-  char     nome[MESH_NOME_CONVERSA];    // "LongFast", "capc"...
+  char     name[MESH_NOME_CONVERSA];    // "LongFast", "capc"...
   // SEGUNDA LINHA, derivada na copia (nao guardada): o nome longo do no na
   // conversa direta, "canal N" no canal. E o que deixa a coluna dizer QUEM e
   // sem cair no id em hexa.

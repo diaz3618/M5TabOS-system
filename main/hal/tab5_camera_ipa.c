@@ -4,9 +4,9 @@
 //
 // A CAUSA, no silicio. O ISP do P4 abaixo da v3.0 nao tem o bloco de ganho de
 // balanco de branco (WBG). O esp_video compensa multiplicando as colunas R e B
-// da matriz de cor (CCM) pelos ganhos do AWB (esp_video_isp_device.c,
+// da matriz de color (CCM) pelos ganhos do AWB (esp_video_isp_device.c,
 // isp_init_ccm_param). Matematicamente da no mesmo - ate o sensor saturar. Num
-// pixel estourado o sensor entrega (255,255,255) cru; o ganho, que deveria
+// pixel estourado o sensor entrega (255,255,255) raw; o ganho, que deveria
 // levar R e B alem de 255 e ser CORTADO ali (e o que o WBG da v3 faz), entra
 // direto na CCM sem corte nenhum. A linha do verde da CCM tem coeficientes
 // negativos para R e B (tipico: -0,40 R + 1,63 G - 0,23 B), entao:
@@ -24,7 +24,7 @@
 //   2. m . s >= G_MIN - o branco saturado continua (quase) branco.
 // Sao 2 restricoes em 3 incognitas: sobra um grau de liberdade, usado para
 // ficar o mais perto possivel da linha original, medindo o erro nas 24
-// manchas de uma carta de cor (Macbeth) levadas para o dominio do sensor.
+// manchas de uma carta de color (Macbeth) levadas para o dominio do sensor.
 // Isso tem solucao fechada (minimos quadrados com restricao de igualdade):
 //
 //   m' = m - Ci A^T (A Ci A^T)^-1 (A m - b),   Ci = M^T K M
@@ -34,8 +34,8 @@
 // em 255, que e o certo.
 //
 // O CUSTO. A linha do verde e a que mais separa verdes e magentas. Mexer nela
-// tira um pouco de saturacao dessas cores (simulado: dE medio ~5 na carta).
-// Um reforco de 10% na saturacao do ISP (dominio YUV, onde branco tem croma
+// tira um pouco de saturation dessas cores (simulado: dE medio ~5 na carta).
+// Um reforco de 10% na saturation do ISP (dominio YUV, onde branco tem croma
 // zero e nao e afetado) devolve parte disso. Na v3 (WBG de verdade) nada
 // disto e preciso e o IPA nem entra no pipeline.
 //
@@ -43,7 +43,7 @@
 // algoritmos de esp_ipa_pipeline_get_config(); o link desvia essa chamada
 // para ca (-Wl,--wrap, main/CMakeLists.txt) e devolvemos a mesma
 // configuracao com "tab5_ipa_cor" no FIM da lista. O pipeline acha o
-// algoritmo pelo nome na secao .esp_ipa_detect (ESP_IPA_DETECT_FN) e o roda
+// algoritmo pelo name na secao .esp_ipa_detect (ESP_IPA_DETECT_FN) e o roda
 // a cada quadro, DEPOIS do AWB e do ACC: ele recebe a CCM e os ganhos ja
 // decididos e so ajusta a matriz antes de ela ir para o ISP.
 //
@@ -64,7 +64,7 @@ static const char *TAG = "tab5_ipa_cor";
 // Verde minimo de um branco saturado (1 = branco puro). 0,92 sai, depois da
 // gama, como ~243 de 255: imperceptivel ao lado de R e B em 255.
 #define G_MIN        0.92f
-// Reforco da saturacao quando a matriz foi protegida (percentual).
+// Reforco da saturation quando a matriz foi protegida (percentual).
 #define SAT_REFORCO  110
 #define SAT_PADRAO   128   // 1,0 no formato do ISP
 
@@ -77,25 +77,25 @@ static const float K[3][3] = {
 
 typedef struct {
   bool     tem_ccm, tem_sat;
-  float    ccm_awb[3][3];      // a ultima que o ACC mandou (sem protecao)
+  float    ccm_awb[3][3];      // a latest que o ACC mandou (sem protecao)
   uint32_t sat_awb;
-  float    ccm_enviada[3][3];  // a ultima que foi para o ISP
+  float    ccm_enviada[3][3];  // a latest que foi para o ISP
   uint32_t sat_enviada;
 } estado_t;
 
 static estado_t s_e;
 
 static portMUX_TYPE          s_trava = portMUX_INITIALIZER_UNLOCKED;
-static tab5_cam_ipa_estado_t s_foto;
+static tab5_cam_ipa_state_t s_foto;
 static bool                  s_tem_foto;
 
 static float ganho_valido(float g) { return (g > 0.1f && g < 8.0f) ? g : 1.0f; }
 
-// A linha do verde protegida (ver o cabecalho). Devolve o verde do branco
-// saturado antes da protecao; 'saida' recebe a matriz inteira.
-static float proteger(const float M[3][3], float gR, float gB, float saida[3][3])
+// A linha do verde protegida (ver o header). Devolve o verde do branco
+// saturado antes da protecao; 'output' recebe a matriz inteira.
+static float proteger(const float M[3][3], float gR, float gB, float output[3][3])
 {
-  memcpy(saida, M, sizeof(float) * 9);
+  memcpy(output, M, sizeof(float) * 9);
   const float s[3] = { gR, 1.0f, gB };
   const float *m = M[1];
   const float g_antes = m[0] * s[0] + m[1] * s[1] + m[2] * s[2];
@@ -130,12 +130,12 @@ static float proteger(const float M[3][3], float gR, float gB, float saida[3][3]
   const float r1 = g_antes - G_MIN;
   if (fabsf(det) < 1e-9f) {
     const float soma = m[0] + m[1] + m[2];
-    saida[1][0] = 0.0f; saida[1][1] = soma; saida[1][2] = 0.0f;
+    output[1][0] = 0.0f; output[1][1] = soma; output[1][2] = 0.0f;
     return g_antes;
   }
   const float l0 = (-p01 * r1) / det;
   const float l1 = ( p00 * r1) / det;
-  for (int i = 0; i < 3; ++i) { saida[1][i] = m[i] - (c0[i] * l0 + c1[i] * l1); }
+  for (int i = 0; i < 3; ++i) { output[1][i] = m[i] - (c0[i] * l0 + c1[i] * l1); }
   return g_antes;
 }
 
@@ -174,20 +174,20 @@ static void ajustar(esp_ipa_metadata_t *md, const esp_ipa_stats_t *stats, const 
     s_e.sat_enviada = sat;
   }
 
-  // Foto para o diagnostico. Copia curta (~200 B) sob trava de giro: quem le
+  // Foto para o diagnostico. Copia curta (~200 B) sob trava de giro: who le
   // e o console, em outra tarefa.
   taskENTER_CRITICAL(&s_trava);
-  s_foto.quadros++;
-  s_foto.ganho_r = gR;
-  s_foto.ganho_b = gB;
+  s_foto.frames++;
+  s_foto.red_gain = gR;
+  s_foto.blue_gain = gB;
   memcpy(s_foto.ccm_awb, s_e.ccm_awb, sizeof(s_foto.ccm_awb));
   memcpy(s_foto.ccm_isp, nova, sizeof(s_foto.ccm_isp));
-  s_foto.g_branco_antes  = g_antes;
-  s_foto.g_branco_depois = nova[1][0] * gR + nova[1][1] + nova[1][2] * gB;
-  s_foto.saturacao = sat;
+  s_foto.white_green_before  = g_antes;
+  s_foto.white_green_after = nova[1][0] * gR + nova[1][1] + nova[1][2] * gB;
+  s_foto.saturation = sat;
   if (sensor) {
-    s_foto.exposicao_us = sensor->cur_exposure;
-    s_foto.ganho_sensor = sensor->cur_gain;
+    s_foto.exposure_us = sensor->cur_exposure;
+    s_foto.sensor_gain = sensor->cur_gain;
   }
   if (stats) {
     for (int i = 0; i < 16 && i < ISP_HIST_SEGMENT_NUMS; ++i) { s_foto.hist[i] = stats->hist_stats[i].value; }
@@ -196,7 +196,7 @@ static void ajustar(esp_ipa_metadata_t *md, const esp_ipa_stats_t *stats, const 
   taskEXIT_CRITICAL(&s_trava);
 }
 
-bool tab5_camera_ipa_estado(tab5_cam_ipa_estado_t *e)
+bool tab5_camera_ipa_state(tab5_cam_ipa_state_t *e)
 {
   taskENTER_CRITICAL(&s_trava);
   const bool tem = s_tem_foto;
@@ -222,7 +222,7 @@ static void ipa_processar(esp_ipa_t *ipa, const esp_ipa_stats_t *stats, const es
   ajustar(md, stats, sensor);
 }
 
-static void ipa_destruir(esp_ipa_t *ipa) { }   // objeto estatico: nada a soltar
+static void ipa_destruir(esp_ipa_t *ipa) { }   // objeto estatico: nada a release
 
 static const esp_ipa_ops_t s_ops = {
   .init    = ipa_iniciar,

@@ -375,7 +375,7 @@ void tecvirt_pintar(tecvirt_t* t, lgfx::LovyanGFX& d, bool completo)
     // O fundo so e limpo quando o teclado aparece ou muda de lugar; na troca
     // de shift/pagina as teclas sao opacas, os cantos ja estao pretos, e
     // repintar todas e mais simples (e quase tao barato) que escolher quais.
-    if (tudo) { tab5_tela_limpar(t->a.x, topo_de(t->a), t->a.largura, tecvirt_altura(t->a), TFT_BLACK); }
+    if (tudo) { tab5_screen_clear(t->a.x, topo_de(t->a), t->a.largura, tecvirt_altura(t->a), TFT_BLACK); }
     for (int f = 0; f < FILAS; ++f) {
       for (int c = 0; c < N_FILA[f]; ++c) { pintar_tecla(t, d, f * 16 + c, f * 16 + c == t->tecla_sob); }
     }
@@ -591,8 +591,8 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
   static const uint32_t ECO_MS_MAX    = 60;   // e nunca mais que isto (volta lenta)
   static const uint8_t  TECLA_FIRME   = 2;
   // Os mesmos tempos do teclado fisico (hal/tab5_keyboard.hpp).
-  static const uint32_t REP_INICIO_MS = TAB5_TECLA_REPETE_INICIO_MS;
-  static const uint32_t REP_MS        = TAB5_TECLA_REPETE_MS;
+  static const uint32_t REP_INICIO_MS = TAB5_KEY_REPEAT_START_MS;
+  static const uint32_t REP_MS        = TAB5_KEY_REPEAT_MS;
   if (!t->aberto) { return 0; }
   ++t->amostra;
   sistema_toque_t q[SISTEMA_TOQUES_MAX];

@@ -93,7 +93,7 @@
 //
 // CANAIS: `canais` e mascara (bit N = canal N). Zero = fica no canal atual.
 // Com mais de um bit o C6 salta de canal a cada `permanencia_ms` - mas SO solto
-// do roteador (tab5_wifi_modo_so_radio): associado, trocar de canal derruba o
+// do roteador (tab5_wifi_radio_only_mode): associado, trocar de canal derruba o
 // WiFi, entao o C6 fica no canal do roteador e ignora a mascara. Ao desligar,
 // volta ao canal em que estava.
 #define C6_FAREJO_VALIDADE_MS 10000
@@ -122,10 +122,10 @@ typedef struct __attribute__((packed)) {
 #define C6_FT_GERENCIA 0x20  // outra gerencia (auth, assoc, deauth, acao)
 
 typedef struct __attribute__((packed)) {
-  uint8_t  canal;            // canal do radio quando o lote fechou
+  uint8_t  channel;            // canal do radio quando o lote fechou
   uint8_t  n;                // registros que seguem
   uint16_t perdidos;         // MACs que nao couberam na tabela do periodo
-  uint16_t quadros;          // quadros vistos no periodo (satura em 65535)
+  uint16_t frames;          // quadros vistos no periodo (satura em 65535)
 } c6_farejo_lote_t;          // 6 B
 
 typedef struct __attribute__((packed)) {
@@ -135,18 +135,18 @@ typedef struct __attribute__((packed)) {
   int8_t   rssi_med;         // media do periodo
   uint8_t  n;                // quadros do periodo (satura em 255)
   uint8_t  tipos;            // C6_FT_*
-  uint8_t  canal;            // canal onde foi ouvido
+  uint8_t  channel;            // canal onde foi ouvido
 } c6_farejo_reg_t;           // 12 B
 
 typedef struct __attribute__((packed)) {
   uint8_t  proto;            // C6_PROTO_VERSAO
   uint8_t  caps;             // C6_CAP_*
-  uint8_t  canal;
+  uint8_t  channel;
   uint8_t  farejando;        // 1 = promiscuo ligado agora
   uint32_t heap_livre;
   uint32_t heap_min;
   uint32_t no_ar_s;          // desde o boot do C6
-  uint32_t quadros;          // farejados desde o boot
+  uint32_t frames;          // farejados desde o boot
   // Diagnostico dos extras do radio (so firmware que os traz; o P4 aceita o
   // INFO curto de um C6 mais velho e deixa isto zerado).
   int16_t  csi_err;          // primeiro esp_err_t nao-OK ao ligar o CSI (0 = tudo OK)
@@ -201,7 +201,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
   uint8_t  mac[6];           // de quem veio
   int8_t   rssi;
-  uint8_t  canal;
+  uint8_t  channel;
   uint8_t  sec_canal;
   uint8_t  flags;            // C6_CSI_F_* e o formato do quadro (C6_CSI_FORMATO)
   uint16_t len;              // bytes de CSI que seguem (<= C6_CSI_MAX)
@@ -219,7 +219,7 @@ typedef struct __attribute__((packed)) {
 // unico: o P4 pede, o C6 roda uma sessao e responde com o relatorio.
 typedef struct __attribute__((packed)) {
   uint8_t  peer[6];          // AP responder
-  uint8_t  canal;
+  uint8_t  channel;
   uint8_t  frm_count;        // quadros na rajada: 0(auto),8,16,24,32,64
   uint16_t burst_period;     // unidades de 100 ms; 0 = auto
 } c6_ftm_cfg_t;             // 10 B
@@ -244,7 +244,7 @@ typedef struct __attribute__((packed)) {
 // e do P4.
 typedef struct __attribute__((packed)) {
   uint8_t  liga;
-  uint8_t  canal;            // 11..26
+  uint8_t  channel;            // 11..26
   uint8_t  promiscuo;        // 1 = sem filtro de endereco (ouve a malha toda); 0 = so
                              // quadros para o PAN/endereco do C6, que nao tem nenhum: quase nada
   uint8_t  reserva;
@@ -254,7 +254,7 @@ typedef struct __attribute__((packed)) {
 
 #define C6_154_MAX 127       // tamanho maximo de um quadro 802.15.4
 typedef struct __attribute__((packed)) {
-  uint8_t  canal;
+  uint8_t  channel;
   int8_t   rssi;
   uint8_t  lqi;              // qualidade do enlace (0..255)
   uint8_t  len;              // bytes do quadro que seguem (<= C6_154_MAX)

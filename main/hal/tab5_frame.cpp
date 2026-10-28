@@ -27,22 +27,22 @@ extern "C" {
 
 static const char *TAG = "quadro";
 
-// Dimensoes fisicas do painel do Tab5 (Panel_ST7123: retrato, RGB565).
+// Dimensoes fisicas do panel do Tab5 (Panel_ST7123: retrato, RGB565).
 static const uint32_t FB_L = 720;
 static const uint32_t FB_A = 1280;
 static const uint32_t FB_BYTES = FB_L * FB_A * 2;
 
 static esp_lcd_panel_handle_t s_painel = nullptr;
-static SemaphoreHandle_t      s_troca  = nullptr;   // dado a cada fim de frame
+static SemaphoreHandle_t      s_troca  = nullptr;   // dado a cada end de frame
 // A COPIA ENTRE PAGINAS e do DMA2D PURO (esp_async_fbcpy), nao do PPA. Medido
-// no aparelho com 'tela banco', painel varrendo, 720x1024 RGB565:
+// no aparelho com 'tela banco', panel scanning, 720x1024 RGB565:
 //   PPA (motor SRM)  32,1 ms   92 MB/s
 //   GDMA AXI         14,3 ms  206 MB/s
 //   DMA2D puro       10,2 ms  288 MB/s
 //   CPU (memcpy)     25,0 ms  118 MB/s
 // O SRM existe para escalar e girar: anda em macroblocos e le a PSRAM em
 // rajadas curtas. O DMA2D le linha corrida. E o mesmo motor que o driver DPI
-// usa quando pedem 'use_dma2d'. O PPA fica so de reserva, se o DMA2D nao subir.
+// usa quando pedem 'use_dma2d'. O PPA fica so de reserva, se o DMA2D nao start.
 static esp_async_fbcpy_handle_t s_dma2d = nullptr;
 static SemaphoreHandle_t        s_dma2d_fim = nullptr;
 static ppa_client_handle_t      s_ppa   = nullptr;
@@ -53,10 +53,10 @@ static volatile uint32_t      s_quadros = 0;
 // ---------------------------------------------------------------------------
 // O driver nao expoe o evento: a ISR dele limpa o bit e so imprime, com
 // esp_rom_printf, direto da interrupcao. Esse printf da ROM escreve nos DOIS
-// canais de saida dela - o 1 (o console) e o 2, que o boot deixa vazio
+// canais de output dela - o 1 (o console) e o 2, que o boot deixa vazio
 // (cpu_start.c: esp_rom_install_channel_putc(2, NULL)). Pendurando um
-// "leitor" no canal 2 vemos cada caractere impresso pela ROM sem encadear nem
-// substituir o console. Ele procura a palavra "underrun" e conta.
+// "leitor" no channel 2 vemos cada caractere impresso pela ROM sem encadear nem
+// replace o console. Ele procura a palavra "underrun" e conta.
 //
 // Roda dentro de ISR: IRAM, sem chamada nenhuma, so comparacao de caractere.
 static const char     PALAVRA[] = "underrun";
@@ -83,35 +83,35 @@ static void IRAM_ATTR vigia_canal2(char c)
 // a mascara da ponte zerada. Sobram tres lugares onde a imagem pode falhar sem
 // que a interrupcao de underrun da ponte dispare:
 //
-// 1) RELOGIO DO FRAME. O DMA do painel NAO e circular: esta ISR (fim do
+// 1) RELOGIO DO FRAME. O DMA do panel NAO e circular: esta ISR (end do
 //    frame) e que o religa para o frame seguinte (mipi_dsi_dma_trans_done_cb).
-//    Se ela atrasar - interrupcoes desligadas tempo demais nesse core - o
-//    frame seguinte comeca sem dados. Medimos o intervalo entre fins de
-//    frame: o menor visto e o periodo real; um intervalo 50% maior e um
-//    frame que atrasou. Em ciclos da CPU (o painel aceso segura
-//    CPU_FREQ_MAX, entao o relogio nao muda com ele no ar).
+//    Se ela atrasar - interrupcoes desligadas time demais nesse core - o
+//    frame seguinte comeca sem data. Medimos o intervalo entre fins de
+//    frame: o menor seen e o periodo real; um intervalo 50% maior e um
+//    frame que atrasou. Em ciclos da CPU (o panel aceso segura
+//    CPU_FREQ_MAX, entao o clock nao muda com ele no ar).
 //
 // 2) ERROS DO DSI HOST (o controlador Synopsys depois da ponte). INT_ST0 traz
-//    erros da camada fisica e ACK com erro do painel; INT_ST1 traz os do
-//    proprio host - inclusive dpi_buff_pld_under (bit 19), a falta de dados
+//    erros da camada fisica e ACK com erro do panel; INT_ST1 traz os do
+//    proprio host - inclusive dpi_buff_pld_under (bit 19), a falta de data
 //    no buffer DO HOST, que a ponte nao ve. Os dois registradores se limpam
 //    na leitura e ninguem mais os le (o driver do IDF nao usa as
 //    interrupcoes do host). Lidos AQUI, na ISR: so existe ISR com o DSI
-//    ligado, entao nunca se le um periferico desligado, e nao ha corrida com
-//    o repouso desmontando o painel.
+//    on, entao nunca se le um periferico desligado, e nao ha corrida com
+//    o sleep desmontando o panel.
 //
-// 3) A COR DO UNDERRUN - ver tab5_quadro_iniciar.
+// 3) A COR DO UNDERRUN - ver tab5_frame_init.
 static volatile int64_t  s_ult_us      = 0;   // em us (esp_timer), NAO ciclos - ver a ISR
 static volatile uint32_t s_periodo_min = UINT32_MAX;   // us
 static volatile uint32_t s_atrasos     = 0;            // desde o boot
-static volatile uint32_t s_pior_atraso = 0;            // us, desde a ultima leitura
-static volatile uint32_t s_dsi_st0     = 0;            // OU acumulado desde a ultima leitura
+static volatile uint32_t s_pior_atraso = 0;            // us, desde a latest leitura
+static volatile uint32_t s_dsi_st0     = 0;            // OU acumulado desde a latest leitura
 static volatile uint32_t s_dsi_st1     = 0;
 static volatile uint32_t s_dsi_erros   = 0;
 static volatile bool     s_primeiro_quadro = true;
 // QUEM ESTAVA RODANDO quando o frame atrasado finalmente foi atendido. A ISR
-// interrompe justamente quem segurou o core (interrupcoes desligadas, secao
-// critica longa) - o nome dele e a melhor pista. Os dois cores, porque uma
+// interrompe justamente who segurou o core (interrupcoes desligadas, secao
+// critica longa) - o name dele e a melhor pista. Os dois cores, porque uma
 // espera cruzada (trava do kernel, operacao de flash) prende o outro tambem.
 static char              s_atr_t[2][16];
 static volatile int      s_atr_nucleo = -1;   // core em que a ISR roda (-1 = nenhum atraso ainda)
@@ -123,13 +123,13 @@ static bool IRAM_ATTR ao_fim_do_quadro(esp_lcd_panel_handle_t, esp_lcd_dpi_panel
   s_quadros = s_quadros + 1;   // escritor unico: esta ISR
 
   // EM MICROSSEGUNDOS, E NAO EM CICLOS. Ciclos contam no ritmo do
-  // clock da CPU, e o clock muda (360 -> 40 no repouso): o monitor dividia
+  // clock da CPU, e o clock muda (360 -> 40 no sleep): o monitor dividia
   // pelo clock ATUAL e um atraso de 30 ms saiu "273,9 ms (normal 138,8)" -
   // exatos 9x. O esp_timer nao depende do clock da CPU.
   const int64_t agora = esp_timer_get_time();
   if (s_ult_us != 0) {
     const uint32_t intervalo = (uint32_t)(agora - s_ult_us);
-    // Abaixo de 3 ms nao e frame de verdade (nenhum painel aqui passa de
+    // Abaixo de 3 ms nao e frame de verdade (nenhum panel aqui passa de
     // ~70 Hz): ignorar, para nao envenenar o periodo minimo.
     if (intervalo < 3000u) {
     } else if (intervalo < s_periodo_min) {
@@ -152,10 +152,10 @@ static bool IRAM_ATTR ao_fim_do_quadro(esp_lcd_panel_handle_t, esp_lcd_dpi_panel
 
   const uint32_t st0 = MIPI_DSI_HOST.int_st0.val;
   const uint32_t st1 = MIPI_DSI_HOST.int_st1.val;
-  // O PRIMEIRO FRAME de cada painel so limpa: os registradores guardam o que
-  // aconteceu na sequencia de init (comandos em LP). No aparelho, todo painel
+  // O PRIMEIRO FRAME de cada panel so limpa: os registradores guardam o que
+  // aconteceu na sequencia de init (comandos em LP). No aparelho, todo panel
   // novo trazia st0=0x40 (bit 6 do ACK = "false control error" observado pelo
-  // painel durante o init) - sempre um, sempre ali, nunca depois.
+  // panel durante o init) - sempre um, sempre ali, nunca depois.
   if (s_primeiro_quadro) { s_primeiro_quadro = false; }
   else if (st0 | st1) { s_dsi_st0 |= st0; s_dsi_st1 |= st1; s_dsi_erros = s_dsi_erros + 1; }
 
@@ -164,13 +164,13 @@ static bool IRAM_ATTR ao_fim_do_quadro(esp_lcd_panel_handle_t, esp_lcd_dpi_panel
   return acordou == pdTRUE;
 }
 
-bool tab5_quadro_iniciar(esp_lcd_panel_handle_t painel)
+bool tab5_frame_init(esp_lcd_panel_handle_t panel)
 {
-  if (painel == nullptr) { return false; }
-  if (painel == s_painel) { return true; }
+  if (panel == nullptr) { return false; }
+  if (panel == s_painel) { return true; }
 
   if (s_troca == nullptr) {
-    // Binario e nao contador: so interessa "houve um fim de frame desde
+    // Binario e nao contador: so interessa "houve um end de frame desde
     // que armei", nunca quantos.
     s_troca = xSemaphoreCreateBinary();
     esp_rom_install_channel_putc(2, vigia_canal2);
@@ -200,68 +200,68 @@ bool tab5_quadro_iniciar(esp_lcd_panel_handle_t painel)
 
   esp_lcd_dpi_panel_event_callbacks_t cbs = { };
   cbs.on_frame_buf_complete = ao_fim_do_quadro;
-  if (esp_lcd_dpi_panel_register_event_callbacks(painel, &cbs, nullptr) != ESP_OK) {
-    ESP_LOGE(TAG, "nao consegui registrar o aviso de fim de quadro");
+  if (esp_lcd_dpi_panel_register_event_callbacks(panel, &cbs, nullptr) != ESP_OK) {
+    ESP_LOGE(TAG, "nao consegui registrar o aviso de end de quadro");
     return false;
   }
   // UNDERRUN SEM MASCARA. O driver do IDF programa a ponte DSI
   // para NAO interromper em underrun enquanto a contagem de linhas estiver
   // abaixo de h_size (esp_lcd_panel_dpi.c:343 - no Tab5, 720 de 1280 linhas).
-  // Resultado: falta de dados na parte de CIMA da tela deixava a imagem azul
-  // em SILENCIO - sem o log do driver e sem o nosso vigia. Foi assim que uma
+  // Resultado: falta de data na parte de CIMA da tela deixava a imagem azul
+  // em SILENCIO - sem o log do driver e sem o ours vigia. Foi assim que uma
   // piscada azul vista a olho nu no app Energia nao deixou rastro nenhum.
   // Zerando, todo underrun vira interrupcao, log e evento do monitor.
   mipi_dsi_brg_ll_set_underrun_discard_count(&MIPI_DSI_BRIDGE, 0);
 
-  // A COR DO UNDERRUN. O AZUL da piscada tem dono: e o registrador
+  // A COR DO UNDERRUN. O AZUL da piscada tem owner: e o registrador
   // DPI_RSV_DPI_DATA da ponte, "o pixel enviado ao host quando o FIFO da ponte
   // esvazia", cujo padrao 0x3FFF (30 bits, B nos 10 de baixo) e azul puro.
   // Trocamos para MAGENTA, que nenhuma tela do sistema usa em area grande:
-  //   - piscou MAGENTA  -> e a ponte sem dados, mesmo sem a interrupcao dizer;
+  //   - piscou MAGENTA  -> e a ponte sem data, mesmo sem a interrupcao dizer;
   //   - piscou AZUL     -> NAO e a ponte: o azul vem de outro lugar (host,
-  //                        painel), e a investigacao muda de camada.
-  // E diagnostico: quando a causa for achada, esta cor volta a ser decidida.
+  //                        panel), e a investigacao muda de camada.
+  // E diagnostico: quando a causa for achada, esta color volta a ser decidida.
   MIPI_DSI_BRIDGE.dpi_rsv_dpi_data.dpi_rsv_data = (0x3FFu << 20) | 0x3FFu;
   mipi_dsi_brg_ll_update_dpi_config(&MIPI_DSI_BRIDGE);
 
-  // Relogio do frame recomeca: painel novo pode ter outro periodo.
+  // Relogio do frame recomeca: panel novo pode ter outro periodo.
   s_ult_us      = 0;
   s_periodo_min = UINT32_MAX;
   s_primeiro_quadro = true;
 
-  s_painel = painel;
-  ESP_LOGI(TAG, "contador de quadros do painel no ar");
+  s_painel = panel;
+  ESP_LOGI(TAG, "contador de frames do panel no ar");
   return true;
 }
 
-// O repouso destroi o painel e cria outro - e o novo pode nascer no MESMO
-// endereco do antigo. Sem esquecer aqui, o iniciar() acharia que ja registrou
-// e o aviso de fim de frame nunca mais chegaria (achado:
-// "painel 0 Hz" depois do primeiro repouso).
-void tab5_quadro_encerrar(void) { s_painel = nullptr; }
+// O sleep destroi o panel e cria outro - e o novo pode nascer no MESMO
+// address do antigo. Sem forget aqui, o init() acharia que ja registrou
+// e o aviso de end de frame nunca mais chegaria (achado:
+// "panel 0 Hz" depois do primeiro sleep).
+void tab5_frame_shutdown(void) { s_painel = nullptr; }
 
 // POR QUE ARMAR DEPOIS DE PEDIR A TROCA, E NAO ANTES.
 //
-// O pedido de troca so muda um indice; quem o le e a ISR do DMA, no fim do
-// frame. Se eu limpasse o semaphore ANTES do pedido, um fim de frame que
-// caisse entre a limpeza e o pedido daria o semaphore com a pagina VELHA ainda
-// na varredura - e eu escreveria nela achando que estava livre. Limpando
+// O pedido de troca so muda um indice; who o le e a ISR do DMA, no end do
+// frame. Se eu limpasse o semaphore ANTES do pedido, um end de frame que
+// caisse entre a limpeza e o pedido daria o semaphore com a page VELHA ainda
+// na varredura - e eu escreveria nela achando que estava free_space. Limpando
 // DEPOIS, qualquer aviso que eu venha a pegar e de um reinicio que ja leu o
 // indice novo. O pior caso custa um frame a mais de espera; nunca um rasgo.
-void tab5_quadro_armar_espera(void)
+void tab5_frame_arm_wait(void)
 {
   if (s_troca) { xSemaphoreTake(s_troca, 0); }
 }
 
-bool tab5_quadro_esperar_troca(uint32_t prazo_ms)
+bool tab5_frame_wait_for_swap(uint32_t timeout_ms)
 {
   if (s_troca == nullptr) { return false; }
-  return xSemaphoreTake(s_troca, pdMS_TO_TICKS(prazo_ms)) == pdTRUE;
+  return xSemaphoreTake(s_troca, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
 // Framebuffer para framebuffer (ou tela virtual para framebuffer - os tres
-// tem 720x1280 RGB565): o retangulo vai para o MESMO lugar no destino.
-// Bloqueante: o compositor so pede a troca de pagina com tudo copiado.
+// tem 720x1280 RGB565): o retangulo vai para o MESMO lugar no target.
+// Bloqueante: o compositor so pede a troca de page com tudo copiado.
 static bool IRAM_ATTR dma2d_terminou(esp_async_fbcpy_handle_t, esp_async_fbcpy_event_data_t*, void* arg)
 {
   BaseType_t acordou = pdFALSE;
@@ -270,23 +270,23 @@ static bool IRAM_ATTR dma2d_terminou(esp_async_fbcpy_handle_t, esp_async_fbcpy_e
 }
 
 // O CACHE, que o DMA nao enxerga. Linhas inteiras do retangulo:
-//  - ORIGEM: devolver a memoria o que a CPU escreveu e ainda esta so no cache;
-//  - DESTINO: devolver E invalidar, para a CPU nao ler depois uma copia velha
+//  - ORIGEM: return_card a memoria o que a CPU escreveu e ainda esta so no cache;
+//  - DESTINO: return_card E invalidar, para a CPU nao read depois uma copia velha
 //    que tenha ficado no cache. "So invalidar" (M2C) exige bordas na linha de
 //    cache de 128 B, e um retangulo qualquer nao cai nelas - o IDF recusa
 //    (foi o erro do primeiro 'tela banco'). Devolver antes de invalidar e
-//    seguro com qualquer borda: nada sujo e perdido.
-static void cache_das_linhas(const void* base, const tab5_ret_t& r, int flags)
+//    seguro com qualquer borda: nada dirty e perdido.
+static void cache_das_linhas(const void* base, const tab5_rect_t& r, int flags)
 {
   uint8_t* p = (uint8_t*)base + (size_t)r.y * FB_L * 2;
   esp_cache_msync(p, (size_t)r.a * FB_L * 2, flags | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 }
 
-static bool copiar_dma2d(void* destino, const tab5_ret_t& r, const void* origem, int ox, int oy)
+static bool copiar_dma2d(void* target, const tab5_rect_t& r, const void* source, int ox, int oy)
 {
   esp_async_fbcpy_trans_desc_t t = { };
-  t.src_buffer = origem;
-  t.dst_buffer = destino;
+  t.src_buffer = source;
+  t.dst_buffer = target;
   t.src_buffer_size_x = FB_L; t.src_buffer_size_y = FB_A;
   t.dst_buffer_size_x = FB_L; t.dst_buffer_size_y = FB_A;
   t.src_offset_x = ox;  t.src_offset_y = oy;
@@ -294,15 +294,15 @@ static bool copiar_dma2d(void* destino, const tab5_ret_t& r, const void* origem,
   t.copy_size_x = r.l;  t.copy_size_y = r.a;
   t.pixel_format_unique_id.color_type_id = COLOR_TYPE_ID(COLOR_SPACE_RGB, COLOR_PIXEL_RGB565);
 
-  const tab5_ret_t ro = { (int16_t)ox, (int16_t)oy, r.l, r.a };
-  cache_das_linhas(origem,  ro, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
-  cache_das_linhas(destino, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+  const tab5_rect_t ro = { (int16_t)ox, (int16_t)oy, r.l, r.a };
+  cache_das_linhas(source,  ro, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  cache_das_linhas(target, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
   xSemaphoreTake(s_dma2d_fim, 0);   // nenhum aviso velho conta como este
   if (esp_async_fbcpy(s_dma2d, &t, dma2d_terminou, s_dma2d_fim) != ESP_OK) {
     ESP_LOGE(TAG, "copia %dx%d em (%d,%d) recusada pelo DMA2D", r.l, r.a, r.x, r.y);
     return false;
   }
-  // Tela inteira leva ~13 ms; 100 ms e so a rede contra um DMA travado.
+  // Tela inteira leva ~13 ms; 100 ms e so a network contra um DMA travado.
   if (xSemaphoreTake(s_dma2d_fim, pdMS_TO_TICKS(100)) != pdTRUE) {
     ESP_LOGE(TAG, "copia %dx%d em (%d,%d) nao terminou em 100 ms", r.l, r.a, r.x, r.y);
     return false;
@@ -310,26 +310,26 @@ static bool copiar_dma2d(void* destino, const tab5_ret_t& r, const void* origem,
   return true;
 }
 
-bool tab5_quadro_copiar_de(void* destino, const tab5_ret_t& r, const void* origem, int ox, int oy)
+bool tab5_frame_copy_from(void* target, const tab5_rect_t& r, const void* source, int ox, int oy)
 {
-  if (destino == nullptr || origem == nullptr || destino == origem) { return false; }
+  if (target == nullptr || source == nullptr || target == source) { return false; }
   if (r.l <= 0 || r.a <= 0) { return true; }
   if (ox < 0 || oy < 0 || ox + r.l > (int)FB_L || oy + r.a > (int)FB_A) { return false; }
-  if (s_dma2d) { return copiar_dma2d(destino, r, origem, ox, oy); }
+  if (s_dma2d) { return copiar_dma2d(target, r, source, ox, oy); }
   // O PPA de reserva so faz o caso sem deslocamento.
   if (ox != r.x || oy != r.y) { return false; }
-  return tab5_quadro_copiar(destino, origem, r);
+  return tab5_frame_copy(target, source, r);
 }
 
-bool tab5_quadro_copiar(void* destino, const void* origem, const tab5_ret_t& r)
+bool tab5_frame_copy(void* target, const void* source, const tab5_rect_t& r)
 {
-  if (destino == nullptr || origem == nullptr) { return false; }
+  if (target == nullptr || source == nullptr) { return false; }
   if (r.l <= 0 || r.a <= 0) { return true; }
-  if (s_dma2d) { return copiar_dma2d(destino, r, origem, r.x, r.y); }
+  if (s_dma2d) { return copiar_dma2d(target, r, source, r.x, r.y); }
   if (s_ppa == nullptr) { return false; }
 
   ppa_srm_oper_config_t op = { };
-  op.in.buffer         = origem;
+  op.in.buffer         = source;
   op.in.pic_w          = FB_L;
   op.in.pic_h          = FB_A;
   op.in.block_w        = r.l;
@@ -338,7 +338,7 @@ bool tab5_quadro_copiar(void* destino, const void* origem, const tab5_ret_t& r)
   op.in.block_offset_y = r.y;
   op.in.srm_cm         = PPA_SRM_COLOR_MODE_RGB565;
 
-  op.out.buffer         = destino;
+  op.out.buffer         = target;
   op.out.buffer_size    = FB_BYTES;
   op.out.pic_w          = FB_L;
   op.out.pic_h          = FB_A;
@@ -353,47 +353,47 @@ bool tab5_quadro_copiar(void* destino, const void* origem, const tab5_ret_t& r)
 
   const esp_err_t e = ppa_do_scale_rotate_mirror(s_ppa, &op);
   if (e != ESP_OK) {
-    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) falhou: %s", r.l, r.a, r.x, r.y, esp_err_to_name(e));
+    ESP_LOGE(TAG, "copia %dx%d em (%d,%d) failed: %s", r.l, r.a, r.x, r.y, esp_err_to_name(e));
     return false;
   }
   return true;
 }
 
-uint32_t tab5_quadro_underruns(void) { return s_underruns; }
+uint32_t tab5_frame_underruns(void) { return s_underruns; }
 
-uint32_t tab5_quadro_atrasos(uint32_t* pior_us, uint32_t* periodo_us)
+uint32_t tab5_frame_delays(uint32_t* worst_us, uint32_t* period_us)
 {
-  if (pior_us)    { *pior_us = s_pior_atraso; s_pior_atraso = 0; }
-  if (periodo_us) { *periodo_us = (s_periodo_min != UINT32_MAX) ? s_periodo_min : 0; }
+  if (worst_us)    { *worst_us = s_pior_atraso; s_pior_atraso = 0; }
+  if (period_us) { *period_us = (s_periodo_min != UINT32_MAX) ? s_periodo_min : 0; }
   return s_atrasos;
 }
 
-int64_t tab5_quadro_atraso_quando(void) { return s_atr_us; }
+int64_t tab5_frame_delay_time(void) { return s_atr_us; }
 
-int64_t tab5_quadro_ultimo_fim_us(void) { return s_ult_us; }
+int64_t tab5_frame_last_end_us(void) { return s_ult_us; }
 
-uint32_t tab5_quadro_atraso_quem(int* nucleo_isr, char* t0, char* t1)
+uint32_t tab5_frame_delay_source(int* isr_core, char* t0, char* t1)
 {
-  if (nucleo_isr) { *nucleo_isr = s_atr_nucleo; }
+  if (isr_core) { *isr_core = s_atr_nucleo; }
   if (t0) { memcpy(t0, s_atr_t[0], 16); t0[15] = 0; }
   if (t1) { memcpy(t1, s_atr_t[1], 16); t1[15] = 0; }
   return s_atr_seq;
 }
 
-uint32_t tab5_quadro_erros_dsi(uint32_t* st0, uint32_t* st1)
+uint32_t tab5_frame_dsi_errors(uint32_t* st0, uint32_t* st1)
 {
   if (st0) { *st0 = s_dsi_st0; s_dsi_st0 = 0; }
   if (st1) { *st1 = s_dsi_st1; s_dsi_st1 = 0; }
   return s_dsi_erros;
 }
-uint32_t tab5_quadro_quadros(void)   { return s_quadros; }
+uint32_t tab5_frame_count(void)   { return s_quadros; }
 
-// Espia o contador da ISR a cada tique (1 ms): percebe o fim de frame no
+// Espia o contador da ISR a cada tique (1 ms): percebe o end de frame no
 // maximo 1 ms depois - sobra folga de sobra ate a proxima (~15 ms).
-bool tab5_quadro_esperar_fim(uint32_t prazo_ms)
+bool tab5_frame_wait_for_end(uint32_t timeout_ms)
 {
   const uint32_t q0 = s_quadros;
-  const int64_t limite = esp_timer_get_time() + (int64_t)prazo_ms * 1000;
+  const int64_t limite = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
   while (s_quadros == q0) {
     if (esp_timer_get_time() >= limite) { return false; }
     vTaskDelay(1);
@@ -404,19 +404,19 @@ bool tab5_quadro_esperar_fim(uint32_t prazo_ms)
 // ---------------------------------------------------------------------------
 // PREENCHIMENTO POR HARDWARE
 // ---------------------------------------------------------------------------
-// A medida por fase da passada completa mostrou "limpar" custando 20-25 ms em
+// A measurement por fase da passada completa mostrou "clear" custando 20-25 ms em
 // TODO app: a CPU escrevendo 1,6 MB de preto. O PPA tem um motor de
-// preenchimento so de escrita - nao le nada, so manda a cor pela DMA2D.
+// preenchimento so de escrita - nao le nada, so manda a color pela DMA2D.
 //
 // O cache e do driver: antes de escrever, ele devolve E invalida as linhas do
-// destino (ppa_fill.c, C2M|INVALIDATE) - o que a CPU desenhou do lado, nas
+// target (ppa_fill.c, C2M|INVALIDATE) - o que a CPU desenhou do lado, nas
 // mesmas linhas, vai para a memoria antes e nada se perde.
 static ppa_client_handle_t s_ppa_fill = nullptr;
 static int8_t              s_fill_ok  = -1;   // -1 nao conferido, 0 desligado, 1 conferido
 
-bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
+bool tab5_frame_fill(void* target, const tab5_rect_t& r, uint16_t color)
 {
-  if (s_fill_ok == 0 || destino == nullptr || r.l <= 0 || r.a <= 0) { return false; }
+  if (s_fill_ok == 0 || target == nullptr || r.l <= 0 || r.a <= 0) { return false; }
   if (s_ppa_fill == nullptr) {
     ppa_client_config_t cfg = { };
     cfg.oper_type = PPA_OPERATION_FILL;
@@ -430,7 +430,7 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
   }
 
   ppa_fill_oper_config_t op = { };
-  op.out.buffer         = destino;
+  op.out.buffer         = target;
   op.out.buffer_size    = FB_BYTES;
   op.out.pic_w          = FB_L;
   op.out.pic_h          = FB_A;
@@ -440,8 +440,8 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
   op.fill_block_w       = r.l;
   op.fill_block_h       = r.a;
   // RGB565 -> ARGB8888 repetindo os bits altos nos baixos: o PPA corta de
-  // volta para 565 e chega exatamente a mesma cor.
-  const uint8_t r5 = (cor >> 11) & 0x1F, g6 = (cor >> 5) & 0x3F, b5 = cor & 0x1F;
+  // volta para 565 e chega exatamente a mesma color.
+  const uint8_t r5 = (color >> 11) & 0x1F, g6 = (color >> 5) & 0x3F, b5 = color & 0x1F;
   op.fill_argb_color.a = 0xFF;
   op.fill_argb_color.r = (uint8_t)((r5 << 3) | (r5 >> 2));
   op.fill_argb_color.g = (uint8_t)((g6 << 2) | (g6 >> 4));
@@ -450,17 +450,17 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
 
   if (ppa_do_fill(s_ppa_fill, &op) != ESP_OK) { return false; }
 
-  // So uma cor com os dois bytes DIFERENTES denuncia ordem de bytes trocada -
+  // So uma color com os dois bytes DIFERENTES denuncia ordem de bytes trocada -
   // o preto (0x0000), que e quase toda limpeza, passaria em qualquer caso.
-  if (s_fill_ok < 0 && (cor >> 8) != (cor & 0xFF)) {
+  if (s_fill_ok < 0 && (color >> 8) != (color & 0xFF)) {
     // CONFERENCIA UNICA. O driver invalidou o cache dessas linhas antes do
     // DMA e a CPU nao tocou nelas desde entao: esta leitura vem da memoria.
-    const uint16_t lido = ((const uint16_t*)destino)[(size_t)r.y * FB_L + r.x];
-    if (lido != cor) {
+    const uint16_t value_read = ((const uint16_t*)target)[(size_t)r.y * FB_L + r.x];
+    if (value_read != color) {
       ESP_LOGE(TAG, "preenchimento por PPA escreveu %04x em vez de %04x - desligado, limpeza pela CPU",
-               (unsigned)lido, (unsigned)cor);
+               (unsigned)value_read, (unsigned)color);
       s_fill_ok = 0;
-      return false;   // quem chamou pinta pela CPU por cima
+      return false;   // who chamou pinta pela CPU por cima
     }
     s_fill_ok = 1;
     ESP_LOGI(TAG, "limpeza de tela por hardware (PPA) testada e funcionando");
@@ -471,18 +471,18 @@ bool tab5_quadro_preencher(void* destino, const tab5_ret_t& r, uint16_t cor)
 // ---------------------------------------------------------------------------
 // BANCO DE PROVA DA COPIA
 // ---------------------------------------------------------------------------
-// A medida do compositor mostrou o PPA levando ~88 ms por quadro (~32 MB/s
+// A measurement do compositor mostrou o PPA levando ~88 ms por quadro (~32 MB/s
 // somando leitura e escrita). O motor SRM do PPA e feito para ESCALAR e GIRAR:
 // trabalha em macroblocos de 16/32 pixels, e numa PSRAM isso vira rajadas
 // curtas de 32-64 bytes saltando de linha em linha. Este banco poe o PPA lado
 // a lado com motores que copiam linha corrida, no mesmo retangulo, com o
-// painel varrendo - nada de numero de folha de dados.
+// panel scanning - nada de numero de folha de data.
 namespace {
 
 struct banco_t {
   uint16_t* src = nullptr;
   uint16_t* dst = nullptr;
-  SemaphoreHandle_t fim = nullptr;
+  SemaphoreHandle_t end = nullptr;
 };
 
 double mbps(uint32_t px, int64_t us) { return us > 0 ? (double)px * 4.0 / (double)us : 0.0; }
@@ -501,14 +501,14 @@ bool IRAM_ATTR gdma_fim(async_memcpy_handle_t, async_memcpy_event_t*, void* arg)
   return acordou == pdTRUE;
 }
 
-// Linha de cache L2 = 128 B: o DMA precisa das bordas do destino nela.
-void sincronizar_linhas(void* base, const tab5_ret_t& r, int dir)
+// Linha de cache L2 = 128 B: o DMA precisa das bordas do target nela.
+void sincronizar_linhas(void* base, const tab5_rect_t& r, int dir)
 {
   uint8_t* p = (uint8_t*)base + (size_t)r.y * FB_L * 2;
   esp_cache_msync(p, (size_t)r.a * FB_L * 2, dir | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 }
 
-int64_t por_ppa(banco_t& b, ppa_client_handle_t cli, const tab5_ret_t& r)
+int64_t por_ppa(banco_t& b, ppa_client_handle_t cli, const tab5_rect_t& r)
 {
   ppa_srm_oper_config_t op = { };
   op.in.buffer = b.src; op.in.pic_w = FB_L; op.in.pic_h = FB_A;
@@ -523,7 +523,7 @@ int64_t por_ppa(banco_t& b, ppa_client_handle_t cli, const tab5_ret_t& r)
   return esp_timer_get_time() - t0;
 }
 
-int64_t por_dma2d(banco_t& b, esp_async_fbcpy_handle_t h, const tab5_ret_t& r)
+int64_t por_dma2d(banco_t& b, esp_async_fbcpy_handle_t h, const tab5_rect_t& r)
 {
   esp_async_fbcpy_trans_desc_t t = { };
   t.src_buffer = b.src; t.dst_buffer = b.dst;
@@ -535,31 +535,31 @@ int64_t por_dma2d(banco_t& b, esp_async_fbcpy_handle_t h, const tab5_ret_t& r)
   const int64_t t0 = esp_timer_get_time();
   sincronizar_linhas(b.src, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
   sincronizar_linhas(b.dst, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-  if (esp_async_fbcpy(h, &t, fbcpy_fim, b.fim) != ESP_OK) { return -1; }
-  if (xSemaphoreTake(b.fim, pdMS_TO_TICKS(500)) != pdTRUE) { return -2; }
+  if (esp_async_fbcpy(h, &t, fbcpy_fim, b.end) != ESP_OK) { return -1; }
+  if (xSemaphoreTake(b.end, pdMS_TO_TICKS(500)) != pdTRUE) { return -2; }
   return esp_timer_get_time() - t0;
 }
 
-int64_t por_gdma(banco_t& b, async_memcpy_handle_t h, const tab5_ret_t& r)
+int64_t por_gdma(banco_t& b, async_memcpy_handle_t h, const tab5_rect_t& r)
 {
-  // So retangulo de largura inteira: ai ele e um trecho CONTIGUO da memoria.
+  // So retangulo de width inteira: ai ele e um trecho CONTIGUO da memoria.
   uint8_t* s = (uint8_t*)b.src + (size_t)r.y * FB_L * 2;
   uint8_t* d = (uint8_t*)b.dst + (size_t)r.y * FB_L * 2;
   const size_t n = (size_t)r.a * FB_L * 2;
   const int64_t t0 = esp_timer_get_time();
-  if (esp_async_memcpy(h, d, s, n, gdma_fim, b.fim) != ESP_OK) { return -1; }
-  if (xSemaphoreTake(b.fim, pdMS_TO_TICKS(500)) != pdTRUE) { return -2; }
+  if (esp_async_memcpy(h, d, s, n, gdma_fim, b.end) != ESP_OK) { return -1; }
+  if (xSemaphoreTake(b.end, pdMS_TO_TICKS(500)) != pdTRUE) { return -2; }
   return esp_timer_get_time() - t0;
 }
 
-int64_t por_cpu(banco_t& b, const tab5_ret_t& r)
+int64_t por_cpu(banco_t& b, const tab5_rect_t& r)
 {
   const int64_t t0 = esp_timer_get_time();
   const size_t lb = (size_t)r.l * 2;
   for (int y = r.y; y < r.y + r.a; ++y) {
     memcpy(b.dst + (size_t)y * FB_L + r.x, b.src + (size_t)y * FB_L + r.x, lb);
   }
-  // O painel (DMA) le da memoria, nao do cache: escrita da CPU so vale
+  // O panel (DMA) le da memoria, nao do cache: escrita da CPU so vale
   // depois de devolvida. Entra na conta.
   sincronizar_linhas(b.dst, r, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
   return esp_timer_get_time() - t0;
@@ -567,25 +567,25 @@ int64_t por_cpu(banco_t& b, const tab5_ret_t& r)
 
 void mostrar(const char* motor, const char* qual, uint32_t px, int64_t us)
 {
-  if (us < 0) { printf("  %-8s %-14s : falhou (%lld)\n", motor, qual, (long long)us); return; }
+  if (us < 0) { printf("  %-8s %-14s : failed (%lld)\n", motor, qual, (long long)us); return; }
   printf("  %-8s %-14s : %7.2f ms  %6.1f MB/s\n", motor, qual, (double)us / 1000.0, mbps(px, us));
 }
 
 } // namespace
 
-void tab5_quadro_banco(void)
+void tab5_frame_benchmark(void)
 {
   banco_t b;
   b.src = (uint16_t*)heap_caps_aligned_calloc(128, 1, FB_BYTES, MALLOC_CAP_SPIRAM);
   b.dst = (uint16_t*)heap_caps_aligned_calloc(128, 1, FB_BYTES, MALLOC_CAP_SPIRAM);
-  b.fim = xSemaphoreCreateBinary();
-  if (!b.src || !b.dst || !b.fim) {
+  b.end = xSemaphoreCreateBinary();
+  if (!b.src || !b.dst || !b.end) {
     printf("banco: sem memoria\n");
   } else {
     for (uint32_t i = 0; i < FB_L * FB_A; ++i) { b.src[i] = (uint16_t)(i * 2654435761u >> 16); }
     esp_cache_msync(b.src, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
 
-    // Cliente PROPRIO: o do compositor continua livre para a interface.
+    // Cliente PROPRIO: o do compositor continua free_space para a interface.
     ppa_client_handle_t cli = nullptr;
     ppa_client_config_t pc = { };
     pc.oper_type = PPA_OPERATION_SRM;
@@ -602,15 +602,15 @@ void tab5_quadro_banco(void)
     gc.dma_burst_size = 64;
     if (esp_async_memcpy_install_gdma_axi(&gc, &gd) != ESP_OK) { gd = nullptr; }
 
-    // Largura inteira (o caso da rolagem e da tela cheia) e meia largura (o
+    // Largura inteira (o caso da scroll e da tela cheia) e meia width (o
     // caso de uma area suja comum, com salto de linha).
-    const tab5_ret_t cheio = { 0, 128, (int16_t)FB_L, 1024 };
-    const tab5_ret_t meio  = { 0, 128, (int16_t)(FB_L / 2), 1024 };
+    const tab5_rect_t cheio = { 0, 128, (int16_t)FB_L, 1024 };
+    const tab5_rect_t storage  = { 0, 128, (int16_t)(FB_L / 2), 1024 };
     const uint32_t px_cheio = (uint32_t)cheio.l * cheio.a;
-    const uint32_t px_meio  = (uint32_t)meio.l * meio.a;
+    const uint32_t px_meio  = (uint32_t)storage.l * storage.a;
     const int REP = 3;
 
-    printf("--- banco da copia (PSRAM -> PSRAM, painel varrendo) ---\n");
+    printf("--- banco da copia (PSRAM -> PSRAM, panel scanning) ---\n");
     auto rodar = [&](const char* motor, const char* qual, uint32_t px, auto f) {
       int64_t soma = 0;
       for (int i = 0; i < REP; ++i) {
@@ -622,11 +622,11 @@ void tab5_quadro_banco(void)
     };
     if (cli) {
       rodar("PPA", "720x1024", px_cheio, [&] { return por_ppa(b, cli, cheio); });
-      rodar("PPA", "360x1024", px_meio,  [&] { return por_ppa(b, cli, meio); });
+      rodar("PPA", "360x1024", px_meio,  [&] { return por_ppa(b, cli, storage); });
     }
     if (fb) {
       rodar("DMA2D", "720x1024", px_cheio, [&] { return por_dma2d(b, fb, cheio); });
-      rodar("DMA2D", "360x1024", px_meio,  [&] { return por_dma2d(b, fb, meio); });
+      rodar("DMA2D", "360x1024", px_meio,  [&] { return por_dma2d(b, fb, storage); });
     }
     if (gd) {
       rodar("GDMA", "720x1024", px_cheio, [&] { return por_gdma(b, gd, cheio); });
@@ -635,7 +635,7 @@ void tab5_quadro_banco(void)
     // as copias, entao compare os ms).
     rodar("PPA-fill", "720x1024", px_cheio, [&] {
       const int64_t t0 = esp_timer_get_time();
-      if (!tab5_quadro_preencher(b.dst, cheio, 0x0000)) { return (int64_t)-1; }
+      if (!tab5_frame_fill(b.dst, cheio, 0x0000)) { return (int64_t)-1; }
       return esp_timer_get_time() - t0;
     });
     rodar("CPU-fill", "720x1024", px_cheio, [&] {
@@ -645,7 +645,7 @@ void tab5_quadro_banco(void)
       return esp_timer_get_time() - t0;
     });
     rodar("CPU", "720x1024", px_cheio, [&] { return por_cpu(b, cheio); });
-    rodar("CPU", "360x1024", px_meio,  [&] { return por_cpu(b, meio); });
+    rodar("CPU", "360x1024", px_meio,  [&] { return por_cpu(b, storage); });
 
     // A copia saiu certa? Uma conferencia barata: o ultimo motor foi a CPU,
     // e a CPU nao erra - confere o DMA2D separadamente.
@@ -662,7 +662,7 @@ void tab5_quadro_banco(void)
     if (fb)  { esp_async_fbcpy_uninstall(fb); }
     if (cli) { ppa_unregister_client(cli); }
   }
-  if (b.fim) { vSemaphoreDelete(b.fim); }
+  if (b.end) { vSemaphoreDelete(b.end); }
   heap_caps_free(b.src);
   heap_caps_free(b.dst);
 }

@@ -3,67 +3,66 @@
 #include "driver/temperature_sensor.h"
 #include "esp_log.h"
 
-static const char* TAG = "sensores";
+static const char* TAG = "sensors";
 
 static temperature_sensor_handle_t s_tsens = nullptr;
 static float s_celsius = 0.0f;
-static bool  s_valida  = false;
-// MEDIA DESDE O BOOT, da leitura CRUA (o filtro acima e para o olho, nao para
-// a conta). Double: a 1 amostra por segundo, um float perderia a resolucao do
-// meio grau em poucos dias ligado.
-static double   s_soma = 0.0;
-static uint32_t s_n    = 0;
+static bool  s_valid   = false;
+// AVERAGE SINCE BOOT, using raw samples (the filter above is for the eye, not
+// the calculation). Use double: at one sample per second, float would lose
+// sub-degree resolution after only a few days.
+static double   s_sum = 0.0;
+static uint32_t s_count = 0;
 
-void tab5_sensores_iniciar(void)
+void tab5_sensors_init(void)
 {
-  // Faixa 10..80 C. O sensor do ESP32 troca de escala interna conforme a faixa
-  // pedida, e uma faixa larga demais perde resolucao. Esta cobre desde uma sala
-  // fria ate o chip trabalhando duro, que e todo o intervalo que este aparelho
-  // ve na pratica.
+  // Range 10..80 C. The ESP32 sensor changes its internal scale to match the
+  // requested range, and an overly broad range loses resolution. This covers
+  // everything the device sees in practice, from a cold room to a busy chip.
   temperature_sensor_config_t cfg = TEMPERATURE_SENSOR_CONFIG_DEFAULT(10, 80);
 
   esp_err_t err = temperature_sensor_install(&cfg, &s_tsens);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "temperature_sensor_install falhou: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "temperature_sensor_install failed: %s", esp_err_to_name(err));
     s_tsens = nullptr;
     return;
   }
   err = temperature_sensor_enable(s_tsens);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "temperature_sensor_enable falhou: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "temperature_sensor_enable failed: %s", esp_err_to_name(err));
     temperature_sensor_uninstall(s_tsens);
     s_tsens = nullptr;
     return;
   }
-  ESP_LOGI(TAG, "sensor de temperatura do P4 no ar");
+  ESP_LOGI(TAG, "P4 temperature sensor is online");
 }
 
-void tab5_sensores_medir(void)
+void tab5_sensors_measure(void)
 {
   if (!s_tsens) { return; }
   float c = 0.0f;
   if (temperature_sensor_get_celsius(s_tsens, &c) == ESP_OK) {
-    // FILTRO SUAVE. A leitura crua pula meio grau entre amostras, e um numero
-    // na barra de status que treme o tempo todo obriga o olho a persegui-lo.
-    // Media movel simples: 7/8 do anterior e 1/8 do novo - acompanha uma
-    // mudanca real em poucos segundos e ignora o chiado.
-    s_celsius = s_valida ? (s_celsius * 0.875f + c * 0.125f) : c;
-    s_valida  = true;
-    s_soma += c;
-    ++s_n;
+    // GENTLE FILTER. Raw samples jump by half a degree, and a status-bar number
+    // that constantly twitches makes the eye chase it. Simple moving average:
+    // 7/8 previous and 1/8 new, following real changes within a few seconds
+    // while ignoring noise.
+    s_celsius = s_valid ? (s_celsius * 0.875f + c * 0.125f) : c;
+    s_valid = true;
+    s_sum += c;
+    ++s_count;
   }
 }
 
-bool tab5_sensores_temp(float* celsius)
+bool tab5_sensors_temp(float* celsius)
 {
-  if (!s_valida) { return false; }
+  if (!s_valid) { return false; }
   if (celsius) { *celsius = s_celsius; }
   return true;
 }
 
-bool tab5_sensores_temp_media(float* celsius)
+bool tab5_sensors_average_temp(float* celsius)
 {
-  if (!s_n) { return false; }
-  if (celsius) { *celsius = (float)(s_soma / s_n); }
+  if (!s_count) { return false; }
+  if (celsius) { *celsius = (float)(s_sum / s_count); }
   return true;
 }

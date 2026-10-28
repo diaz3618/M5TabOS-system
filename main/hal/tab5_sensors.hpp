@@ -1,38 +1,37 @@
-// Sensores de ambiente do proprio aparelho.
+// Environmental sensors in the device itself.
 //
-// NAO HA SENSOR DE UMIDADE NO TAB5. Procurei: o M5Unified nao declara nenhum
-// para esta placa, e o barramento interno so tem o toque (GT911), o INA226 de
-// energia, a IMU e os expansores. Umidade exigiria um modulo no Grove - e o
-// Grove ja tem dono.
+// THE TAB5 HAS NO HUMIDITY SENSOR. M5Unified declares none for this board, and
+// the internal bus contains only touch (GT911), the INA226 power monitor, the
+// IMU, and the expanders. Humidity would require a Grove module, and Grove
+// already has an owner.
 //
-// TEMPERATURA existe, com uma ressalva que precisa acompanhar o numero: e a
-// temperatura do SILICIO do ESP32-P4, nao a do ar. O chip se aquece, entao ela
-// fica acima da ambiente - tipicamente bem acima com a tela ligada. Serve para
-// ver o aparelho esquentando (e o efeito do DFS), nao para saber se esta frio
-// na sala.
+// TEMPERATURE exists, with a caveat that must accompany the number: this is the
+// ESP32-P4 SILICON temperature, not air temperature. The chip heats itself, so
+// it reads above ambient, often well above it with the screen on. It shows the
+// device warming up (and the effect of DFS), not whether the room is cold.
 //
-// Escolhido em vez da temperatura da IMU por dois motivos: nao custa transacao
-// I2C nenhuma (e um ADC interno) e nao depende de a IMU estar acordada.
+// This was chosen over IMU temperature because it costs no I2C transaction
+// (it is an internal ADC) and does not depend on the IMU being awake.
 //
-// MODULO, E NAO API DE QUEUE, POR ENQUANTO. Hoje o unico consumidor e a barra de
-// status, e uma queue para um leitor so seria estrutura sem carga. A leitura ja
-// e cache - quem for consumir depois le a mesma funcao, e a queue entra no dia
-// em que houver quem espere por evento em vez de perguntar.
+// A MODULE, NOT A QUEUE API, FOR NOW. The status bar is the only consumer today;
+// a queue for one reader would be structure without payload. The reading is
+// already cached. Future consumers can call the same function, and a queue can
+// arrive when someone waits for events instead of polling.
 #pragma once
 
 #include <stdbool.h>
 
-// Liga o sensor. Uma vez, no boot. Sem isto as leituras devolvem false.
-void tab5_sensores_iniciar(void);
+// Enables the sensor once at boot. Reads return false until this is called.
+void tab5_sensors_init(void);
 
-// Le o sensor DE VERDADE e atualiza o cache. So da tarefa de interface, junto
-// da amostragem de energia - e barato, mas nao e de graca.
-void tab5_sensores_medir(void);
+// REALLY reads the sensor and updates the cache. UI task only, alongside power
+// sampling. It is cheap, but not free.
+void tab5_sensors_measure(void);
 
-// Ultima leitura. false quando o sensor nao subiu ou ainda nao mediu.
-bool tab5_sensores_temp(float* celsius);
+// Latest reading. false if the sensor failed to start or has not been sampled.
+bool tab5_sensors_temp(float* celsius);
 
-// Media de todas as leituras desde o boot - o "normal" deste aparelho nesta
-// sessao, para a leitura do momento ter com o que ser comparada. false
-// enquanto nao houver nenhuma.
-bool tab5_sensores_temp_media(float* celsius);
+// Average of all readings since boot: this device's "normal" for the current
+// session, giving the current value something to compare against. false until
+// at least one sample exists.
+bool tab5_sensors_average_temp(float* celsius);

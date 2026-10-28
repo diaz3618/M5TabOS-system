@@ -101,7 +101,7 @@ static void tela_medir_mostrar(void)
   comp_estat(&a);
   const comp_estat_t& b = s_medir_base;
   const double seg = (double)(esp_timer_get_time() - s_medir_desde) / 1e6;
-  const uint32_t q = a.quadros - b.quadros;
+  const uint32_t q = a.frames - b.frames;
   // Cada pixel copiado por DMA e lido (2 B) e escrito (2 B) na PSRAM. Por
   // isso x4. "desenhado" e o que a CPU pintou direto na pagina (so escrita).
   const double mb_d  = (double)(a.px_quadro    - b.px_quadro)    * 2.0 / 1e6;
@@ -141,7 +141,7 @@ static void tela_medir_mostrar(void)
         const sistema_passada_t& p = ps[i];
         if (!p.n) { continue; }
         auto m = [&](uint64_t us) { return (double)us / 1000.0 / p.n; };
-        printf("    %-12.12s %5lu %8.1f %8.1f %8.1f %8.1f %8.1f\n", p.nome ? p.nome : "?",
+        printf("    %-12.12s %5lu %8.1f %8.1f %8.1f %8.1f %8.1f\n", p.name ? p.name : "?",
                (unsigned long)p.n, m(p.us), (double)p.max_us / 1000.0,
                m(p.us_barra), m(p.us_limpar), m(p.us_conteudo));
       }
@@ -212,7 +212,7 @@ static void ceder(int i)
 // esp_hosted de fabrica.
 static void cmd_c6(void)
 {
-  if (!tab5_wifi_c6_enlace()) {
+  if (!tab5_wifi_c6_link()) {
     printf("o enlace com o C6 nao esta de pe.\n"
            "ligue o WiFi no app Ajustes (ou o ajuste) e tente de novo -\n"
            "sem esp_hosted_init nao ha a quem perguntar.\n");
@@ -331,16 +331,16 @@ static void cmd_cartao(void)
   {
     // O gravador do sistema (hal/tab5_sd.hpp): o que ainda espera, o que ja foi.
     uint32_t pend = 0, grav = 0, perd = 0;
-    tab5_sd_anexos_estado(&pend, &grav, &perd);
+    tab5_sd_append_status(&pend, &grav, &perd);
     printf("gravador: %lu B esperando, %lu linha(s) gravadas, %lu perdida(s) desde o boot\n",
            (unsigned long)pend, (unsigned long)grav, (unsigned long)perd);
   }
-  if (!tab5_sd_montar()) {
-    printf("cartao nao montou (%s)\n", tab5_sd_descricao());
+  if (!tab5_sd_mount()) {
+    printf("cartao nao montou (%s)\n", tab5_sd_description());
     return;
   }
 
-  printf("--- cartao ---\n  %s\n", tab5_sd_descricao());
+  printf("--- cartao ---\n  %s\n", tab5_sd_description());
 
   // Espaco livre pelo FATFS. O statvfs do VFS nao e implementado para FAT no
   // IDF, entao vamos ao driver: clusters livres x setores por cluster.
@@ -368,7 +368,7 @@ static void cmd_cartao(void)
   DIR* d = opendir(TAB5_SD_APPS);
   if (!d) {
     printf("  (nao ha %s ainda)\n", TAB5_SD_APPS);
-    tab5_sd_desmontar();
+    tab5_sd_unmount();
     return;
   }
 
@@ -425,7 +425,7 @@ static void cmd_cartao(void)
     }
   }
   closedir(d);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   printf("\n  'lista %s/<pasta>' mostra os arquivos de uma delas\n", TAB5_SD_APPS);
 }
 
@@ -488,13 +488,13 @@ static void cmd_receber(int argc, char** argv)
   mbedtls_md5(buf, lidos, md5);
 
   bool ok = false;
-  if (tab5_sd_montar()) {
-    FILE* f = tab5_sd_abrir(argv[1], argv[2], "wb");
+  if (tab5_sd_mount()) {
+    FILE* f = tab5_sd_open(argv[1], argv[2], "wb");
     if (f) {
       ok = (fwrite(buf, 1, lidos, f) == lidos);
       fclose(f);
     }
-    tab5_sd_desmontar();
+    tab5_sd_unmount();
   }
   heap_caps_free(buf);
 
@@ -522,7 +522,7 @@ static void cmd_tarefas(void)
   // NAO acorda a tela (so o toque acorda), entao da para medir o repouso de
   // verdade - mas so se der para conferir que era repouso mesmo.
   printf("--- %d tarefas   [%s]   CPU %.1f%%   foto %lu us (pior %lu) ---\n", f->n,
-         tab5_power_em_repouso() ? "EM REPOUSO - tela apagada" : "tela acesa",
+         tab5_power_is_sleeping() ? "EM REPOUSO - tela apagada" : "tela acesa",
          (double)f->cpu, (unsigned long)f->foto_us, (unsigned long)f->foto_pior_us);
   printf("  %-16s %3s %6s %6s %10s  %s\n", "nome", "pri", "nucleo", "CPU%", "pilha livre", "dono");
 
@@ -535,7 +535,7 @@ static void cmd_tarefas(void)
     if (t.core == tskNO_AFFINITY) { snprintf(nucleo, sizeof(nucleo), "0e1"); }
     else                          { snprintf(nucleo, sizeof(nucleo), "%d", (int)t.core); }
     printf("  %-16s %3u %6s %6.1f %8u B  %s\n",
-           t.nome, (unsigned)t.prioridade, nucleo, (double)t.pct,
+           t.name, (unsigned)t.prioridade, nucleo, (double)t.pct,
            (unsigned)t.pilha_livre, t.dono);
   }
   // A CONTA E DO APARELHO, NAO POR NUCLEO: as porcentagens somam 100% (os
@@ -795,7 +795,7 @@ static void cmd_travas(int segundos)
     vTaskDelay(pdMS_TO_TICKS((uint32_t)segundos * 1000));
   }
 
-  const bool dormindo = tab5_power_em_repouso();
+  const bool dormindo = tab5_power_is_sleeping();
   printf("--- travas de PM  [%s] ---\n",
          dormindo ? "EM REPOUSO - e esta a medida que vale"
                   : "TELA ACESA - esta medida NAO vale para o light sleep");
@@ -823,7 +823,7 @@ static void cmd_travas(int segundos)
 // vez de adivinhar.
 //
 // SEGURO CHAMAR DO CONSOLE (uma tarefa diferente da interface): reli
-// tab5_power_repouso()/retomar() e nenhuma das duas toca I2C - so mexem no
+// tab5_power_sleep()/retomar() e nenhuma das duas toca I2C - so mexem no
 // painel DSI, no PM (esp_pm_configure) e no AXI-ICM. A regra de "so a
 // interface fala com o barramento interno" e sobre o INA226/touch/teclado/
 // IMU, e nao vale aqui.
@@ -838,25 +838,25 @@ static void cmd_travas(int segundos)
 // tela (o relogio de ociosidade acabou de reiniciar).
 //
 // Se o MHz pedido nao existir nesta revisao de silicio (validos: 360, 180,
-// 90 e XTAL/N -> 40, 20, 10, 8, 5, 4, 2, 1), tab5_power_repouso() ja desfaz
+// 90 e XTAL/N -> 40, 20, 10, 8, 5, 4, 2, 1), tab5_power_sleep() ja desfaz
 // sozinho e devolve false - a tela volta a acender, sem travar nada.
 static void cmd_repouso_forcar(int mhz)
 {
   if (mhz <= 0) {
     printf("uso: energia repouso <mhz>   (ex: energia repouso 20)\n"
-           "valores validos nesta placa: " TAB5_CPU_DEGRAUS "\n");
+           "valores validos nesta placa: " TAB5_CPU_STEPS "\n");
     return;
   }
-  if (tab5_power_em_repouso()) {
+  if (tab5_power_is_sleeping()) {
     printf("ja esta em repouso - toque a tela para acordar e tente de novo\n"
-           "(chamar de novo agora nao faz nada: tab5_power_repouso() e "
+           "(chamar de novo agora nao faz nada: tab5_power_sleep() e "
            "idempotente enquanto dormindo)\n");
     return;
   }
 
   printf("entrando em repouso a %d MHz...\n", mhz);
   fflush(stdout);
-  const bool ok = tab5_power_repouso(mhz);
+  const bool ok = tab5_power_sleep(mhz);
   if (ok) {
     printf("repouso confirmado. a tela esta apagada, mas este console continua\n"
            "vivo - use 'energia' agora (e de novo daqui uns segundos, para a\n"
@@ -877,10 +877,10 @@ static void cmd_teto_cpu(int mhz)
   if (mhz <= 0) {
     printf("uso: energia teto <mhz>   (ex: energia teto 180)\n"
            "combine com 'tela relogio <mhz>' primeiro, se for testar os dois juntos\n"
-           "valores validos nesta placa: " TAB5_CPU_DEGRAUS "\n");
+           "valores validos nesta placa: " TAB5_CPU_STEPS "\n");
     return;
   }
-  const bool ok = tab5_power_teto_cpu(mhz);
+  const bool ok = tab5_power_cpu_ceiling(mhz);
   if (ok) {
     printf("teto aceito - a tela continua ligada, de olho em underrun/piscada azul\n"
            "agora. Se der problema, 'energia teto %d' desfaz na hora.\n"
@@ -904,7 +904,7 @@ static void cmd_energia(void)
   // enquanto a interface le o touch, as duas transacoes se intercalam e voce le
   // registrador errado - sem erro nenhum, so numero sem sentido. A interface
   // mede uma vez por segundo e deixa o valor aqui; e daqui que se le.
-  const tab5_medida_t m = tab5_power_ultima();
+  const tab5_measurement_t m = tab5_power_latest();
 
   printf("--- energia ---\n");
   printf("  agora    : %.2f V   %.0f mA   %.0f mW   %d%%   CPU %d MHz\n",
@@ -917,7 +917,7 @@ static void cmd_energia(void)
   // entre "estimador" e "curva" e o que a contagem de mAh esta corrigindo.
   {
     float soc, curva, desde; const char* fonte;
-    tab5_power_soc_debug(&soc, &curva, &fonte, &desde);
+    tab5_power_debug_soc(&soc, &curva, &fonte, &desde);
     printf("  bateria  : estimador %.1f%%  | curva de tensao diria %.0f%%  | partiu de: %s\n",
            soc, curva, fonte);
     if (desde >= 0) {
@@ -926,8 +926,8 @@ static void cmd_energia(void)
     }
   }
 
-  tab5_ponto_t h[TAB5_HIST_N];
-  const int n = tab5_power_historico(h);
+  tab5_point_t h[TAB5_HIST_N];
+  const int n = tab5_power_history(h);
   if (n <= 1) {
     printf("\n  historico ainda vazio (uma amostra a cada %d s)\n", TAB5_HIST_SEG);
     return;
@@ -975,13 +975,13 @@ static const char* caminho_sd(const char* c, char* buf, size_t n)
 template <typename F>
 static int com_cartao(F&& corpo)
 {
-  if (!tab5_sd_montar())
+  if (!tab5_sd_mount())
   {
-    printf("erro: cartao nao montou (%s)\n", tab5_sd_descricao());
+    printf("erro: cartao nao montou (%s)\n", tab5_sd_description());
     return 1;
   }
   const int r = corpo();
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   return r;
 }
 
@@ -993,16 +993,16 @@ static int wifi_gravar(const char* ssid, const char* senha_ou_null)
   const char* senha = senha_ou_null ? senha_ou_null : "-";   // "-" = rede aberta
 
   return com_cartao([&]() -> int {
-    // tab5_wifi_gravar_credenciais() cifra a senha antes de escrever (AES-128-CBC,
+    // tab5_wifi_save_credentials() cifra a senha antes de escrever (AES-128-CBC,
     // ver tab5_wifi.cpp) e ja atualiza a copia em RAM tambem - reler o arquivo
     // depois, com o C6 no ar, e justamente o que nao pode acontecer.
-    if (!tab5_wifi_gravar_credenciais(ssid, senha))
+    if (!tab5_wifi_save_credentials(ssid, senha))
     {
-      printf("erro: nao consegui gravar %s\n", TAB5_WIFI_ARQUIVO);
+      printf("erro: nao consegui gravar %s\n", TAB5_WIFI_FILE);
       return 1;
     }
     printf("gravado em %s (senha cifrada no arquivo)\n  SSID:  %s\n  senha: %s\n",
-           TAB5_WIFI_ARQUIVO, ssid,
+           TAB5_WIFI_FILE, ssid,
            strcmp(senha, "-") == 0 ? "(rede aberta)" : "definida");
     printf("para usar agora: wifi conectar \"%s\"\n", ssid);
     return 0;
@@ -1244,7 +1244,7 @@ static int cmd_i2c(int argc, char** argv)
 // SEGUNDO CONSUMIDOR DE MENTIRA (com um app so nao da para testar).
 // ---------------------------------------------------------------------------
 // O sistema so abre UM app por vez, entao nao da para provar que
-// tab5_gps_posicao()/tab5_gps_tempo()/tab5_imu_ultima() aguentam DOIS
+// tab5_gps_position()/tab5_gps_time()/tab5_imu_latest() aguentam DOIS
 // leitores ao mesmo tempo so abrindo dois apps - nao existe "dois apps
 // abertos" ainda. Esta tarefa e um segundo leitor de verdade, independente
 // de qualquer app: martela as tres funcoes bem mais rapido que qualquer
@@ -1260,10 +1260,10 @@ static void vTaskConcorrencia(void*)
 {
   uint32_t ultimo_log = 0;
   while (!s_conc_parar) {
-    nmea_posicao_t pos  = tab5_gps_posicao();
-    nmea_tempo_t   hora = tab5_gps_tempo();
-    tab5_imu_dados_t imu;
-    tab5_imu_ultima(&imu);
+    nmea_position_t pos  = tab5_gps_position();
+    nmea_time_t   hora = tab5_gps_time();
+    tab5_imu_data_t imu;
+    tab5_imu_latest(&imu);
     ++s_conc_leituras;
     (void)hora;
 
@@ -1272,8 +1272,8 @@ static void vTaskConcorrencia(void*)
       ultimo_log = agora;
       printf("[concorrencia] %lu leituras | gps valida=%d lat=%.5f lon=%.5f "
              "| imu valida=%d ax=%.2f ay=%.2f az=%.2f\n",
-             (unsigned long)s_conc_leituras, (int)pos.valida, pos.lat, pos.lon,
-             (int)imu.valida, imu.ax, imu.ay, imu.az);
+             (unsigned long)s_conc_leituras, (int)pos.valid, pos.lat, pos.lon,
+             (int)imu.valid, imu.ax, imu.ay, imu.az);
     }
     // SEM vTaskDelay(0)/yield puro - 1 tick (o minimo real) ainda martela bem
     // mais rapido que qualquer app desenha (20ms de ciclo), sem virar um
@@ -1338,14 +1338,14 @@ static void vTaskSimMapa(void*)
 {
   uint32_t ultimo_log = 0;
   while (!s_sim_parar) {
-    nmea_posicao_t pos = tab5_gps_posicao();
+    nmea_position_t pos = tab5_gps_position();
     ++s_sim_leituras[0];
 
     const uint32_t agora = tab5_agora_ms();
     if (agora - ultimo_log >= 1000) {
       ultimo_log = agora;
       printf("[app-mapa]  pedido #%-6lu -> gps valida=%d lat=%.5f lon=%.5f\n",
-             (unsigned long)s_sim_leituras[0], (int)pos.valida, pos.lat, pos.lon);
+             (unsigned long)s_sim_leituras[0], (int)pos.valid, pos.lat, pos.lon);
     }
     vTaskDelay(pdMS_TO_TICKS(200));   // cadencia de uma tela de posicao
   }
@@ -1356,15 +1356,15 @@ static void vTaskSimNivel(void*)
 {
   uint32_t ultimo_log = 0;
   while (!s_sim_parar) {
-    tab5_imu_dados_t d;
-    tab5_imu_ultima(&d);
+    tab5_imu_data_t d;
+    tab5_imu_latest(&d);
     ++s_sim_leituras[1];
 
     const uint32_t agora = tab5_agora_ms();
     if (agora - ultimo_log >= 1000) {
       ultimo_log = agora;
       printf("[app-nivel] pedido #%-6lu -> imu valida=%d ax=%.2f ay=%.2f az=%.2f\n",
-             (unsigned long)s_sim_leituras[1], (int)d.valida, d.ax, d.ay, d.az);
+             (unsigned long)s_sim_leituras[1], (int)d.valid, d.ax, d.ay, d.az);
     }
     vTaskDelay(1);   // o mais rapido possivel, como um nivel-bolha precisa
   }
@@ -1374,14 +1374,14 @@ static void vTaskSimNivel(void*)
 static void vTaskSimLog(void*)
 {
   while (!s_sim_parar) {
-    nmea_posicao_t pos = tab5_gps_posicao();
-    nmea_tempo_t   hora = tab5_gps_tempo();
-    tab5_imu_dados_t imu;
-    tab5_imu_ultima(&imu);
+    nmea_position_t pos = tab5_gps_position();
+    nmea_time_t   hora = tab5_gps_time();
+    tab5_imu_data_t imu;
+    tab5_imu_latest(&imu);
     ++s_sim_leituras[2];
 
     printf("[app-log]   pedido #%-6lu -> gps(valida=%d) + hora(valida=%d) + imu(valida=%d, az=%.2f)\n",
-           (unsigned long)s_sim_leituras[2], (int)pos.valida, (int)hora.valida, (int)imu.valida, imu.az);
+           (unsigned long)s_sim_leituras[2], (int)pos.valid, (int)hora.valid, (int)imu.valid, imu.az);
     vTaskDelay(pdMS_TO_TICKS(1000));   // cadencia de um logger periodico
   }
   vTaskDelete(nullptr);
@@ -1425,13 +1425,13 @@ static void cmd_simulacao(int argc, char** argv)
 // papel.
 //
 // A FOTO NAO DEPENDE DO TAMANHO PEDIDO AQUI: ela sai sempre com o quadro
-// inteiro do sensor (TAB5_CAM_FOTO_L x _A). O tamanho de tab5_camera_iniciar
+// inteiro do sensor (TAB5_CAM_PHOTO_W x _A). O tamanho de tab5_camera_start
 // e so o do preview, que este comando nem usa - vai o menor 3:4 razoavel.
 static void cmd_foto(void)
 {
   const int LARGURA = 240, ALTURA = 320;
 
-  // sistema_camera_iniciar/parar, NAO tab5_camera_iniciar/parar direto -
+  // sistema_camera_iniciar/parar, NAO tab5_camera_start/parar direto -
   // achado ao vivo: esta funcao roda na tarefa "console", e a
   // HAL da camera toca SCCB (I2C interno) para configurar o sensor. Chamar
   // direto colidia com a leitura de 1s/1s que a tarefa de INTERFACE faz
@@ -1449,21 +1449,21 @@ static void cmd_foto(void)
   }
 
   // A camera so CAPTURA (um frame, por PPA, na tarefa dela); gravar e daqui,
-  // da tarefa do console - ver services/tab5_bmp e tab5_camera_pedir_foto.
-  uint16_t* foto = tab5_camera_foto_alocar();
+  // da tarefa do console - ver services/tab5_bmp e tab5_camera_request_photo.
+  uint16_t* foto = tab5_camera_alloc_photo();
   bool ok = false;
   if (!foto) {
     printf("sem PSRAM para a foto\n");
-  } else if (!tab5_camera_pedir_foto(foto)) {
+  } else if (!tab5_camera_request_photo(foto)) {
     printf("nao consegui pedir a foto (outra ainda pendente?)\n");
   } else {
     bool pronta = false;
     for (int i = 0; i < 50 && !pronta; ++i) {    // 5 s: o primeiro frame pode demorar
       vTaskDelay(pdMS_TO_TICKS(100));
-      pronta = tab5_camera_foto_pronta(&ok);
+      pronta = tab5_camera_photo_ready(&ok);
     }
     if (!pronta)  { printf("a camera nao entregou quadro em 5 s (confira o log)\n"); }
-    else if (ok)  { ok = tab5_bmp_salvar("Console", "console", foto, TAB5_CAM_FOTO_L, TAB5_CAM_FOTO_A);
+    else if (ok)  { ok = tab5_bmp_salvar("Console", "console", foto, TAB5_CAM_PHOTO_W, TAB5_CAM_PHOTO_H);
                     printf(ok ? "foto salva: /sdcard/apps/Console/console.bmp\n" : "a gravacao falhou (confira o log)\n"); }
     else          { printf("a captura falhou (confira o log)\n"); }
   }
@@ -1505,20 +1505,20 @@ static void cmd_camera(int argc, char** argv)
 
   // Se o app Camera ja esta com ela, so observa: pedir de novo com outro
   // tamanho seria recusado (uma resolucao por vez).
-  const bool ja_ligada = tab5_camera_ativa();
+  const bool ja_ligada = tab5_camera_active();
   if (!ja_ligada) {
     printf("ligando a camera e esperando o AE/AWB assentarem...\n");
     if (!sistema_camera_iniciar(240, 320)) { printf("falhou - confira o log\n"); return; }
     vTaskDelay(pdMS_TO_TICKS(2500));
   }
 
-  tab5_cam_ipa_estado_t e;
-  if (!tab5_camera_ipa_estado(&e)) {
+  tab5_cam_ipa_state_t e;
+  if (!tab5_camera_ipa_state(&e)) {
     printf("o IPA proprio nao rodou nenhum quadro (fora do pipeline?)\n");
   } else {
-    printf("quadros do ISP   : %lu\n", (unsigned long)e.quadros);
-    printf("exposicao, ganho : %lu us, %.2fx\n", (unsigned long)e.exposicao_us, (double)e.ganho_sensor);
-    printf("ganhos do AWB    : R %.2f  B %.2f\n", (double)e.ganho_r, (double)e.ganho_b);
+    printf("quadros do ISP   : %lu\n", (unsigned long)e.frames);
+    printf("exposicao, ganho : %lu us, %.2fx\n", (unsigned long)e.exposure_us, (double)e.sensor_gain);
+    printf("ganhos do AWB    : R %.2f  B %.2f\n", (double)e.red_gain, (double)e.blue_gain);
     printf("CCM calibracao   |  CCM no ISP\n");
     for (int i = 0; i < 3; ++i) {
       printf("  %6.2f %6.2f %6.2f  |  %6.2f %6.2f %6.2f\n",
@@ -1526,8 +1526,8 @@ static void cmd_camera(int argc, char** argv)
              (double)e.ccm_isp[i][0], (double)e.ccm_isp[i][1], (double)e.ccm_isp[i][2]);
     }
     printf("verde do branco saturado: %.2f -> %.2f (1 = branco; abaixo de ~0,9 sai rosa)\n",
-           (double)e.g_branco_antes, (double)e.g_branco_depois);
-    printf("saturacao        : %lu (128 = 1,0)\n", (unsigned long)e.saturacao);
+           (double)e.white_green_before, (double)e.white_green_after);
+    printf("saturacao        : %lu (128 = 1,0)\n", (unsigned long)e.saturation);
     uint32_t total = 0;
     for (int i = 0; i < 16; ++i) { total += e.hist[i]; }
     if (total) {
@@ -1539,13 +1539,13 @@ static void cmd_camera(int argc, char** argv)
   uint8_t preto = 0;
   if (tab5_camera_reg(0x3908, -1, &preto)) { printf("alvo do preto    : 0x%02x (fabrica 0x41)\n", preto); }
 
-  uint16_t* foto = tab5_camera_foto_alocar();
+  uint16_t* foto = tab5_camera_alloc_photo();
   bool ok = false, pronta = false;
-  if (foto && tab5_camera_pedir_foto(foto)) {
-    for (int i = 0; i < 50 && !pronta; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); pronta = tab5_camera_foto_pronta(&ok); }
+  if (foto && tab5_camera_request_photo(foto)) {
+    for (int i = 0; i < 50 && !pronta; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); pronta = tab5_camera_photo_ready(&ok); }
   }
   if (pronta && ok) {
-    const int L = TAB5_CAM_FOTO_L, A = TAB5_CAM_FOTO_A;
+    const int L = TAB5_CAM_PHOTO_W, A = TAB5_CAM_PHOTO_H;
     uint64_t c[3] = { }, sombra[3] = { };
     uint32_t n_c = 0, n_sombra = 0, n = 0, estouro = 0, magenta = 0;
     for (int y = 0; y < A; y += 2) {
@@ -1617,32 +1617,32 @@ static void c_estado(int, char**)
   printf("  ligado ha: %luh%02lum%02lus   app aberto: %s%s\n",
          (unsigned long)(s / 3600), (unsigned long)(s / 60 % 60), (unsigned long)(s % 60),
          aberto ? aberto : "nenhum (tela inicial)",
-         tab5_power_em_repouso() ? "   (em repouso)" : "");
+         tab5_power_is_sleeping() ? "   (em repouso)" : "");
   printf("  memoria  : interna %u KB livre (minimo %u KB), PSRAM %u KB livre\n",
          (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
          (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024),
          (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
 
-  printf("  cartao   : %s\n", tab5_sd_descricao());
+  printf("  cartao   : %s\n", tab5_sd_description());
 
-  const char* est = tab5_wifi_descricao();
+  const char* est = tab5_wifi_description();
   const int r = (int)tab5_wifi_rssi();
-  if (tab5_wifi_estado() == TAB5_WIFI_CONECTADO) {
+  if (tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
     char sinal[12];
-    if (r == TAB5_WIFI_RSSI_DESCONHECIDO) { snprintf(sinal, sizeof(sinal), "sinal --"); }
+    if (r == TAB5_WIFI_RSSI_UNKNOWN) { snprintf(sinal, sizeof(sinal), "sinal --"); }
     else { snprintf(sinal, sizeof(sinal), "%ddBm", r); }
     printf("  wifi     : %s  %s  %s\n", est, tab5_wifi_ip(), sinal);
   } else {
     printf("  wifi     : %s\n", est);
   }
-  printf("  bluetooth: %s\n", tab5_ble_descricao());
+  printf("  bluetooth: %s\n", tab5_ble_description());
 
   printf("  teclado  : %s%s\n",
          ajustes_teclado() ? "" : "desativado em Ajustes; ",
-         tab5_teclado_presente() ? "encaixado" : "ausente");
+         tab5_keyboard_present() ? "encaixado" : "ausente");
 
   printf("  grove 5V : %s   detectado: %s\n",
-         ajustes_grove() ? "ligado" : "desligado", grove_nome(tab5_grove_tipo()));
+         ajustes_grove() ? "ligado" : "desligado", grove_name(tab5_grove_type()));
 
   if (tab5_mesh_meu_numero() != 0 || tab5_mesh_no_ar()) {
     uint32_t q, pk, tel, ls, tx, ni; int var;
@@ -1667,7 +1667,7 @@ static void c_estado(int, char**)
            arq[0] ? arq : "ainda sem descarga");
   }
 
-  tab5_medida_t m = tab5_power_ultima();
+  tab5_measurement_t m = tab5_power_latest();
   printf("  energia  : %dMHz %.2fV %.1fmA %d%%\n",
          tab5_power_cpu_mhz(), m.volts, m.mA, m.pct);
 }
@@ -1716,7 +1716,7 @@ static void c_fundo(int argc, char** argv)
   const int n = sistema_fundo_listar(l, FUNDO_MAX);
   if (n == 0) { printf("nenhuma parte de fundo rodando\n"); }
   for (int i = 0; i < n; ++i) {
-    printf("  %-12s ha %5lus  %s\n", l[i].nome, (unsigned long)l[i].ha_s, l[i].resumo);
+    printf("  %-12s ha %5lus  %s\n", l[i].name, (unsigned long)l[i].ha_s, l[i].resumo);
   }
 }
 
@@ -1807,14 +1807,14 @@ static void c_tocar(int argc, char** argv)
 static void c_abrir(int argc, char** argv)
 {
   if (argc < 2) {
-    for (int i = 0; i < SISTEMA_NUM_APPS; ++i) { printf("  %s\n", SISTEMA_APPS[i]->nome); }
+    for (int i = 0; i < SISTEMA_NUM_APPS; ++i) { printf("  %s\n", SISTEMA_APPS[i]->name); }
     return;
   }
   if (eh(argv[1], "home")) { sistema_simular_abrir(nullptr); printf("voltando para a home\n"); return; }
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
-    if (strcasecmp(SISTEMA_APPS[i]->nome, argv[1]) == 0) {
+    if (strcasecmp(SISTEMA_APPS[i]->name, argv[1]) == 0) {
       sistema_simular_abrir(SISTEMA_APPS[i]);
-      printf("abrindo %s\n", SISTEMA_APPS[i]->nome);
+      printf("abrindo %s\n", SISTEMA_APPS[i]->name);
       return;
     }
   }
@@ -1825,7 +1825,7 @@ static void c_abrir(int argc, char** argv)
 static const app_t* app_por_nome(const char* nome)
 {
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
-    if (strcasecmp(SISTEMA_APPS[i]->nome, nome) == 0) { return SISTEMA_APPS[i]; }
+    if (strcasecmp(SISTEMA_APPS[i]->name, nome) == 0) { return SISTEMA_APPS[i]; }
   }
   return nullptr;
 }
@@ -1841,14 +1841,14 @@ static void c_ordem(int argc, char** argv)
     if (!app) { printf("nao ha app '%s' - 'ordem' lista\n", argv[1]); return; }
     if (pos < 1 || pos > SISTEMA_NUM_APPS) { printf("posicao de 1 a %d\n", SISTEMA_NUM_APPS); return; }
     sistema_home_mover(app, pos - 1);
-    printf("'%s' agora na posicao %d\n", app->nome, pos);
+    printf("'%s' agora na posicao %d\n", app->name, pos);
   } else if (argc == 2) {
     mostrar_uso("ordem");
     return;
   }
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
     const app_t* app = sistema_home_app(i);
-    if (app) { printf("  %2d  %s\n", i + 1, app->nome); }
+    if (app) { printf("  %2d  %s\n", i + 1, app->name); }
   }
 }
 
@@ -1858,7 +1858,7 @@ static void c_tela(int argc, char** argv)
     const char* o = argv[1];
     if (eh(o, "foto")) { tela_foto(argc >= 3 ? argv[2] : "tela"); return; }
     if (eh(o, "medir")) { tela_medir_marcar(); return; }
-    if (eh(o, "banco")) { tab5_quadro_banco(); return; }
+    if (eh(o, "banco")) { tab5_frame_benchmark(); return; }
     if (eh(o, "rolar")) {
       // Rolagem pelo DMA (da pagina da frente) ou pela CPU (dentro da de
       // tras). Rastro que some com 'cpu' esta no caminho do DMA.
@@ -1888,14 +1888,14 @@ static void c_tela(int argc, char** argv)
                 : "nao subiu nesse relogio - voltei ao anterior\n");
     }
     else if (eh(o, "prioridade") && argc >= 3 && (eh(argv[2], "alta") || eh(argv[2], "on"))) {
-      tab5_barramento_priorizar_tela(true);
+      tab5_bus_prioritize_screen(true);
     }
     else if (eh(o, "prioridade") && argc >= 3 && (eh(argv[2], "padrao") || eh(argv[2], "off"))) {
-      tab5_barramento_priorizar_tela(false);
+      tab5_bus_prioritize_screen(false);
     }
     // Formas antigas, mantidas: 'tela on' / 'tela off'.
-    else if (eh(o, "on")  || eh(o, "sim")) { tab5_barramento_priorizar_tela(true); }
-    else if (eh(o, "off") || eh(o, "nao")) { tab5_barramento_priorizar_tela(false); }
+    else if (eh(o, "on")  || eh(o, "sim")) { tab5_bus_prioritize_screen(true); }
+    else if (eh(o, "off") || eh(o, "nao")) { tab5_bus_prioritize_screen(false); }
     else {
       printf("nao conheco 'tela %s' - nada foi alterado.\n", o);
       mostrar_uso("tela");
@@ -1904,22 +1904,22 @@ static void c_tela(int argc, char** argv)
   }
   printf("--- tela ---\n");
   printf("  prioridade da tela no AXI : %s\n",
-         tab5_barramento_priorizado() ? "ALTA" : "padrao (como vem de fabrica)");
+         tab5_bus_is_prioritized() ? "ALTA" : "padrao (como vem de fabrica)");
   printf("  limpezas dispensadas      : %lu\n",
-         (unsigned long)tab5_tela_limpezas_evitadas());
+         (unsigned long)tab5_screen_avoided_clears());
   {
     // Os detectores de hal/tab5_frame. Sem 'pior': ler zera, e quem
     // acompanha o pior e o monitor, que vira evento.
     uint32_t periodo_us = 0;
-    const uint32_t atrasos = tab5_quadro_atrasos(nullptr, &periodo_us);
-    const uint32_t erros   = tab5_quadro_erros_dsi(nullptr, nullptr);
+    const uint32_t atrasos = tab5_frame_delays(nullptr, &periodo_us);
+    const uint32_t erros   = tab5_frame_dsi_errors(nullptr, nullptr);
     printf("  quadros varridos          : %lu (periodo %lu.%lu ms)\n",
-           (unsigned long)tab5_quadro_quadros(),
+           (unsigned long)tab5_frame_count(),
            (unsigned long)(periodo_us / 1000), (unsigned long)(periodo_us % 1000 / 100));
     printf("  underrun / atrasados / DSI: %lu / %lu / %lu\n",
-           (unsigned long)tab5_quadro_underruns(), (unsigned long)atrasos, (unsigned long)erros);
+           (unsigned long)tab5_frame_underruns(), (unsigned long)atrasos, (unsigned long)erros);
     int nucleo = -1; char t0[16], t1[16];
-    if (tab5_quadro_atraso_quem(&nucleo, t0, t1)) {
+    if (tab5_frame_delay_source(&nucleo, t0, t1)) {
       printf("  ultimo atraso             : ISR no nucleo %d; rodando c0=%s c1=%s\n", nucleo, t0, t1);
     }
   }
@@ -1927,11 +1927,11 @@ static void c_tela(int argc, char** argv)
   // A CONTA NA TELA, e nao so no comentario do fonte. Sao estes numeros que
   // dizem se mexer no relogio valeu: MB/s e o que o painel tira da PSRAM sem
   // parar, e e contra esse valor que todo o resto do sistema disputa.
-  const int mhz = tab5_power_relogio_dpi();
-  printf("  tela                      : %s%s\n", tab5_painel_nome(),
-         tab5_painel_toque_gt911() ? "" : " (relogio fixo, repouso so de luz)");
+  const int mhz = tab5_power_dpi_clock();
+  printf("  tela                      : %s%s\n", tab5_panel_name(),
+         tab5_panel_touch_gt911() ? "" : " (relogio fixo, repouso so de luz)");
   if (mhz > 0) {
-    const double fps  = tab5_power_quadros_por_segundo();
+    const double fps  = tab5_power_frames_per_second();
     printf("  relogio do painel         : %d MHz\n", mhz);
     printf("  taxa de quadros           : %.1f Hz\n", fps);
     printf("  leitura continua da PSRAM : %.1f MB/s\n", fps * 720.0 * 1280.0 * 2.0 / 1e6);
@@ -2035,35 +2035,35 @@ static void c_ui(int, char**)
 static void c_wifi(int argc, char** argv)
 {
   if (argc < 2) {
-    printf("wifi     : %s\n", tab5_wifi_descricao());
-    if (tab5_wifi_estado() == TAB5_WIFI_CONECTADO) {
+    printf("wifi     : %s\n", tab5_wifi_description());
+    if (tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
       const int r = (int)tab5_wifi_rssi();
       printf("rede     : %s   IP %s   ", tab5_wifi_ssid(), tab5_wifi_ip());
-      if (r == TAB5_WIFI_RSSI_DESCONHECIDO) { printf("sinal --\n"); }
+      if (r == TAB5_WIFI_RSSI_UNKNOWN) { printf("sinal --\n"); }
       else                                   { printf("sinal %d dBm\n", r); }
     }
-    printf("guardadas: %d rede(s) no wifi.txt%s\n", tab5_wifi_n_conhecidas(),
-           tab5_wifi_so_radio() ? "   (radio ligado so para ESP-NOW)" : "");
+    printf("guardadas: %d rede(s) no wifi.txt%s\n", tab5_wifi_known_count(),
+           tab5_wifi_radio_only() ? "   (radio ligado so para ESP-NOW)" : "");
     printf("\n'help wifi' mostra como varrer, gravar, conectar e esquecer redes\n");
     return;
   }
   const char* o = argv[1];
   if (eh(o, "redes")) {
     // Exige a pilha de pe: sem esp_hosted no ar nao ha radio a quem pedir.
-    if (!tab5_wifi_pilha_de_pe()) {
+    if (!tab5_wifi_stack_ready()) {
       printf("o WiFi ainda nao foi ligado neste boot - ligue em Ajustes e tente de novo\n");
       return;
     }
-    tab5_wifi_varrer();
+    tab5_wifi_scan_console();
     return;
   }
   if (eh(o, "conectar")) {
     if (argc < 3) { mostrar_uso("wifi"); return; }
-    if (!tab5_wifi_conhecida(argv[2])) {
+    if (!tab5_wifi_is_known(argv[2])) {
       printf("'%s' nao esta guardada - use: wifi gravar \"%s\" <senha>\n", argv[2], argv[2]);
       return;
     }
-    tab5_wifi_conectar(argv[2]);
+    tab5_wifi_connect(argv[2]);
     printf("trocando para '%s' - confira com 'wifi' em alguns segundos\n", argv[2]);
     return;
   }
@@ -2071,7 +2071,7 @@ static void c_wifi(int argc, char** argv)
     if (argc < 3) { mostrar_uso("wifi"); return; }
     const char* ssid = argv[2];
     com_cartao([&]() -> int {
-      const bool ok = tab5_wifi_esquecer(ssid);
+      const bool ok = tab5_wifi_forget(ssid);
       printf(ok ? "'%s' esquecida\n" : "'%s' nao estava guardada\n", ssid);
       return ok ? 0 : 1;
     });
@@ -2098,8 +2098,8 @@ static void c_redes(int, char**)
 static void c_ble(int argc, char** argv)
 {
   if (argc >= 2 && eh(argv[1], "varrer")) {
-    printf(tab5_ble_varrer(6000) ? "varrendo por 6 s... rode 'ble' depois\n"
-                                 : "nao deu para varrer agora (%s)\n", tab5_ble_descricao());
+    printf(tab5_ble_scan(6000) ? "varrendo por 6 s... rode 'ble' depois\n"
+                                 : "nao deu para varrer agora (%s)\n", tab5_ble_description());
     return;
   }
   if (argc >= 2 && eh(argv[1], "desligar")) {
@@ -2109,23 +2109,23 @@ static void c_ble(int argc, char** argv)
   }
   if (argc >= 2 && eh(argv[1], "ligar")) {
     // Ligar com o C6 desligado pede o trilho (I2C), que so a interface fala.
-    if (!tab5_wifi_pilha_de_pe()) { printf("o C6 ainda nao subiu neste boot - ligue em Ajustes\n"); return; }
+    if (!tab5_wifi_stack_ready()) { printf("o C6 ainda nao subiu neste boot - ligue em Ajustes\n"); return; }
     sistema_bluetooth(true);
     printf("ligando - confira com 'ble' em alguns segundos\n");
     return;
   }
   if (argc >= 2) { mostrar_uso("ble"); return; }
-  printf("bluetooth: %s\n", tab5_ble_descricao());
+  printf("bluetooth: %s\n", tab5_ble_description());
   printf("mesh ble:  %s%s\n", mesh_ble_descricao(), mesh_ble_esperando_pin() ? " (esperando PIN)" : "");
-  const int n = tab5_ble_n_vistos();
+  const int n = tab5_ble_seen_count();
   if (n == 0) { printf("nenhum aparelho visto ainda - 'ble varrer' procura por 6 s\n"); }
-  tab5_ble_visto_t v;
+  tab5_ble_seen_t v;
   for (int i = 0; i < n; ++i) {
     ceder(i);
-    if (!tab5_ble_visto(i, &v)) { continue; }
+    if (!tab5_ble_get_seen(i, &v)) { continue; }
     char end[18];
-    tab5_ble_endereco_txt(v.addr, end);
-    printf("  %s  %4d dBm  %-22s%s\n", end, (int)v.rssi, v.nome[0] ? v.nome : "(sem nome)",
+    tab5_ble_address_text(v.addr, end);
+    printf("  %s  %4d dBm  %-22s%s\n", end, (int)v.rssi, v.name[0] ? v.name : "(sem nome)",
            v.meshtastic ? "  MESHTASTIC" : "");
   }
 }
@@ -2150,11 +2150,11 @@ static void c_espnow(int argc, char** argv)
   if (argc >= 2) { mostrar_uso("espnow"); return; }
   uint8_t mac[6]; tab5_espnow_meu_mac(mac);
   uint8_t c = 0; wifi_second_chan_t sec;
-  const bool leu = tab5_wifi_pilha_de_pe() && esp_wifi_get_channel(&c, &sec) == ESP_OK;
+  const bool leu = tab5_wifi_stack_ready() && esp_wifi_get_channel(&c, &sec) == ESP_OK;
   printf("C6 firmware nosso: %s   enlace: %s   ESP-NOW no ar: %s\n",
-         tab5_espnow_c6_compativel() ? "sim" : "NAO", tab5_wifi_c6_enlace() ? "sim" : "NAO",
+         tab5_espnow_c6_compativel() ? "sim" : "NAO", tab5_wifi_c6_link() ? "sim" : "NAO",
          tab5_espnow_pronto() ? "sim" : "NAO");
-  printf("WiFi: %s  (so radio: %s)\n", tab5_wifi_descricao(), tab5_wifi_so_radio() ? "sim" : "nao");
+  printf("WiFi: %s  (so radio: %s)\n", tab5_wifi_description(), tab5_wifi_radio_only() ? "sim" : "nao");
   printf("canal no C6 agora: %s%u   pedido: %s%u\n", leu ? "" : "? ", (unsigned)c,
          tab5_espnow_canal_fixo() ? "fixo " : "roteador ", (unsigned)tab5_espnow_canal_fixo());
   printf("meu MAC: %02X:%02X:%02X:%02X:%02X:%02X   msgs: %d   ouvidos: %d\n",
@@ -2188,7 +2188,7 @@ static void c_espnow(int argc, char** argv)
 
 static void cmd_c6_gravar(bool confirmado)
 {
-  if (!tab5_wifi_c6_enlace()) {
+  if (!tab5_wifi_c6_link()) {
     printf("o enlace com o C6 nao esta de pe - ligue o WiFi primeiro.\n");
     return;
   }
@@ -2212,9 +2212,9 @@ static void cmd_c6_gravar(bool confirmado)
     return;
   }
 
-  if (!tab5_sd_montar()) { printf("cartao nao montou (%s)\n", tab5_sd_descricao()); return; }
-  FILE* f = tab5_sd_abrir(C6_FW_APP, C6_FW_ARQUIVO, "rb");
-  if (!f) { printf("nao achei apps/%s/%s\n", C6_FW_APP, C6_FW_ARQUIVO); tab5_sd_desmontar(); return; }
+  if (!tab5_sd_mount()) { printf("cartao nao montou (%s)\n", tab5_sd_description()); return; }
+  FILE* f = tab5_sd_open(C6_FW_APP, C6_FW_ARQUIVO, "rb");
+  if (!f) { printf("nao achei apps/%s/%s\n", C6_FW_APP, C6_FW_ARQUIVO); tab5_sd_unmount(); return; }
   fseek(f, 0, SEEK_END);
   const long total = ftell(f);
   fseek(f, 0, SEEK_SET);
@@ -2222,7 +2222,7 @@ static void cmd_c6_gravar(bool confirmado)
                    ? (uint8_t*)heap_caps_malloc((size_t)total, MALLOC_CAP_SPIRAM) : nullptr;
   const size_t lidos = img ? fread(img, 1, (size_t)total, f) : 0;
   fclose(f);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   if (!img || lidos != (size_t)total) {
     printf("tamanho %ld invalido (max %u) ou leitura curta (%u)\n", total, (unsigned)C6_FW_MAX, (unsigned)lidos);
     heap_caps_free(img);
@@ -2315,7 +2315,7 @@ static void farejo_estado(void)
     ceder(i);
     printf("  %02X:%02X:%02X:%02X:%02X:%02X  ch%-2u  rssi %4d (max %4d)  tipos 0x%02X  quadros %lu\n",
            it.mac[0], it.mac[1], it.mac[2], it.mac[3], it.mac[4], it.mac[5],
-           it.canal, it.rssi_ult, it.rssi_max, it.tipos, (unsigned long)it.quadros);
+           it.channel, it.rssi_ult, it.rssi_max, it.tipos, (unsigned long)it.frames);
   }
   if (n > 20) { printf("  ... e mais %d\n", n - 20); }
 }
@@ -2327,7 +2327,7 @@ static void farejo_info(void)
     printf("o C6 nao respondeu (sem enlace, firmware de fabrica, ou v<3).\n");
     return;
   }
-  printf("C6 contrato v%u   canal %u   farejando: %s", in.proto, in.canal, in.farejando ? "sim" : "nao");
+  printf("C6 contrato v%u   canal %u   farejando: %s", in.proto, in.channel, in.farejando ? "sim" : "nao");
   if (in.chip_rev & 0x80) {
     printf("   chip ESP32-C6 v%u.%u", (unsigned)((in.chip_rev >> 4) & 0x7), (unsigned)(in.chip_rev & 0xF));
   }
@@ -2338,7 +2338,7 @@ static void farejo_info(void)
          (in.caps & C6_CAP_FTM)    ? "s" : "-", (in.caps & C6_CAP_154)    ? "s" : "-");
   printf("heap livre %lu (min %lu)   no ar %lu s   quadros farejados %lu\n",
          (unsigned long)in.heap_livre, (unsigned long)in.heap_min,
-         (unsigned long)in.no_ar_s, (unsigned long)in.quadros);
+         (unsigned long)in.no_ar_s, (unsigned long)in.frames);
   // Firmware do C6 m5tabos-c6-3 em diante: um caminho so; csi_modo 1 = ligado.
   // ESP_FAIL aqui = o WiFi do C6 subiu com csi_enable 0 (ver tab5_wifi.cpp).
   printf("CSI: %s (etapa %u: 1 config, 2 callback, 3 ligar)   ligado: %s\n",
@@ -2406,7 +2406,7 @@ static volatile uint32_t s_csi_fmt[16], s_csi_w0_ruim = 0, s_csi_cortado = 0, s_
 
 static void radio_csi_rx(const c6_csi_cab_t* c, const uint8_t*, uint16_t)
 {
-  s_rx_rssi = c->rssi; s_rx_canal = c->canal; s_rx_len = c->len;
+  s_rx_rssi = c->rssi; s_rx_canal = c->channel; s_rx_len = c->len;
   s_csi_fmt[C6_CSI_FORMATO(c->flags)] = s_csi_fmt[C6_CSI_FORMATO(c->flags)] + 1;
   if (c->flags & C6_CSI_F_W0_RUIM)  { s_csi_w0_ruim = s_csi_w0_ruim + 1; }
   if (c->flags & C6_CSI_F_CORTADO)  { s_csi_cortado = s_csi_cortado + 1; }
@@ -2418,7 +2418,7 @@ static void radio_rx(uint32_t msg_id, const uint8_t* d, size_t n, void*)
 {
   if (msg_id == C6_MSG_154 && n >= sizeof(c6_154_cab_t)) {
     c6_154_cab_t c; memcpy(&c, d, sizeof(c));
-    s_rx_rssi = c.rssi; s_rx_canal = c.canal; s_rx_len = c.len;
+    s_rx_rssi = c.rssi; s_rx_canal = c.channel; s_rx_len = c.len;
     s_rx_154 = s_rx_154 + 1;
   } else if (msg_id == C6_MSG_FTM && n >= sizeof(c6_ftm_rep_t)) {
     memcpy(&s_rx_ftm_rep, d, sizeof(s_rx_ftm_rep));
@@ -2428,7 +2428,7 @@ static void radio_rx(uint32_t msg_id, const uint8_t* d, size_t n, void*)
 
 static bool radio_preparar(void)
 {
-  if (!tab5_wifi_c6_nosso() || !tab5_wifi_c6_enlace()) {
+  if (!tab5_wifi_c6_is_ours() || !tab5_wifi_c6_link()) {
     printf("sem o C6 nosso no ar (WiFi ligado? 'farejo info')\n");
     return false;
   }
@@ -2526,11 +2526,11 @@ static void c_radio(int argc, char** argv)
     c6_154_cfg_t on, off;
     memset(&on, 0, sizeof(on)); memset(&off, 0, sizeof(off));
     on.liga = 1;
-    on.canal = (argc >= 3) ? (uint8_t)atoi(argv[2]) : 15;
-    if (on.canal < 11 || on.canal > 26) { printf("canal 802.15.4 vai de 11 a 26\n"); return; }
+    on.channel = (argc >= 3) ? (uint8_t)atoi(argv[2]) : 15;
+    if (on.channel < 11 || on.channel > 26) { printf("canal 802.15.4 vai de 11 a 26\n"); return; }
     on.promiscuo = 1;
     printf("802.15.4 no canal %u por %d s (so ouvindo; sem Zigbee/Thread por perto, 0 e normal):\n",
-           (unsigned)on.canal, seg);
+           (unsigned)on.channel, seg);
     // O 802.15.4 divide a antena com o WiFi: o teste mede o WiFi antes, com
     // ele ligado e depois. Os tres em 4/4 = a coexistencia esta funcionando.
     ping_roteador("  WiFi ANTES");
@@ -2546,10 +2546,10 @@ static void c_radio(int argc, char** argv)
     c6_ftm_cfg_t c;
     memset(&c, 0, sizeof(c));
     memcpy(c.peer, ap.bssid, 6);
-    c.canal = ap.primary;
+    c.channel = ap.primary;
     c.frm_count = 16;
     printf("FTM contra %02X:%02X:%02X:%02X:%02X:%02X (canal %u, FTM %s no anuncio)...\n",
-           c.peer[0], c.peer[1], c.peer[2], c.peer[3], c.peer[4], c.peer[5], (unsigned)c.canal,
+           c.peer[0], c.peer[1], c.peer[2], c.peer[3], c.peer[4], c.peer[5], (unsigned)c.channel,
            ap.ftm_responder ? "SIM" : "nao");
     const uint32_t antes = s_rx_ftm;
     radio_mandar(C6_RX_FTM, &c, sizeof(c));
@@ -2948,17 +2948,17 @@ static void c_grove(int argc, char** argv)
   const char* baud = nullptr;
   if (argc >= 3 && eh(argv[1], "cru"))          { baud = argv[2]; }
   else if (argc >= 2 && atoi(argv[1]) > 0)      { baud = argv[1]; }
-  if (baud) { tab5_grove_despejar(atoi(baud), 2500); return; }
+  if (baud) { tab5_grove_dump(atoi(baud), 2500); return; }
   if (argc >= 2) { mostrar_uso("grove"); return; }
 
   // SO RELATA - nao sonda. Sondar daqui era um bug silencioso: a sonda escreve
   // e le na UART, e com o servico Meshtastic de pe a porta e DELE. Duas
   // tarefas na mesma UART embaralham o fluxo e o enlace caia por causa do
   // comando que deveria so diagnosticar.
-  const grove_dono_t dono = tab5_grove_dono();
-  printf("Grove: %s\n", grove_nome(tab5_grove_tipo()));
+  const grove_owner_t dono = tab5_grove_owner();
+  printf("Grove: %s\n", grove_name(tab5_grove_type()));
   printf("  energia : %s\n", ajustes_grove() ? "ligada" : "desligada");
-  printf("  porta   : %s\n", (dono == GROVE_DONO_NINGUEM) ? "livre" : grove_dono_nome(dono));
+  printf("  porta   : %s\n", (dono == GROVE_OWNER_NONE) ? "livre" : grove_owner_name(dono));
   if (sistema_grove_sondando()) { printf("  sondagem em andamento...\n"); }
   printf("\ntrocou o modulo do cabo? use 'grove trocar'\n");
 }
@@ -2981,7 +2981,7 @@ static const char* const GRUPO_TITULO[G_N] = {
 };
 
 typedef struct {
-  const char* nome;
+  const char* name;
   const char* apelidos;   // separados por espaco; aceitos, mas fora da lista
   grupo_t     grupo;
   const char* resumo;     // a linha do 'help'
@@ -3017,9 +3017,9 @@ static void ajuda_apps(const app_t* so_este)
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
     const app_t* a = SISTEMA_APPS[i];
     if (!a->comandos || (so_este && a != so_este)) { continue; }
-    for (const app_comando_t* c = a->comandos; c->nome; ++c) {
+    for (const app_comando_t* c = a->comandos; c->name; ++c) {
       char pre[48];
-      snprintf(pre, sizeof(pre), "app %s %s ", a->nome, c->nome);
+      snprintf(pre, sizeof(pre), "app %s %s ", a->name, c->name);
       imprimir_colunas(c->uso, pre);
       algum = true;
     }
@@ -3031,7 +3031,7 @@ static void c_app(int argc, char** argv)
 {
   const app_t* a = nullptr;
   for (int i = 0; argc >= 2 && i < SISTEMA_NUM_APPS; ++i) {
-    if (nome_de_app(SISTEMA_APPS[i]->nome, argv[1])) { a = SISTEMA_APPS[i]; }
+    if (nome_de_app(SISTEMA_APPS[i]->name, argv[1])) { a = SISTEMA_APPS[i]; }
   }
   if (!a) {
     if (argc >= 2) { printf("nao ha app '%s'\n", argv[1]); }
@@ -3040,17 +3040,17 @@ static void c_app(int argc, char** argv)
     return;
   }
   const app_comando_t* c = nullptr;
-  for (const app_comando_t* k = a->comandos; argc >= 3 && k && k->nome; ++k) {
-    if (eh(k->nome, argv[2])) { c = k; }
+  for (const app_comando_t* k = a->comandos; argc >= 3 && k && k->name; ++k) {
+    if (eh(k->name, argv[2])) { c = k; }
   }
   if (!c) {
-    if (argc >= 3) { printf("o app %s nao tem o comando '%s'\n", a->nome, argv[2]); }
+    if (argc >= 3) { printf("o app %s nao tem o comando '%s'\n", a->name, argv[2]); }
     ajuda_apps(a);
     return;
   }
   const char* atual = sistema_app_atual();
-  if (c->so_aberto && (!atual || strcmp(atual, a->nome) != 0)) {
-    printf("abra o app %s primeiro ('abrir %s')\n", a->nome, a->nome);
+  if (c->so_aberto && (!atual || strcmp(atual, a->name) != 0)) {
+    printf("abra o app %s primeiro ('abrir %s')\n", a->name, a->name);
     return;
   }
   c->fn(argc - 2, argv + 2);
@@ -3099,11 +3099,11 @@ static const comando_t COMANDOS[] = {
     "Os valores vem do cache que a interface atualiza 1x/s - o console nunca\n"
     "le o INA226 direto. 'travas' so vale medido em repouso: use um tempo maior\n"
     "que o tempo de tela de Ajustes e nao toque na tela durante a espera.\n"
-    "Clocks validos: " TAB5_CPU_DEGRAUS ".",
+    "Clocks validos: " TAB5_CPU_STEPS ".",
     c_energia,
     "energia\tquanto a bateria esta gastando\n"
     "energia travas 40\tespera a tela apagar e mostra quem impede o sono\n"
-    "energia teto " TAB5_CPU_METADE "\tCPU no maximo a " TAB5_CPU_METADE " MHz" },
+    "energia teto " TAB5_CPU_HALF "\tCPU no maximo a " TAB5_CPU_HALF " MHz" },
   { "fundo", "", G_SISTEMA,
     "partes de apps que seguem rodando com a janela fechada",
     "fundo\to que esta rodando e ha quanto tempo\n"
@@ -3434,7 +3434,7 @@ static const int N_COMANDOS = (int)(sizeof(COMANDOS) / sizeof(COMANDOS[0]));
 
 static bool casa_nome(const comando_t& c, const char* s)
 {
-  if (eh(c.nome, s)) { return true; }
+  if (eh(c.name, s)) { return true; }
   // Apelidos: palavras separadas por espaco.
   const size_t n = strlen(s);
   for (const char* a = c.apelidos; *a; ) {
@@ -3503,7 +3503,7 @@ static void mostrar_uso(const char* nome)
 
 static void ajuda_comando(const comando_t& c)
 {
-  printf("%s - %s\n\n", c.nome, c.resumo);
+  printf("%s - %s\n\n", c.name, c.resumo);
   imprimir_uso(c);
   printf("\n");
   imprimir_recuado(c.detalhe, "  ");
@@ -3519,9 +3519,9 @@ static void sugerir(const char* s)
   for (int i = 0; i < N_COMANDOS; ++i) {
     const comando_t& c = COMANDOS[i];
     if (c.grupo == G_OCULTO) { continue; }
-    const bool parecido = (n >= 2 && strncasecmp(c.nome, s, 2) == 0) ||
-                          (n >= 3 && strcasestr(c.nome, s) != nullptr);
-    if (parecido) { printf(achados++ ? ", %s" : "  talvez: %s", c.nome); }
+    const bool parecido = (n >= 2 && strncasecmp(c.name, s, 2) == 0) ||
+                          (n >= 3 && strcasestr(c.name, s) != nullptr);
+    if (parecido) { printf(achados++ ? ", %s" : "  talvez: %s", c.name); }
   }
   if (achados) { printf("\n"); }
   printf("  'help' lista todos os comandos\n");
@@ -3532,7 +3532,7 @@ static void c_ajuda(int argc, char** argv)
   if (argc >= 2 && eh(argv[1], "app")) {
     const app_t* a = nullptr;
     for (int i = 0; argc >= 3 && i < SISTEMA_NUM_APPS; ++i) {
-      if (nome_de_app(SISTEMA_APPS[i]->nome, argv[2])) { a = SISTEMA_APPS[i]; }
+      if (nome_de_app(SISTEMA_APPS[i]->name, argv[2])) { a = SISTEMA_APPS[i]; }
     }
     ajuda_apps(a);
     return;

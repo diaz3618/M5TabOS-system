@@ -161,7 +161,7 @@ static uint32_t s_lupa_com = 0, s_lupa_vazio = 0, s_lupa_grande = 0, s_lupa_nada
 
 static void lupa_toque(uint32_t t, bool tocando)
 {
-  if (!s_lupa_ate || !tab5_painel_toque_gt911()) { return; }
+  if (!s_lupa_ate || !tab5_panel_touch_gt911()) { return; }
   if ((int32_t)(t - s_lupa_ate) >= 0) {
     ESP_LOGW("toque", "lupa 3 s: %lu relatorio(s) com dedo, %lu vazio(s), %lu marcado(s) 'grande/ruido', "
                       "%lu volta(s) sem relatorio, %lu falha(s) de I2C",
@@ -195,7 +195,7 @@ static void vigiar_toque(uint32_t t, bool tocando)
   // Os registradores lidos aqui sao do GT911. Numa tela TDDI (ST7123/ST7121)
   // o endereco do toque e outro chip, com outro mapa: ler 0x814E la seria
   // escrever um ponteiro de registrador sem sentido no controlador da tela.
-  if (!tab5_painel_toque_gt911()) { return; }
+  if (!tab5_panel_touch_gt911()) { return; }
   static uint32_t prox = 0, pulsos_ant = 0, dedo_desde = 0, log_falha_ms = 0;
   static bool viu_dedo = false, avisou_dedo_longo = false;
   static int presos_seguidos = 0;
@@ -295,7 +295,7 @@ static void vigiar_toque(uint32_t t, bool tocando)
 static void ajustar_leitura_do_toque(bool continuo)
 {
   auto* tp = M5.Display.touch();
-  if (!tp || !tab5_painel_toque_gt911()) { return; }   // so o driver do GT911 olha o pino
+  if (!tp || !tab5_panel_touch_gt911()) { return; }   // so o driver do GT911 olha o pino
   const bool pulso = s_toque_pulso;
   s_toque_pulso = false;   // antes da leitura: um pulso durante ela vale para a proxima
   const int pino = (s_dedo_na_tela || pulso || continuo) ? -1 : (int)GPIO_NUM_23;
@@ -319,7 +319,7 @@ static const char *TAG = "core";
 // era limite de BANDA para desenhar na pagina visivel. Com o compositor, tudo
 // e desenhado na tela virtual e vai para o painel no ritmo dos frames dele.)
 static uint32_t s_ultimo_teclado  = 0;
-// Relogio de pixel do painel, em MHz. Ver tab5_power_relogio_dpi() - e a unica
+// Relogio de pixel do painel, em MHz. Ver tab5_power_dpi_clock() - e a unica
 // coisa que reduz de forma PERMANENTE a banda que o painel consome da PSRAM, e
 // portanto a margem que sobra para todo o resto desenhar sem piscar.
 //
@@ -347,7 +347,7 @@ static const uint32_t PERIODO_UI  = 20;
 static const uint32_t TECLADO_MS = 60;
 // Com uma tecla que repete segurada (apagar, seta), le no ritmo da interface:
 // a repeticao e de 70 ms, e a 60 ms ela sairia de duas em duas leituras.
-static uint32_t teclado_ms(void) { return tab5_teclado_segurando() ? 20 : TECLADO_MS; }
+static uint32_t teclado_ms(void) { return tab5_keyboard_holding() ? 20 : TECLADO_MS; }
 // Periodo do loop em repouso. Foi 200ms e era CEDO DEMAIS para o toque: o
 // M5.update() so ve o dedo se ele estiver na tela no instante da amostragem, e
 // um toque de 100ms cabe inteiro entre duas amostras de 200ms. Detectar por
@@ -356,7 +356,7 @@ static uint32_t teclado_ms(void) { return tab5_teclado_segurando() ? 20 : TECLAD
 // A 80ms, um toque humano tipico (150ms ou mais) e visto sempre. HOJE so vale
 // quando a ISR do toque nao subiu: com ela, o repouso dorme ate o proximo
 // prazo real (~1 s) e o toque acorda o loop pela interrupcao. (O repouso
-// baixa a CPU para o piso - 40 MHz, ver tab5_power_repouso.)
+// baixa a CPU para o piso - 40 MHz, ver tab5_power_sleep.)
 static const uint32_t PERIODO_ZZZ = 80;
 static const uint32_t BARRA_MS    = 2000;
 
@@ -382,7 +382,7 @@ rolagem_t s_rol;   // zero-init ja e VERTICAL/INICIO - extern em internal.hpp
 // galeria de fontes) onde SO UMA parte usa a rolagem generica do sistema. Sem
 // isto, a tela que NAO rola (a galeria, que pagina) continuava sendo alvo do
 // arraste do core - qualquer dedo na area de conteudo movia s_rol.atual por
-// baixo, e o atalho de rolagem (tab5_tela_rolar) deslocava pixels que a
+// baixo, e o atalho de rolagem (tab5_screen_scroll) deslocava pixels que a
 // galeria nunca pediu para mover, estragando o desenho dela.
 //
 // limite_do_app() (mais abaixo) consulta esta trava antes de tudo.
@@ -459,13 +459,13 @@ static TaskHandle_t s_tarefa_interface = nullptr;   // capturado na criacao, ver
 // CAMERA DE QUALQUER TAREFA
 // ---------------------------------------------------------------------------
 // Aqui morava a "ponte da camera": um pedido de fora da interface esperava a
-// interface executar tab5_camera_iniciar/parar, porque o SCCB do sensor (driver
+// interface executar tab5_camera_start/parar, porque o SCCB do sensor (driver
 // I2C do IDF) e o resto do I2C interno (M5GFX) disputavam o mesmo controlador
 // sem trava entre si. O SCCB agora passa pelas transacoes do M5GFX
 // (hal/tab5_sccb.cpp), que tem trava por porta - todo o I2C interno e
 // serializado, de qualquer tarefa. A ponte saiu; o nome fica para quem chama.
-bool sistema_camera_iniciar(int largura, int altura) { return tab5_camera_iniciar(largura, altura); }
-void sistema_camera_parar(void) { tab5_camera_parar(); }
+bool sistema_camera_iniciar(int largura, int altura) { return tab5_camera_start(largura, altura); }
+void sistema_camera_parar(void) { tab5_camera_stop(); }
 
 // Os dedos da ultima amostra (ver sistema_toques em app.h). So a tarefa de
 // interface escreve e so ela le (dentro do ao_tocar_nivel): sem trava.
@@ -522,26 +522,26 @@ static void vigiar_mesh_internet(uint32_t t)
   // vTaskSondagemGrove). So precisa do Wi-Fi.
   if (ajustes_mesh_via() == AJUSTES_MESH_INTERNET) {
     if (!tab5_mesh_servico_ativo() && !s_sondando_em_fundo
-     && tab5_wifi_estado() == TAB5_WIFI_CONECTADO) {
+     && tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
       sistema_trabalho_solto(mesh_internet_subir, nullptr);
     }
     return;
   }
   // Internet como tapa-buraco: o Grove com o no a faz ceder, o cabo e o principal.
-  if (!ajustes_mesh_internet() || tab5_grove_tipo() == GROVE_MESHTASTIC) {
+  if (!ajustes_mesh_internet() || tab5_grove_type() == GROVE_MESHTASTIC) {
     if (ativo_net) { sistema_trabalho_solto(mesh_internet_descer, nullptr); }
     return;
   }
   // Sem Wi-Fi o modo so-internet nao tem o que fazer: desce o servico. Duas
   // leituras seguidas (30 s) sem Wi-Fi, para nao derrubar numa piscada da rede.
   static int s_sem_wifi = 0;
-  if (ativo_net && tab5_wifi_estado() != TAB5_WIFI_CONECTADO) {
+  if (ativo_net && tab5_wifi_state() != TAB5_WIFI_CONNECTED) {
     if (++s_sem_wifi >= 2) { s_sem_wifi = 0; sistema_trabalho_solto(mesh_internet_descer, nullptr); return; }
   } else { s_sem_wifi = 0; }
   const bool no_pelo_bt = ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH && ajustes_bluetooth();
   if (!tab5_mesh_servico_ativo() && !no_pelo_bt && !s_sondando_em_fundo
-   && tab5_grove_tipo() != GROVE_MESHTASTIC
-   && tab5_wifi_estado() == TAB5_WIFI_CONECTADO) {
+   && tab5_grove_type() != GROVE_MESHTASTIC
+   && tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
     sistema_trabalho_solto(mesh_internet_subir, nullptr);
   }
 }
@@ -568,7 +568,7 @@ void sistema_manter_acordado(uint32_t motivo, bool sim)
     // Pedido novo com a tela ja apagada: impedir o PROXIMO repouso nao basta -
     // o atual segue com o clock no piso e a pessoa sem ver nada. Acorda.
     const uint32_t antes = s_acordado.fetch_or(motivo);
-    if (!(antes & motivo) && tab5_power_em_repouso()) { s_pedir_acordar = true; sistema_acordar_interface(); }
+    if (!(antes & motivo) && tab5_power_is_sleeping()) { s_pedir_acordar = true; sistema_acordar_interface(); }
   } else {
     s_acordado.fetch_and(~motivo);
   }
@@ -592,13 +592,13 @@ static void bt_desligar(void*)
     ESP_LOGE(TAG, "o enlace do Mesh nao saiu - o Bluetooth fica ligado");
     return;
   }
-  tab5_ble_desligar();
+  tab5_ble_turn_off();
 }
 
 static void bt_aplicar(bool ligar)
 {
   if (ligar) {
-    tab5_ble_ligar();   // trilho do C6 (I2C): tarefa de interface
+    tab5_ble_turn_on();   // trilho do C6 (I2C): tarefa de interface
     // O iniciar do Mesh le o historico do cartao: no worker.
     if (ajustes_mesh_via() == AJUSTES_MESH_BLUETOOTH) { sistema_trabalho_solto(bt_mesh_subir, nullptr); }
   } else {
@@ -731,7 +731,7 @@ static bool s_toque_isr_instalada = false;
 // durante um arraste - xQueueReceive() retornaria quase instantaneo a cada
 // chamada, e o loop deixaria de respeitar os 20/25ms escolhidos a dedo,
 // rodando tao rapido quanto o proprio corpo do loop permitisse. Por isso:
-// s_isr_acorda liga so no instante em que tab5_power_repouso() tem sucesso (ou
+// s_isr_acorda liga so no instante em que tab5_power_sleep() tem sucesso (ou
 // com a tela parada) e desliga quando a tela volta a ter motivo para rodar a
 // 20 ms. a interrupcao em si fica ligada o tempo todo: ela
 // ANOTA cada pulso (s_toque_pulso, ver ajustar_leitura_do_toque) - com ela
@@ -757,7 +757,7 @@ static void validar_isr_tddi(bool tocando)
   if (tocando && (s_pulsos - base) >= 3) {
     s_toque_isr_ok = true;
     ESP_LOGI(TAG, "toque da tela %s: o pino INT pulsa - repouso e tela parada por interrupcao",
-             tab5_painel_nome());
+             tab5_panel_name());
   }
   dedo = tocando;
 }
@@ -1000,7 +1000,7 @@ static SemaphoreHandle_t s_relogio_feito = nullptr;   // criado com a interface 
 
 bool sistema_trocar_relogio_painel(int mhz)
 {
-  if (sistema_na_interface() || !s_tarefa_interface) { return tab5_power_relogio_dpi(mhz); }
+  if (sistema_na_interface() || !s_tarefa_interface) { return tab5_power_dpi_clock(mhz); }
   if (!s_relogio_feito) { return false; }
   xSemaphoreTake(s_relogio_feito, 0);   // sobra de um pedido que desistiu de esperar
   s_relogio_resposta.store(0);
@@ -1014,7 +1014,7 @@ static void atender_pedido_de_relogio(void)
 {
   const int mhz = s_relogio_pedido.exchange(0);
   if (mhz == 0) { return; }
-  s_relogio_resposta.store(tab5_power_relogio_dpi(mhz) ? 1 : -1);
+  s_relogio_resposta.store(tab5_power_dpi_clock(mhz) ? 1 : -1);
   xSemaphoreGive(s_relogio_feito);
 }
 
@@ -1024,7 +1024,7 @@ static void atender_pedido_de_relogio(void)
 // mexer em s_rol.no_visor aqui tambem.
 void sistema_zerar_rolagem(void) { rolagem_zerar(&s_rol); s_sujo_layout = true; }
 
-const char* sistema_app_atual(void) { return s_app ? s_app->nome : nullptr; }
+const char* sistema_app_atual(void) { return s_app ? s_app->name : nullptr; }
 bool sistema_na_interface(void) { return s_tarefa_interface && xTaskGetCurrentTaskHandle() == s_tarefa_interface; }
 
 static area_t area_util(void)
@@ -1046,19 +1046,19 @@ area_t sistema_area(void) { return area_util(); }
 // ---------------------------------------------------------------------------
 // Perfil de boot: a uniao do que os apps precisam que EXISTA
 // ---------------------------------------------------------------------------
-tab5_perfil_t sistema_perfil_de_boot(void)
+tab5_profile_t sistema_perfil_de_boot(void)
 {
-  tab5_perfil_t u;
-  u.brilho = 80;
+  tab5_profile_t u;
+  u.brightness = 80;
 
   // So as flags de FASE 1 - as que decidem se o driver chega a ser
   // inicializado. Se UM app precisa do IMU, o IMU existe para todos; nao ha
   // como inicializa-lo depois do M5.begin().
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
-    const tab5_perfil_t& p = SISTEMA_APPS[i]->perfil;
+    const tab5_profile_t& p = SISTEMA_APPS[i]->perfil;
     u.imu          = u.imu          || p.imu;
-    u.microfone    = u.microfone    || p.microfone;
-    u.alto_falante = u.alto_falante || p.alto_falante;
+    u.microphone    = u.microphone    || p.microphone;
+    u.speaker = u.speaker || p.speaker;
     u.rtc          = u.rtc          || p.rtc;
   }
   return u;
@@ -1073,14 +1073,14 @@ tab5_perfil_t sistema_perfil_de_boot(void)
 //
 // Regra: o perfil do app diz o que ELE precisa; esta funcao impoe o que o
 // USUARIO pediu. O app so pode SOMAR - por isso tudo aqui e "||", nunca "=".
-void sistema_impor_preferencias(tab5_perfil_t& p)
+void sistema_impor_preferencias(tab5_profile_t& p)
 {
-  p.brilho   = ajustes_brilho();                          // preferencia vence sempre
-  // "necessario" = a stack ja subiu neste boot (tab5_wifi_pilha_de_pe, HAL)
+  p.brightness   = ajustes_brilho();                          // preferencia vence sempre
+  // "necessario" = a stack ja subiu neste boot (tab5_wifi_stack_ready, HAL)
   // OU o usuario quer WiFi ligado (ajustes_wifi, servico) - a conta mora
   // AQUI, porque so o kernel pode ler as duas sem inverter
   // a dependencia (ver WRITING_APPS.md secao 8).
-  p.radio    = p.radio    || tab5_wifi_pilha_de_pe() || ajustes_wifi()
+  p.radio    = p.radio    || tab5_wifi_stack_ready() || ajustes_wifi()
              || ajustes_bluetooth();   // o C6 e o radio do Bluetooth
   p.grove_5v = p.grove_5v || ajustes_grove();
 
@@ -1088,10 +1088,10 @@ void sistema_impor_preferencias(tab5_perfil_t& p)
   // grande em tab5_camera.hpp) - MESMA RAZAO do Grove acima: um app aberto
   // AGORA nao pode decidir sozinho se desliga CAM_RST, porque quem esta
   // usando a camera pode ser outra coisa (o comando de console 'foto', por
-  // exemplo) que nao passa pelo perfil de app nenhum. tab5_camera_ativa()
+  // exemplo) que nao passa pelo perfil de app nenhum. tab5_camera_active()
   // OR'd aqui garante que reaplicar o perfil de QUALQUER app, a qualquer
   // momento, nunca corta a energia de um consumidor que segue vivo.
-  p.camera   = p.camera   || tab5_camera_ativa();
+  p.camera   = p.camera   || tab5_camera_active();
 
   // PARTES DE FUNDO (kernel/background.h): o que cada uma declarou precisar entra
   // aqui - pelo MESMO motivo da camera acima: quem esta na tela nao pode
@@ -1099,9 +1099,9 @@ void sistema_impor_preferencias(tab5_perfil_t& p)
   fundo_somar_perfil(p);
 }
 
-static tab5_perfil_t perfil_da_home(void)
+static tab5_profile_t perfil_da_home(void)
 {
-  tab5_perfil_t p;                    // nada ligado
+  tab5_profile_t p;                    // nada ligado
   sistema_impor_preferencias(p);      // o que o usuario pediu entra aqui
   return p;
 }
@@ -1129,9 +1129,9 @@ bool sistema_grove_sondando(void) { return s_grove_resondar || s_sondando_em_fun
 
 void sistema_reaplicar_perfil(void)
 {
-  tab5_perfil_t p = app_vivo() ? s_app->perfil : tab5_perfil_t();
+  tab5_profile_t p = app_vivo() ? s_app->perfil : tab5_profile_t();
   sistema_impor_preferencias(p);
-  tab5_power_aplicar(p);
+  tab5_power_apply(p);
 }
 
 // limpar_area = true SO quando a tela mudou de conteudo (abriu/fechou app).
@@ -1155,7 +1155,7 @@ static int limite_do_app(const area_t& a)
   return s_app->altura_conteudo - a.altura;
 }
 
-// 'limpar_area' manda FISICAMENTE apagar a area (tab5_tela_limpar + barra de
+// 'limpar_area' manda FISICAMENTE apagar a area (tab5_screen_clear + barra de
 // nav) - custa a rajada grande de PSRAM. 'completo_para_apps' e o que cada
 // app VE em pintura_completa(): TRUE diz "redesenhe sua estrutura estatica
 // inteira (titulo/ajuda/botao guardados atras de um 'if (s_tudo)'), nao so os
@@ -1164,7 +1164,7 @@ static int limite_do_app(const area_t& a)
 // Os dois eram o MESMO parametro, porque so existiam dois
 // casos: repintura completa (os dois true - abrir/fechar app, acordar,
 // redesenho pedido) ou incremental pura (os dois false - so um dado mudou,
-// nada mexeu de posicao). O deslocamento de rolagem (tab5_tela_rolar,
+// nada mexeu de posicao). O deslocamento de rolagem (tab5_screen_scroll,
 // ver o loop principal) criou um TERCEIRO caso: a posicao na tela MUDOU (os
 // pixels foram deslocados, nao apagados) mas ninguem apagou nada
 // fisicamente. Chamando com (false, true): pula a rajada de apagar (os
@@ -1197,12 +1197,12 @@ static int s_n_passadas = 0;
 static void anotar_passada(const char* nome, uint32_t us, uint32_t barra, uint32_t limpar, uint32_t conteudo)
 {
   sistema_passada_t* p = nullptr;
-  for (int i = 0; i < s_n_passadas; ++i) { if (s_passadas[i].nome == nome) { p = &s_passadas[i]; break; } }
+  for (int i = 0; i < s_n_passadas; ++i) { if (s_passadas[i].name == nome) { p = &s_passadas[i]; break; } }
   if (!p) {
     if (s_n_passadas >= PASSADAS_MAX) { return; }
     p = &s_passadas[s_n_passadas++];
     *p = {};
-    p->nome = nome;
+    p->name = nome;
   }
   ++p->n;
   p->us += us;
@@ -1230,7 +1230,7 @@ static void desenhar_recusa(lgfx::LovyanGFX& d, const area_t& a)
   tab5_texto(d, 3);
   d.setTextColor(TFT_ORANGE, TFT_BLACK);
   char l[64];
-  snprintf(l, sizeof(l), "%s precisa do cartão SD", s_app->nome);
+  snprintf(l, sizeof(l), "%s precisa do cartão SD", s_app->name);
   d.drawString(l, cx, y);
   tab5_texto(d, 2);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1274,15 +1274,15 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
     // existe. Abrir um app escreve o mesmo tanto, mas espalhado em dezenas de
     // operacoes pequenas - e por isso nunca piscava na entrada.
     const int64_t limpar_t0 = esp_timer_get_time();
-    tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TFT_BLACK);
+    tab5_screen_clear(a.x, a.y, a.largura, a.altura, TFT_BLACK);
     // AVISA A CAMADA DE TELA. Daqui ate o fim desta passada, todo pedido de
     // limpar preto dentro desta area e dispensado - e a rajada dobrada que
     // produzia a piscada azul deixa de acontecer, para TODO app, sem que
     // nenhum deles precise saber da regra.
-    tab5_tela_marcar_limpo(a.x, a.y, a.largura, a.altura, TFT_BLACK);
+    tab5_screen_mark_clean(a.x, a.y, a.largura, a.altura, TFT_BLACK);
     if (s_bloqueado) {
       // Bloqueado nao ha navegacao: a faixa de baixo fica preta.
-      tab5_tela_limpar(0, d.height() - ALTURA_NAV, d.width(), ALTURA_NAV, TFT_BLACK);
+      tab5_screen_clear(0, d.height() - ALTURA_NAV, d.width(), ALTURA_NAV, TFT_BLACK);
     } else {
       desenhar_barra_nav(d);
     }
@@ -1291,7 +1291,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   s_area_limpa = completo_para_apps;
   // s_app E s_app_carregando (nao so um deles): os dois comecam NULL, e
   // "nullptr == nullptr" e verdadeiro - sem o s_app aqui, a home (sem app
-  // nenhum aberto) caia nesta condicao e tentava ler s_app->nome com s_app
+  // nenhum aberto) caia nesta condicao e tentava ler s_app->name com s_app
   // nulo. Foi o crash do boot: Load access fault bem nesta linha.
   if (s_bloqueado) {
     desenhar_bloqueio(d, a, limpar_area);
@@ -1309,7 +1309,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
     tab5_texto(d, 2);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     char msg[48];
-    snprintf(msg, sizeof(msg), "abrindo %s...", s_app->nome);
+    snprintf(msg, sizeof(msg), "abrindo %s...", s_app->name);
     d.drawString(msg, a.x + a.largura / 2, a.y + a.altura / 2);
   } else if (s_app) {
     const int max = limite_do_app(a);
@@ -1373,7 +1373,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   // AGORA"; depois que o app desenhou por cima, deixa de ser verdade. Deixa-la
   // viva ate a proxima passada faria a limpeza seguinte ser dispensada sobre
   // conteudo real - e o app ficaria com rastro por uma otimizacao do sistema.
-  tab5_tela_esquecer_limpo();
+  tab5_screen_forget_clean();
 }
 
 // Um quadro da tela de bloqueio durante a rampa de brilho do despertar.
@@ -1397,7 +1397,7 @@ static void vTaskDesmontarSDApp(void*);
 void fechar_app(void)
 {
   if (!s_app) { return; }
-  ESP_LOGI(TAG, "fechando '%s'", s_app->nome);
+  ESP_LOGI(TAG, "fechando '%s'", s_app->name);
 
   // RECUSADO: o app nunca abriu (nem ao_abrir, nem perfil, nem cartao) - so
   // a tela de motivo do sistema sai.
@@ -1424,7 +1424,7 @@ void fechar_app(void)
   const int64_t t2 = esp_timer_get_time();
   if (t2 - t0 > 150000) {
     ESP_LOGW(TAG, "fechar '%s' segurou a interface %lld ms (trabalho %lld, ao_fechar %lld)",
-             s_app->nome, (t2 - t0) / 1000, (t1 - t0) / 1000, (t2 - t1) / 1000);
+             s_app->name, (t2 - t0) / 1000, (t1 - t0) / 1000, (t2 - t1) / 1000);
   }
   s_nav_travada     = false;  // rede de seguranca: app esquecido nao prende ninguem
   sistema_manter_acordado(SISTEMA_ACORDADO_APP, false);   // idem: o pedido era do app
@@ -1451,7 +1451,7 @@ void fechar_app(void)
   }
   registro_app_atual(nullptr);
 
-  tab5_power_aplicar(perfil_da_home());
+  tab5_power_apply(perfil_da_home());
   s_sujo_layout = true;
 }
 
@@ -1483,13 +1483,13 @@ void fechar_app(void)
 // concluir_abertura_do_sd() e a checagem no loop da interface.
 static void vTaskMontarSDApp(void*)
 {
-  s_sd_montou_ok = tab5_sd_montar();
+  s_sd_montou_ok = tab5_sd_mount();
   s_sd_montando  = false;   // POR ULTIMO - so agora o loop pode concluir a abertura
 }
 
 static void vTaskDesmontarSDApp(void*)
 {
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,12 +1505,12 @@ static void vTaskDesmontarSDApp(void*)
 // nenhuma funcao dele e chamada - app_vivo() e falso.
 static void recusar_app(const app_t* app)
 {
-  ESP_LOGW(TAG, "'%s' nao abre: o cartao esta emprestado ao computador", app->nome);
+  ESP_LOGW(TAG, "'%s' nao abre: o cartao esta emprestado ao computador", app->name);
   s_app = app;
   s_app_recusado = app;
   rolagem_zerar(&s_rol);
   orientacao_ao_fechar();                 // a tela de motivo e em pe
-  tab5_power_aplicar(perfil_da_home());   // nada do perfil do app fica ligado
+  tab5_power_apply(perfil_da_home());   // nada do perfil do app fica ligado
   s_sujo_layout = true;
 }
 
@@ -1525,28 +1525,28 @@ static void concluir_abertura_do_sd(void)
   s_app_montou_sd = s_sd_montou_ok;
   // CORRIDA COM O PENDRIVE: o cartao foi emprestado entre a checagem do
   // abrir_app() e a montagem. Mesma regra: quem exige o cartao nao abre.
-  if (!s_app_montou_sd && app->exige_sd && tab5_sd_emprestado()) {
+  if (!s_app_montou_sd && app->exige_sd && tab5_sd_lent()) {
     recusar_app(app);
     return;
   }
   if (!s_app_montou_sd) {
     ESP_LOGW(TAG, "'%s' pediu cartao SD e ele NAO montou - abrindo assim mesmo, "
-                  "mas o app nao vai conseguir gravar", app->nome);
+                  "mas o app nao vai conseguir gravar", app->name);
   }
 
   if (app->ao_abrir && !app->ao_abrir()) {
-    ESP_LOGE(TAG, "'%s' recusou abrir", app->nome);
+    ESP_LOGE(TAG, "'%s' recusou abrir", app->name);
     if (s_app_montou_sd) {
       pool_criar(nullptr, vTaskDesmontarSDApp, nullptr, "sd_desmonta", 4096, 1);
       s_app_montou_sd = false;
     }
     s_app = nullptr;      // volta para a home: a abertura falhou de verdade
-    tab5_power_aplicar(perfil_da_home());
+    tab5_power_apply(perfil_da_home());
     s_sujo_layout = true;
     return;
   }
 
-  registro_app_atual(app->nome);
+  registro_app_atual(app->name);
   s_sujo_layout = true;   // troca a tela de "abrindo..." pelo conteudo de verdade
 }
 
@@ -1555,14 +1555,14 @@ static void concluir_abertura_do_sd(void)
 bool abrir_app(const app_t* app)
 {
   if (s_app) { fechar_app(); }
-  ESP_LOGI(TAG, "abrindo '%s'", app->nome);
+  ESP_LOGI(TAG, "abrindo '%s'", app->name);
   // A home sai da tela: o papel de parede pronto dela (PSRAM) vai junto.
   bq_parede_soltar();
 
   // O CARTAO ESTA NO COMPUTADOR e este app nao funciona sem ele: o sistema
   // nao abre (ver recusar_app). Antes de qualquer outra coisa - nem perfil,
   // nem orientacao, nem montagem.
-  if (app->exige_sd && tab5_sd_emprestado()) {
+  if (app->exige_sd && tab5_sd_lent()) {
     recusar_app(app);
     return true;
   }
@@ -1596,9 +1596,9 @@ bool abrir_app(const app_t* app)
   // Quais rotacoes existem e por que: kernel/orientation.cpp.
   orientacao_ao_abrir(app);
 
-  tab5_perfil_t perfil = app->perfil;
+  tab5_profile_t perfil = app->perfil;
   sistema_impor_preferencias(perfil);
-  tab5_power_aplicar(perfil);
+  tab5_power_apply(perfil);
 
   // Cartao montado antes do ao_abrir(), pelo mesmo motivo de sempre: o app
   // pode querer ler configuracao ou abrir arquivo de log logo na abertura.
@@ -1628,14 +1628,14 @@ bool abrir_app(const app_t* app)
   }
 
   if (app->ao_abrir && !app->ao_abrir()) {
-    ESP_LOGE(TAG, "'%s' recusou abrir", app->nome);
-    tab5_power_aplicar(perfil_da_home());
+    ESP_LOGE(TAG, "'%s' recusou abrir", app->name);
+    tab5_power_apply(perfil_da_home());
     return false;
   }
 
   s_app = app;
   rolagem_zerar(&s_rol);   // todo app comeca no topo
-  registro_app_atual(app->nome);
+  registro_app_atual(app->name);
   s_sujo_layout = true;
   return true;
 }
@@ -1645,8 +1645,8 @@ bool abrir_app(const app_t* app)
 // ---------------------------------------------------------------------------
 // Parar os servicos e sondar de novo rodava DIRETO na tarefa
 // de interface - a MESMA que chama M5.update() e processa toque. O preco:
-// tab5_mesh_parar()/tab5_gps_parar() esperam ate 1s cada pela tarefa do
-// servico confirmar saida, e tab5_grove_detectar() bloqueia mais uns 4-8s
+// tab5_mesh_parar()/tab5_gps_stop() esperam ate 1s cada pela tarefa do
+// servico confirmar saida, e tab5_grove_detect() bloqueia mais uns 4-8s
 // sondando os dois protocolos. Toda vez que alguem pluga um modulo no
 // Grove, isso e quase 10 SEGUNDOS de toque surdo - observado em
 // usuario plugou o GPS, o toque parou de responder, e so voltou
@@ -1659,7 +1659,7 @@ bool abrir_app(const app_t* app)
 // com os servicos (3). Enquanto ela para servico e sonda, a tarefa de
 // interface continua livre, e o toque nunca mais fica refem disto.
 //
-// IDEMPOTENTE POR CONSTRUCAO: tab5_mesh_parar()/tab5_gps_parar() ja
+// IDEMPOTENTE POR CONSTRUCAO: tab5_mesh_parar()/tab5_gps_stop() ja
 // devolvem true sem fazer nada quando o servico correspondente ja esta
 // parado - por isso os DOIS pontos do loop que precisam de uma sondagem
 // (a re-sondagem pedida e as tentativas extras quando a primeira nao achou
@@ -1677,7 +1677,7 @@ static void vTaskSondagemGrove(void*)
 {
   const bool reiniciar = s_prox_sondagem_reinicia_contagem;
   const bool mesh_ok = tab5_mesh_soltar_grove();   // via Bluetooth o no nao esta no cabo
-  const bool gps_ok  = tab5_gps_parar();
+  const bool gps_ok  = tab5_gps_stop();
   if (!mesh_ok || !gps_ok) {
     ESP_LOGE(TAG, "nao consegui liberar o Grove - sondagem cancelada");
   } else {
@@ -1686,7 +1686,7 @@ static void vTaskSondagemGrove(void*)
       s_grove_desde  = tab5_agora_ms(); // ... a partir de AGORA, nao do boot
     }
     if (ajustes_grove()) {
-      const grove_tipo_t achado = tab5_grove_detectar();
+      const grove_type_t achado = tab5_grove_detect();
       if (achado == GROVE_MESHTASTIC) {
         // O GROVE TEM PRIORIDADE. Achar o C6L no cabo leva o Mesh para ele,
         // de qualquer via (Bluetooth ou internet). A troca acontece SO aqui,
@@ -1699,7 +1699,7 @@ static void vTaskSondagemGrove(void*)
         }
         tab5_mesh_iniciar();
       }
-      else if (achado == GROVE_GPS)        { tab5_gps_iniciar(); }
+      else if (achado == GROVE_GPS)        { tab5_gps_start(); }
     } else {
       ESP_LOGI(TAG, "Grove desligado no ajuste - parei o servico e nao sondei");
     }
@@ -1707,7 +1707,7 @@ static void vTaskSondagemGrove(void*)
   // Zera a vigia: a sondagem acabou de estabelecer a verdade, e a leitura
   // seguinte do pino tem que ser comparada com ELA, nao com o que se
   // acreditava antes.
-  s_grove_havia    = (tab5_grove_tipo() != GROVE_NADA);
+  s_grove_havia    = (tab5_grove_type() != GROVE_NOTHING);
   s_grove_iguais   = 0;
   s_sujo_layout    = true;
   s_sondando_em_fundo = false;   // POR ULTIMO - so agora a proxima pode comecar
@@ -1757,7 +1757,7 @@ static void vTaskInterface(void *pvParameters)
   // trilho do C6 e uma escrita no expansor I2C, e esta tarefa e a dona do I2C.
   // Alem disso, subindo depois da interface, a tela ja esta desenhada quando o
   // radio comeca a negociar - o usuario ve "conectando" em vez de esperar.
-  if (ajustes_wifi()) { tab5_wifi_ligar(); }
+  if (ajustes_wifi()) { tab5_wifi_turn_on(); }
 
   // BLUETOOTH. Mesma razao do WiFi para morar aqui: ligar pede o
   // trilho do C6 (I2C). So o botao do usuario liga (ver sistema_bluetooth);
@@ -1770,17 +1770,17 @@ static void vTaskInterface(void *pvParameters)
   //
   // A VONTADE DO USUARIO E EMPURRADA, nunca lida por dentro do HAL - por isso
   // o habilitar() vem ANTES do iniciar(). Ver o aviso em tab5_keyboard.cpp.
-  tab5_teclado_habilitar(ajustes_teclado());
-  tab5_teclado_iniciar();
+  tab5_keyboard_enable(ajustes_teclado());
+  tab5_keyboard_init();
 
   // Sensor de temperatura do P4. Nao e I2C (e um ADC interno), mas nasce aqui
   // junto dos outros para o boot ter um lugar so onde os sensores sobem.
-  tab5_sensores_iniciar();
+  tab5_sensors_init();
 
   // PRIORIDADE DA TELA NO BARRAMENTO. Antes de qualquer app desenhar: e a
   // arbitragem que decide se a piscada azul pode ou nao acontecer, e ela nao
   // depende de nada que os apps facam.
-  tab5_barramento_priorizar_tela(true);
+  tab5_bus_prioritize_screen(true);
 
   // A TELA VIRTUAL (COMPOSITOR.md, etapa 3a). Antes do primeiro desenho: a
   // partir daqui, home, barras e apps desenham nela, e so o compositor
@@ -1799,7 +1799,7 @@ static void vTaskInterface(void *pvParameters)
   //
   // Aqui, antes do primeiro desenho: a troca desmonta e remonta o painel, e
   // fazer isso com a tela ja em uso apagaria o conteudo por um instante.
-  if (tab5_painel_toque_gt911()) { tab5_power_relogio_dpi((int)ajustes_relogio_painel()); }   // TDDI: fica o de fabrica
+  if (tab5_panel_touch_gt911()) { tab5_power_dpi_clock((int)ajustes_relogio_painel()); }   // TDDI: fica o de fabrica
 
 #ifdef TAB5_MOSTRAR_SPLASH
   // SO AGORA: o painel ja tem o relogio final e nao vai mais ser desmontado
@@ -1845,7 +1845,7 @@ static void vTaskInterface(void *pvParameters)
     // UNICA copia da tela - painel novo nasce sem nada nosso, e o unico jeito
     // de ter a tela de volta e redesenha-la inteira. (O acordar do repouso
     // trata o seu caso la embaixo, antes de acender a luz.)
-    if (!tab5_power_em_repouso() && comp_painel_novo()) { s_sujo_layout = true; }
+    if (!tab5_power_is_sleeping() && comp_painel_novo()) { s_sujo_layout = true; }
 
     // As partes de fundo (kernel/background.h): quem terminou sozinho e limpo, a
     // parada pedida pelo console acontece, e o perfil efetivo e reaplicado
@@ -1861,7 +1861,7 @@ static void vTaskInterface(void *pvParameters)
       concluir_abertura_do_sd();
     }
     // O CARTAO VOLTOU com a tela de recusa aberta: abre o app de verdade.
-    if (s_app_recusado && !tab5_sd_emprestado() && !s_bloqueado) {
+    if (s_app_recusado && !tab5_sd_lent() && !s_bloqueado) {
       const app_t* ap = s_app_recusado;
       fechar_app();
       abrir_app(ap);
@@ -1878,16 +1878,16 @@ static void vTaskInterface(void *pvParameters)
     //
     // A saida e separar as duas perguntas. "Quem esta ai?" e cara e so se
     // pergunta quando vale. "Tem alguem ai?" e uma leitura de GPIO (ver o
-    // tab5_grove_presenca) e pode rodar a 0,5Hz sem doer.
+    // tab5_grove_present) e pode rodar a 0,5Hz sem doer.
     //
     // Com a porta OCUPADA nao da para ler o pino - ele e do driver da UART. Aí
     // o informante e outro: o proprio servico, que sabe ha quanto tempo o radio
     // nao fala. Cada estado tem quem o observe.
     if (ajustes_grove() && !s_grove_resondar && (t - s_grove_olhado) >= VIGIA_MS) {
       s_grove_olhado = t;
-      const grove_dono_t dono = tab5_grove_dono();
+      const grove_owner_t dono = tab5_grove_owner();
 
-      if (dono == GROVE_DONO_MESH) {
+      if (dono == GROVE_OWNER_MESH) {
         // O radio calou. 60s e folga larga de proposito: o servico pede
         // apresentacao a cada 10s enquanto esta mudo, entao um C6L vivo
         // responde muito antes. E um alarme falso se conserta sozinho - a
@@ -1907,18 +1907,18 @@ static void vTaskInterface(void *pvParameters)
           s_grove_resondar = true;   // o bloco abaixo para o servico e sonda
         }
       }
-      else if (dono == GROVE_DONO_GPS) {
+      else if (dono == GROVE_OWNER_GPS) {
         // MESMA IDEIA do bloco do Mesh acima, prazo proprio (ver GPS_MUDO_MS):
         // o GPS fala sozinho e continuo, entao silencio aqui significa cabo
         // puxado com muito mais confianca do que significaria para o radio.
-        if (tab5_gps_silencio_ms() > GPS_MUDO_MS) {
+        if (tab5_gps_silence_ms() > GPS_MUDO_MS) {
           ESP_LOGW(TAG, "GPS mudo ha %us - devolvendo o Grove e sondando",
                    (unsigned)(GPS_MUDO_MS / 1000));
           s_grove_resondar = true;
         }
       }
-      else if (dono == GROVE_DONO_NINGUEM) {
-        const bool ha = tab5_grove_presenca();
+      else if (dono == GROVE_OWNER_NONE) {
+        const bool ha = tab5_grove_present();
 
         // Duas leituras iguais antes de acreditar. Um cabo sendo encaixado
         // toca antes de assentar, e agir no primeiro contato dispararia
@@ -1927,7 +1927,7 @@ static void vTaskInterface(void *pvParameters)
         else                     { s_grove_havia = ha; s_grove_iguais = 1; }
 
         if (s_grove_iguais == 2) {
-          const bool tinha = (tab5_grove_tipo() != GROVE_NADA);
+          const bool tinha = (tab5_grove_type() != GROVE_NOTHING);
           if (ha && !tinha) {
             ESP_LOGI(TAG, "algo foi plugado no Grove - sondando");
             s_grove_resondar = true;
@@ -1940,7 +1940,7 @@ static void vTaskInterface(void *pvParameters)
             // servico a parar - e parar servico (ate 1 s esperando a tarefa
             // dele) e justamente o que a regra do core tira da interface (ver
             // vTaskSondagemGrove). Chamar aqui era inofensivo so por acaso.
-            tab5_grove_esquecer();
+            tab5_grove_forget();
             s_sujo_layout = true;
           }
         }
@@ -1951,7 +1951,7 @@ static void vTaskInterface(void *pvParameters)
     //
     // Feita EM TAREFA PROPRIA (ver vTaskSondagemGrove, logo
     // acima) - nao mais direto aqui. Chamar tab5_mesh_parar()/
-    // tab5_gps_parar()/tab5_grove_detectar() nesta tarefa (a mesma que
+    // tab5_gps_stop()/tab5_grove_detect() nesta tarefa (a mesma que
     // processa toque) prendia o toque por ate ~10s toda vez que alguem
     // trocava o modulo do cabo - observado, usuario achou que o
     // toque tinha travado de vez.
@@ -1979,7 +1979,7 @@ static void vTaskInterface(void *pvParameters)
     // vTaskSondagemGrove), pelo mesmo motivo do bloco acima: nao prender o
     // toque.
     //
-    // GROVE_DESCONHECIDO ENTRA AQUI TAMBEM, e a condicao so tinha GROVE_NADA
+    // GROVE_UNKNOWN ENTRA AQUI TAMBEM, e a condicao so tinha GROVE_NOTHING
     // achado ao vivo, com log: o boot ligou o 5V, esperou os
     // 4s do C6L subir, a sonda a 115200 nao viu nada e a de 9600 viu 2 bytes
     // de ruido (nem NMEA nem START1 do Meshtastic) - "desconhecido", nao
@@ -1994,12 +1994,12 @@ static void vTaskInterface(void *pvParameters)
     // que hoje disputam o Grove) esta usando a UART, e uma sondagem por cima
     // dela quebraria a leitura.
     if (s_sondas_extra < 2 && ajustes_grove()
-     && (tab5_grove_tipo() == GROVE_NADA || tab5_grove_tipo() == GROVE_DESCONHECIDO)
-     && tab5_grove_dono() == GROVE_DONO_NINGUEM
+     && (tab5_grove_type() == GROVE_NOTHING || tab5_grove_type() == GROVE_UNKNOWN)
+     && tab5_grove_owner() == GROVE_OWNER_NONE
      && t > s_grove_desde + (uint32_t)(20000 + s_sondas_extra * 30000)) {
       ++s_sondas_extra;
       ESP_LOGI(TAG, "Grove inconclusivo na primeira sonda (%s) - tentando de novo (%d/2)",
-               tab5_grove_tipo() == GROVE_NADA ? "nada" : "desconhecido",
+               tab5_grove_type() == GROVE_NOTHING ? "nada" : "desconhecido",
                s_sondas_extra);
       iniciar_sondagem_em_fundo(false);   // tentativa automatica - NAO reabre a contagem
     }
@@ -2011,10 +2011,10 @@ static void vTaskInterface(void *pvParameters)
     if ((t - s_ultima_medida) >= 1000) {
       s_ultima_medida = t;
       ETAPA("medidas (I2C: energia, sensores, IMU, hora)");
-      tab5_power_medir();
+      tab5_power_measure();
       // Mesmo tique: os dois alimentam a mesma barra, e uma cadencia so evita
       // que ela mude por metades em instantes diferentes.
-      tab5_sensores_medir();
+      tab5_sensors_measure();
       // IMU, 1x/s - so para o CACHE que outros apps (nao o app_imu, que le
       // direto e mais rapido - ver o aviso grande em tab5_imu.hpp sobre por
       // que as cadencias sao diferentes de proposito) podem consultar sem
@@ -2023,7 +2023,7 @@ static void vTaskInterface(void *pvParameters)
       // segue o IMU - kernel/orientation - mede sozinho a cada 200 ms, e so com
       // app aberto). Era uma transacao I2C por segundo, todo segundo, para
       // nada; acordado, ela continua servindo o console.
-      if (!tab5_power_em_repouso()) { tab5_imu_medir(); }
+      if (!tab5_power_is_sleeping()) { tab5_imu_measure(); }
       // Hora: GPS/Mesh como fonte, RTC (I2C interno) como destino - mesma
       // regra de so a interface tocar o barramento. So escreve de fato a
       // cada ~10min (ver RESSINCRONIZAR_MS), a chamada 1x/s e so para
@@ -2040,21 +2040,21 @@ static void vTaskInterface(void *pvParameters)
     // entrega o evento pronto. Aqui so se entrega ao app. Ate 4 teclas por
     // volta: digitando rapido, mais de uma cabe no intervalo, e uma por volta
     // atrasaria o texto atras dos dedos.
-    if (!tab5_power_em_repouso() && (t - s_ultimo_teclado) >= teclado_ms()) {
+    if (!tab5_power_is_sleeping() && (t - s_ultimo_teclado) >= teclado_ms()) {
       s_ultimo_teclado = t;
       ETAPA("teclado (I2C)");
-      const bool teclado_antes = tab5_teclado_presente();
-      tab5_tecla_t ev;
-      for (int k = 0; k < 4 && tab5_teclado_ler(&ev); ++k) {
+      const bool teclado_antes = tab5_keyboard_present();
+      tab5_key_t ev;
+      for (int k = 0; k < 4 && tab5_keyboard_read(&ev); ++k) {
         s_ultimo_toque = t;          // digitar conta como uso: nao apague a tela
         if (s_bloqueado) {
           // TELA BLOQUEADA: o teclado nao fala com o app que esta atras - so
           // o Enter, que desbloqueia (o par do deslize para cima). Antes desta
           // guarda o que se digitava no bloqueio ia parar na conversa.
-          if (ev.codigo == TAB5_TECLA_ENTER) {
+          if (ev.code == TAB5_KEY_ENTER) {
             ESP_LOGI(TAG, "desbloqueada pelo teclado (Enter)");
             desbloquear_tela();
-            tab5_teclado_descartar();   // o resto da rajada nao vai para o app
+            tab5_keyboard_discard();   // o resto da rajada nao vai para o app
             break;
           }
           continue;
@@ -2062,25 +2062,25 @@ static void vTaskInterface(void *pvParameters)
         if (s_painel_avisos) {
           // CENTRAL DE AVISOS ABERTA: o app esta escondido e nao ouve. Esc
           // fecha a central; o resto e engolido (nao vai digitar as cegas).
-          if (ev.codigo == TAB5_TECLA_ESC) { painel_avisos_abrir(false); }
+          if (ev.code == TAB5_KEY_ESC) { painel_avisos_abrir(false); }
           continue;
         }
         if (app_vivo() && s_app->ao_teclar) {
-          s_app->ao_teclar(ev.texto, ev.codigo, ev.mod);
+          s_app->ao_teclar(ev.text, ev.code, ev.mod);
           sistema_pedir_redesenho();
         } else {
           ESP_LOGI(TAG, "tecla: \"%s\" cod=%u%s%s%s (nenhum app escutando)",
-                   ev.texto, (unsigned)ev.codigo,
-                   (ev.mod & TAB5_TECLA_CTRL)  ? " +CTRL"  : "",
-                   (ev.mod & TAB5_TECLA_SHIFT) ? " +SHIFT" : "",
-                   (ev.mod & TAB5_TECLA_ALT)   ? " +ALT"   : "");
+                   ev.text, (unsigned)ev.code,
+                   (ev.mod & TAB5_KEY_CTRL)  ? " +CTRL"  : "",
+                   (ev.mod & TAB5_KEY_SHIFT) ? " +SHIFT" : "",
+                   (ev.mod & TAB5_KEY_ALT)   ? " +ALT"   : "");
         }
       }
       // ENCAIXAR/TIRAR MUDA O LAYOUT mesmo sem tecla: o teclado virtual
       // aberto precisa sair quando aparece o fisico, e a dica da barra de
       // escrita muda nos dois sentidos. Se a tela ja estava deitada nao ha
       // giro para provocar esta passada por acaso.
-      if (teclado_antes != tab5_teclado_presente()) { s_sujo_layout = true; }
+      if (teclado_antes != tab5_keyboard_present()) { s_sujo_layout = true; }
     }
 
     // Em repouso, detecta o toque por NIVEL (ha dedo na tela?) e nao por borda.
@@ -2092,21 +2092,21 @@ static void vTaskInterface(void *pvParameters)
     const bool tocando = (M5.Touch.getCount() > 0);
     if (tocando) { s_dedo_ms = t; }
     const auto toque = M5.Touch.getDetail();
-    if (!tab5_power_em_repouso()) { ETAPA("toque: vigia"); vigiar_toque(t, tocando); lupa_toque(t, tocando); validar_isr_tddi(tocando); }
+    if (!tab5_power_is_sleeping()) { ETAPA("toque: vigia"); vigiar_toque(t, tocando); lupa_toque(t, tocando); validar_isr_tddi(tocando); }
 
     // TECLA EM REPOUSO: a fila do teclado e consultada a cada volta do repouso
     // (o pulso do G50 acorda a volta na hora; sem ele, o prazo de ~1 s). Uma
     // transacao I2C por volta, e so com teclado encaixado.
     bool tecla_acorda = false;
-    if (tab5_power_em_repouso() && tab5_teclado_presente()) {
-      tecla_acorda = tab5_teclado_pendente();
+    if (tab5_power_is_sleeping() && tab5_keyboard_present()) {
+      tecla_acorda = tab5_keyboard_pending();
     }
 
     // O pedido de acordar so vale para o repouso em que chegou: acordado, ele
     // e descartado - sobrando, acordaria o PROXIMO repouso logo ao entrar.
     const bool pedido_acordar = s_pedir_acordar;
     s_pedir_acordar = false;
-    if (tab5_power_em_repouso()) {
+    if (tab5_power_is_sleeping()) {
       const bool sim_acorda = s_sim_x >= 0 || s_sim_abrir || s_sim_fechar || pedido_acordar;
       if (tocando || tecla_acorda || sim_acorda) {
         s_sim_x = -1;   // o pedido que acordou nao vira clique, como o dedo
@@ -2114,15 +2114,15 @@ static void vTaskInterface(void *pvParameters)
         // O que acordou nao conta como uso: o dedo nao vira clique
         // (s_dedo_do_despertar), e a tecla nao vira letra (descartada).
         if (tocando) { s_dedo_do_despertar = true; }
-        if (tecla_acorda) { tab5_teclado_descartar(); }
-        ESP_LOGI(TAG, "acordando (%s): app=%s", tocando ? "toque" : "teclado", s_app ? s_app->nome : "home");
+        if (tecla_acorda) { tab5_keyboard_discard(); }
+        ESP_LOGI(TAG, "acordando (%s): app=%s", tocando ? "toque" : "teclado", s_app ? s_app->name : "home");
         // DESLIGA A ISR AQUI, antes de mais nada - ver o aviso grande junto
         // de s_toque_isr_ok. Acordado, um arraste pulsaria este pino a cada
         // 5-20ms e a queue nunca ficaria vazia se a interrupcao seguisse
         // ligada.
         s_isr_acorda = false;
         ETAPA("repouso: acordando");
-        if (tab5_power_retomar()) {
+        if (tab5_power_resume()) {
           // RELIGA O QUE O APP SOLTOU EM ao_repouso() (ex.: a camera) - so
           // depois do painel ja estar de pe de novo, para nao reabrir um
           // consumidor de DMA antes do canal do painel estar reconstruido.
@@ -2148,9 +2148,9 @@ static void vTaskInterface(void *pvParameters)
 
           // A rampa de brilho bloqueia esta tarefa; a animacao da tela de
           // bloqueio avanca um quadro a cada degrau para nao ficar congelada.
-          if (s_bloqueado) { tab5_power_gancho_rampa(animar_na_rampa); }
-          tab5_power_acender();
-          tab5_power_gancho_rampa(nullptr);
+          if (s_bloqueado) { tab5_power_ramp_hook(animar_na_rampa); }
+          tab5_power_wake_screen();
+          tab5_power_ramp_hook(nullptr);
 
           // Marcado AQUI, depois de tudo pronto. A carencia de tempo virou
           // rede secundaria (a bandeira acima e a principal), e agora ela conta
@@ -2328,13 +2328,13 @@ static void vTaskInterface(void *pvParameters)
       // depois concluir_abertura_do_sd() abriria um app que ja saiu da tela.
       if (s_sim_fechar && !s_app_carregando) {
         s_sim_fechar = false; s_ultimo_toque = t;
-        if (s_app && s_nav_travada) { ESP_LOGW(TAG, "fechar recusado: '%s' travou a navegacao", s_app->nome); }
+        if (s_app && s_nav_travada) { ESP_LOGW(TAG, "fechar recusado: '%s' travou a navegacao", s_app->name); }
         else if (s_app)             { fechar_app(); }
       }
       if (const app_t* ap = (s_app_carregando ? nullptr : s_sim_abrir)) {
         s_sim_abrir = nullptr; s_ultimo_toque = t;
         if (s_app && s_nav_travada) {
-          ESP_LOGW(TAG, "abrir '%s' recusado: '%s' travou a navegacao", ap->nome, s_app->nome);
+          ESP_LOGW(TAG, "abrir '%s' recusado: '%s' travou a navegacao", ap->name, s_app->name);
         } else {
           if (s_app) { fechar_app(); }
           abrir_app(ap);
@@ -2359,7 +2359,7 @@ static void vTaskInterface(void *pvParameters)
       if (!tocando) { s_dedo_do_despertar = false; }
     }
 
-    if (!tab5_power_em_repouso()) {
+    if (!tab5_power_is_sleeping()) {
       // A tentativa frustrada tem carencia de 5s. Sem isso, um repouso que
       // falha no meio desfaz tudo, devolve false, e 20ms depois a condicao de
       // ociosidade continua verdadeira e ele tenta OUTRA VEZ - um loop de
@@ -2378,8 +2378,8 @@ static void vTaskInterface(void *pvParameters)
                  (unsigned)ajustes_tela_s());
         // TESTADO: 20MHz quebrou a UART do Mesh (o servico voltou
         // a mostrar "sem modulo" mesmo com o C6L plugado e respondendo antes).
-        // De volta a 40. A ideia seguinte - piso baixo SO quando tab5_grove_dono()
-        // for GROVE_DONO_NINGUEM, alto quando Mesh/GPS estiver de pe - ainda
+        // De volta a 40. A ideia seguinte - piso baixo SO quando tab5_grove_owner()
+        // for GROVE_OWNER_NONE, alto quando Mesh/GPS estiver de pe - ainda
         // precisa de teste isolado (ver conversa) antes de entrar
         // aqui: falta saber ate onde o I2C interno (touch/INA226, que rodam
         // TODO repouso, com Grove vazio ou nao) tolera descer.
@@ -2387,7 +2387,7 @@ static void vTaskInterface(void *pvParameters)
         // kernel/app.h junto de ao_repouso/ao_retomar (o crash
         // da camera+repouso). Chamado aqui, ainda com o painel de pe, para o
         // app soltar hardware (DMA/etc) que nao pode conviver com o painel
-        // sendo destruido e recriado por tab5_power_repouso() logo abaixo.
+        // sendo destruido e recriado por tab5_power_sleep() logo abaixo.
         ETAPA("repouso: entrando");
         // O fundo da tela de bloqueio (~1,6 MB na PSRAM) nao precisa dormir
         // junto: o despertar sorteia e pinta outro.
@@ -2398,10 +2398,10 @@ static void vTaskInterface(void *pvParameters)
         }
         int piso = (s_app && s_app->piso_repouso_mhz > 0) ? s_app->piso_repouso_mhz : 40;
         if (fundo_piso_repouso() > piso) { piso = fundo_piso_repouso(); }   // o fundo segue rodando
-        if (!tab5_power_repouso(piso)) {
+        if (!tab5_power_sleep(piso)) {
           s_repouso_falhou = t;
           s_sujo_layout = true;      // a tela voltou: redesenha o que havia
-          // tab5_power_repouso() FALHOU - o painel NAO foi desmontado, entao
+          // tab5_power_sleep() FALHOU - o painel NAO foi desmontado, entao
           // o app fica de pe com a tela acesa e o hardware que ele acabou de
           // soltar em ao_repouso() (linhas acima) tem que voltar AGORA, senao
           // fica desligado ate o proximo repouso ter sucesso.
@@ -2483,7 +2483,7 @@ static void vTaskInterface(void *pvParameters)
         } else if (rolagem_pendente(&s_rol)) {
           // ROLAGEM: a posicao mudou, o VALOR de nada mudou. Em vez do
           // caminho de cima (limpar ~1,65MB + trocar de pagina), deslocamos
-          // os pixels JA CORRETOS que estao na tela (tab5_tela_rolar - memcpy
+          // os pixels JA CORRETOS que estao na tela (tab5_screen_scroll - memcpy
           // em faixas, sem apagar nada) e so entao chamamos o app para
           // desenhar por cima - pulando a rajada de apagar e a troca de
           // pagina, mas NAO o "app redesenha tudo".
@@ -2538,7 +2538,7 @@ static void vTaskInterface(void *pvParameters)
           // de quem. A tabela por app (e por fase) sai no 'tela' do console.
           if (desenho_completo && fase_conteudo) {
             const uint32_t limpar = s_fase_limpar_us;
-            anotar_passada(s_bloqueado ? "bloqueio" : (s_app ? s_app->nome : "home"), cpu,
+            anotar_passada(s_bloqueado ? "bloqueio" : (s_app ? s_app->name : "home"), cpu,
                            fase_barra, limpar, fase_conteudo > limpar ? fase_conteudo - limpar : 0);
           }
         }
@@ -2563,7 +2563,7 @@ static void vTaskInterface(void *pvParameters)
     // de andar, a conta "quanto falta" ficaria presa em ZERO para sempre, e o
     // loop giraria sem parar exatamente no estado que deveria dormir.
     uint32_t periodo;
-    if (tab5_power_em_repouso()) {
+    if (tab5_power_is_sleeping()) {
       if (s_toque_isr_ok) {
         const uint32_t decorrido_medida = t - s_ultima_medida;
         uint32_t prazo = (decorrido_medida < 1000) ? (1000 - decorrido_medida) : 0;
@@ -2613,7 +2613,7 @@ static void vTaskInterface(void *pvParameters)
         menor(ocioso_ms(), s_ultimo_toque);              // hora de apagar a tela
         // (o relogio do app entra abaixo, depois do piso de PERIODO_UI)
         if (s_speaker_ocioso_desde) { menor(SPEAKER_OCIOSO_MS, s_speaker_ocioso_desde); }
-        if (tab5_teclado_presente()) { menor(teclado_ms(), s_ultimo_teclado); }   // teclado fisico e consultado
+        if (tab5_keyboard_present()) { menor(teclado_ms(), s_ultimo_teclado); }   // teclado fisico e consultado
         { const uint32_t falta = orientacao_prazo_ms(t); if (falta < prazo) { prazo = falta; } }   // vigia do giro (so com app que segue o IMU)
         if (prazo < PERIODO_UI) { prazo = PERIODO_UI; }
         s_isr_acorda = s_toque_isr_ok;
@@ -2635,7 +2635,7 @@ static void vTaskInterface(void *pvParameters)
     // onde. Aqui a troca e pedida - sem esperar: quem espera e o proximo
     // quadro, ao abrir. Volta sem desenho = nada a fazer.
     bool apresentou = false;
-    if (!tab5_power_em_repouso() && comp_tem_sujeira()) {
+    if (!tab5_power_is_sleeping() && comp_tem_sujeira()) {
       ETAPA("compositor (troca de pagina)");
       apresentou = comp_apresentar();
       if (apresentou) { comp_contar_volta((uint32_t)(esp_timer_get_time() - volta_t0)); }
@@ -2687,17 +2687,17 @@ void sistema_iniciar(void)
   // tela nascer no brilho certo em vez de piscar no padrao e corrigir depois.
   pool_iniciar();         // tarefas fixas dos servicos que ligam/desligam e dos apps - ANTES de todos
   tab5_mem_marco("pool de vagas");
-  tab5_sd_iniciar();      // cria o mutex do cartao ANTES de haver concorrencia
+  tab5_sd_init();      // cria o mutex do cartao ANTES de haver concorrencia
   tab5_mem_marco("cartao (tarefa)");
-  tab5_log_iniciar();     // DEPOIS do SD (usa tab5_sd_montar/abrir) - guarda os logs no cartao
+  tab5_log_iniciar();     // DEPOIS do SD (usa tab5_sd_mount/abrir) - guarda os logs no cartao
   tab5_mem_marco("log (tarefa+buffer)");
   tab5_monitor_iniciar(); // mede CPU/memoria o tempo todo e registra eventos (services/tab5_monitor)
   tab5_mem_marco("monitor (tarefa)");
-  tab5_wifi_iniciar();    // cria a queue e a tarefa; NAO liga o radio
+  tab5_wifi_init();    // cria a queue e a tarefa; NAO liga o radio
   tab5_mem_marco("wifi (tarefa, sem radio)");
   tab5_espnow_iniciar();  // espera o firmware nosso no C6 (peer_data) e liga o ESP-NOW
   tab5_mem_marco("espnow (tarefa)");
-  tab5_ble_iniciar();     // cria a tarefa; NAO liga (ver o loop de interface)
+  tab5_ble_init();     // cria a tarefa; NAO liga (ver o loop de interface)
   tab5_mem_marco("ble (tarefa, sem radio)");
   console_iniciar();      // comandos pelo monitor serial (help)
   tab5_mem_marco("console (tarefa)");
@@ -2719,7 +2719,7 @@ void sistema_iniciar(void)
       // No GT911 o proprio driver ja deixou o pino como entrada. Nos TDDI
       // ninguem configurou: entrada com pull-up (linha de interrupcao em
       // dreno aberto, ativa em baixo - sem dedo ela fica em repouso alto).
-      if (!tab5_painel_toque_gt911()) {
+      if (!tab5_panel_touch_gt911()) {
         gpio_set_direction(GPIO_NUM_23, GPIO_MODE_INPUT);
         gpio_set_pull_mode(GPIO_NUM_23, GPIO_PULLUP_ONLY);
       }
@@ -2728,7 +2728,7 @@ void sistema_iniciar(void)
         // LIGADA DE VEZ: ela anota todo pulso (s_toque_pulso). Quem decide se
         // ela tambem acorda o loop e s_isr_acorda (repouso / tela parada).
         s_toque_isr_instalada = true;
-        s_toque_isr_ok = tab5_painel_toque_gt911();
+        s_toque_isr_ok = tab5_panel_touch_gt911();
       }
     }
   }
@@ -2736,20 +2736,20 @@ void sistema_iniciar(void)
     ESP_LOGW(TAG, "ISR de toque nao subiu - repouso usa o PERIODO_ZZZ fixo de sempre");
   } else if (!s_toque_isr_ok) {
     ESP_LOGI(TAG, "toque da tela %s: interrupcao so depois de provar o pino (validar_isr_tddi)",
-             tab5_painel_nome());
+             tab5_panel_name());
   }
   // ISR DO TECLADO (ver isr_teclado). O G50 nao e de mais ninguem: entrada com
   // pull-up, borda de descida. Se nao subir, o teclado ainda acorda a tela -
   // so que no proximo prazo do repouso (ate ~1 s), pela consulta da fila.
   {
     gpio_config_t c = {};
-    c.pin_bit_mask = 1ULL << TAB5_TECLADO_INT;
+    c.pin_bit_mask = 1ULL << TAB5_KEYBOARD_INT;
     c.mode = GPIO_MODE_INPUT;
     c.pull_up_en = GPIO_PULLUP_ENABLE;
     c.intr_type = GPIO_INTR_NEGEDGE;
     s_tecla_isr_ok = gpio_config(&c) == ESP_OK
-                  && gpio_isr_handler_add((gpio_num_t)TAB5_TECLADO_INT, isr_teclado, nullptr) == ESP_OK;
-    if (!s_tecla_isr_ok) { ESP_LOGW(TAG, "ISR do teclado (G%d) nao subiu - ele acorda a tela pela consulta de 1 s", TAB5_TECLADO_INT); }
+                  && gpio_isr_handler_add((gpio_num_t)TAB5_KEYBOARD_INT, isr_teclado, nullptr) == ESP_OK;
+    if (!s_tecla_isr_ok) { ESP_LOGW(TAG, "ISR do teclado (G%d) nao subiu - ele acorda a tela pela consulta de 1 s", TAB5_KEYBOARD_INT); }
   }
 
   // Handle CAPTURADO, nao NULL - sistema_camera_iniciar()/parar() (ver o
@@ -2782,6 +2782,6 @@ void sistema_diag_interface(sistema_diag_t* d)
   d->toque_presos   = s_vig_presos;
   d->toque_surdos   = s_vig_surdos;
   d->toque_status   = s_vig_status;
-  d->repouso        = tab5_power_em_repouso();
-  d->app            = s_app ? s_app->nome : nullptr;
+  d->repouso        = tab5_power_is_sleeping();
+  d->app            = s_app ? s_app->name : nullptr;
 }

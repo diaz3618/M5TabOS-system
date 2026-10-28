@@ -1,37 +1,38 @@
-// DONO DE CADA TAREFA - quem e responsavel por cada tarefa que
-// esta rodando, no espirito do "usuario / sistema" dos gerenciadores de tarefa.
+// OWNER OF EACH TASK - who is responsible for each running task, in the spirit
+// of the "user / system" split in task managers.
 //
-// O FreeRTOS so sabe o NOME de uma tarefa. Adivinhar o dono pelo nome seria
-// uma tabela que envelhece a cada tarefa nova. Aqui o dono e DECLARADO por
-// quem cria a tarefa, no momento em que cria:
-//   - SERVICO: os servicos do sistema (WiFi, ESP-NOW, Mesh, GPS, log...) -
-//     registram as proprias tarefas;
-//   - APP:     tarefa criada por um app aberto (tarefa_app_criar, chamada da
-//     interface com um app na frente) - o kernel registra sozinho;
-//   - FUNDO:   a parte de fundo de um app (kernel/background) - o kernel registra;
-//   - SISTEMA: todo o resto, e o padrao: kernel, drivers, o proprio IDF.
+// FreeRTOS knows only a task's NAME. Inferring its owner from that name would
+// create a table that goes stale with every new task. Instead, the creator
+// DECLARES the owner when it creates the task:
+//   - SERVICE: system services (Wi-Fi, ESP-NOW, Mesh, GPS, logging...) register
+//     their own tasks;
+//   - APP: a task created by an open app (task_app_create, called from the UI
+//     while that app is in front); the kernel registers it;
+//   - BACKGROUND: an app's background work (kernel/background); the kernel
+//     registers it;
+//   - SYSTEM: everything else, and the default: kernel, drivers, and IDF itself.
 //
-// Mora em hal/ e so depende do FreeRTOS: HAL, servicos e kernel registram sem
-// ninguem passar a depender de camada de cima. O 'dono' e um texto que vive
-// para sempre (literal, ou o nome do app/fundo, que tambem sao literais).
+// This lives in hal/ and depends only on FreeRTOS, so HAL, services, and the
+// kernel can register tasks without depending on a higher layer. owner points
+// to permanent text: a literal, or the app/background name, also a literal.
 #pragma once
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 typedef enum {
-  DONO_SISTEMA = 0,
-  DONO_SERVICO,
-  DONO_APP,
-  DONO_FUNDO,
-} dono_tipo_t;
+  OWNER_SYSTEM = 0,
+  OWNER_SERVICE,
+  OWNER_APP,
+  OWNER_BACKGROUND,
+} owner_type_t;
 
-// Registra (ou troca) o dono. Chame logo depois de criar a tarefa.
-void tab5_dono_registrar(TaskHandle_t h, dono_tipo_t tipo, const char* dono);
+// Registers (or replaces) the owner. Call immediately after creating the task.
+void tab5_owner_register(TaskHandle_t h, owner_type_t type, const char* owner);
 
-// A tarefa vai morrer: tira do registro (o handle pode ser reaproveitado por
-// outra tarefa depois). Chame ANTES do vTaskDelete.
-void tab5_dono_esquecer(TaskHandle_t h);
+// Removes a task that is about to die (its handle may later be reused). Call
+// BEFORE vTaskDelete.
+void tab5_owner_forget(TaskHandle_t h);
 
-// O dono registrado; DONO_SISTEMA (e dono = NULL) se ninguem registrou.
-dono_tipo_t tab5_dono_de(TaskHandle_t h, const char** dono);
+// Returns the registered owner, or OWNER_SYSTEM (and owner = NULL) if none.
+owner_type_t tab5_owner_of(TaskHandle_t h, const char** owner);

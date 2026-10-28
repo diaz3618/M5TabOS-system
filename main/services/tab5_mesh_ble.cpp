@@ -271,31 +271,31 @@ static bool achar_no(ble_addr_t* alvo)
   char salvo[18];
   ajustes_mesh_ble_endereco(salvo);
   uint8_t quer[6];
-  const bool tem_salvo = tab5_ble_endereco_ler(salvo, quer);
+  const bool tem_salvo = tab5_ble_parse_address(salvo, quer);
 
   estado(tem_salvo ? "procurando %s" : "procurando um no Meshtastic", salvo);
   // Se a tela ja esta varrendo, aproveitamos a varredura dela.
   // 8 s: com o Wi-Fi conectado o C6 divide o radio, e a busca ouve menos.
-  if (!tab5_ble_varrendo() && !tab5_ble_varrer(8000)) { return false; }
-  while (tab5_ble_varrendo() && !parada_pedida(&s_parada)) { vTaskDelay(pdMS_TO_TICKS(200)); }
+  if (!tab5_ble_scanning() && !tab5_ble_scan(8000)) { return false; }
+  while (tab5_ble_scanning() && !parada_pedida(&s_parada)) { vTaskDelay(pdMS_TO_TICKS(200)); }
 
   int melhor = -1;
   int8_t rssi = -128;
-  tab5_ble_visto_t v;
+  tab5_ble_seen_t v;
   const uint32_t agora = tab5_agora_ms();
-  for (int i = 0; i < tab5_ble_n_vistos(); ++i) {
-    if (!tab5_ble_visto(i, &v) || agora - v.visto_ms > 15000) { continue; }
+  for (int i = 0; i < tab5_ble_seen_count(); ++i) {
+    if (!tab5_ble_get_seen(i, &v) || agora - v.seen_ms > 15000) { continue; }
     if (tem_salvo ? (memcmp(v.addr, quer, 6) == 0) : (v.meshtastic && v.rssi > rssi)) {
       melhor = i; rssi = v.rssi;
       if (tem_salvo) { break; }
     }
   }
   if (melhor < 0) { return false; }
-  tab5_ble_visto(melhor, &v);
-  alvo->type = v.tipo;
+  tab5_ble_get_seen(melhor, &v);
+  alvo->type = v.type;
   memcpy(alvo->val, v.addr, 6);
-  snprintf(s_nome, sizeof(s_nome), "%s", v.nome[0] ? v.nome : "Meshtastic");
-  tab5_ble_endereco_txt(v.addr, s_end);
+  snprintf(s_nome, sizeof(s_nome), "%s", v.name[0] ? v.name : "Meshtastic");
+  tab5_ble_address_text(v.addr, s_end);
   return true;
 }
 
@@ -323,9 +323,9 @@ static int conectar(const ble_addr_t* alvo)
     struct ble_gap_conn_desc d;
     if (ble_gap_conn_find(s_conn, &d) == 0) {
       char a1[18], a2[18], a3[18];
-      tab5_ble_endereco_txt(d.our_id_addr.val, a1);
-      tab5_ble_endereco_txt(d.our_ota_addr.val, a2);
-      tab5_ble_endereco_txt(d.peer_ota_addr.val, a3);
+      tab5_ble_address_text(d.our_id_addr.val, a1);
+      tab5_ble_address_text(d.our_ota_addr.val, a2);
+      tab5_ble_address_text(d.peer_ota_addr.val, a3);
       ESP_LOGI(TAG, "enderecos: nosso id %s (tipo %u), no ar %s (tipo %u), no %s (tipo %u)",
                a1, d.our_id_addr.type, a2, d.our_ota_addr.type, a3, d.peer_ota_addr.type);
     }
@@ -442,8 +442,8 @@ static void vTaskMeshBle(void*)
       continue;
     }
 
-    if (!tab5_ble_pronto()) {
-      estado(tab5_ble_estado() == TAB5_BLE_FALHOU ? "Bluetooth falhou" : "esperando o Bluetooth");
+    if (!tab5_ble_ready()) {
+      estado(tab5_ble_state() == TAB5_BLE_FAILED ? "Bluetooth falhou" : "esperando o Bluetooth");
       espera = 1000;
       continue;
     }
@@ -516,7 +516,7 @@ bool mesh_ble_iniciar(void)
   s_nome[0] = s_end[0] = 0;
   if (!parada_preparar(&s_parada)) { return false; }
   pool_id_t id;
-  if (!pool_criar(&id, vTaskMeshBle, nullptr, "mesh_ble", 4096, 3, DONO_SERVICO, "Mesh BLE")) {
+  if (!pool_criar(&id, vTaskMeshBle, nullptr, "mesh_ble", 4096, 3, OWNER_SERVICE, "Mesh BLE")) {
     parada_desistir(&s_parada);
     return false;
   }

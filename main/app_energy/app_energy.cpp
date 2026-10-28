@@ -111,7 +111,7 @@ typedef struct { float tela, repouso, carga; int min_tela; bool tem; } hora_t;
 typedef struct {
   pontos_t     p24, p30;
   vertices_t   vt;
-  tab5_ponto_t ram[TAB5_HIST_N];
+  tab5_point_t ram[TAB5_HIST_N];
   hora_t       horas[24];
   float        tot_gasto, tot_carga, tot_wh;
   int          tot_min_tela;
@@ -139,7 +139,7 @@ static uint32_t janela_t0(void)
 
 static void ler_arquivo(dia_t* d, const char* nome)
 {
-  FILE* f = tab5_sd_abrir(TAB5_SD_ENERGIA, nome, "r");
+  FILE* f = tab5_sd_open(TAB5_SD_POWER, nome, "r");
   if (!f) { return; }
   char linha[160];
   while (fgets(linha, sizeof(linha), f)) {
@@ -160,10 +160,10 @@ static void trabalho_24h(void*)
   dia_t* d = s_carga;
   memset(d, 0, sizeof(*d));
   d->t0 = s_carga_t0;
-  if (d->t0 && tab5_sd_montar()) {
+  if (d->t0 && tab5_sd_mount()) {
     ler_arquivo(d, s_carga_nome[0]);
     if (strcmp(s_carga_nome[0], s_carga_nome[1]) != 0) { ler_arquivo(d, s_carga_nome[1]); }
-    tab5_sd_desmontar();
+    tab5_sd_unmount();
   }
   s_carga_pronta = true;
 }
@@ -329,7 +329,7 @@ static void numero_eixo(char* out, size_t tam, float v, float passo)
 // ---------------------------------------------------------------------------
 static void montar_30(pontos_t* p)
 {
-  const int n = tab5_power_historico(s_m->ram);
+  const int n = tab5_power_history(s_m->ram);
   for (int i = 0; i < n; ++i) {
     // Alinhado a direita: "agora" sempre na borda, enchendo nos primeiros 30 min.
     p->x[i] = (float)(TAB5_HIST_N - n + i) / (TAB5_HIST_N - 1);
@@ -362,7 +362,7 @@ static void montar_24h(pontos_t* p)
   // tela acesa (o app esta aberto, afinal).
   const uint32_t agora = tab5_hora_epoch();
   if (!agora) { return; }
-  const int n = tab5_power_historico(s_m->ram);
+  const int n = tab5_power_history(s_m->ram);
   for (int i = 0; i < n; ++i) {
     const uint32_t ep = (uint32_t)agora - (uint32_t)((n - 1 - i) * TAB5_HIST_SEG);
     if (ep < s_dia->t0) { continue; }
@@ -453,14 +453,14 @@ static void icone_bateria(lgfx::LovyanGFX& d, int x, int y, int l, int a, int pc
 
 static void desenhar_topo(lgfx::LovyanGFX& d, const area_t& a)
 {
-  const tab5_medida_t m = tab5_power_ultima();
-  tab5_tela_limpar(a.x, a.y, a.largura, TOPO_A, TFT_BLACK);
+  const tab5_measurement_t m = tab5_power_latest();
+  tab5_screen_clear(a.x, a.y, a.largura, TOPO_A, TFT_BLACK);
   char buf[64], dur[24];
 
   // HEROI. O estado vem da corrente do instante (a mesma regra de tres
   // estados da barra de status); a ESTIMATIVA vem da media dos ultimos
   // 30 min - a corrente de um segundo pula demais para virar previsao.
-  const int n = tab5_power_historico(s_m->ram);
+  const int n = tab5_power_history(s_m->ram);
   float media = m.mA;
   if (n >= 4) { media = 0; for (int i = 0; i < n; ++i) { media += s_m->ram[i].mA; } media /= n; }
   const bool carregando = m.mA > 20.0f, na_bateria = m.mA < -20.0f;
@@ -479,13 +479,13 @@ static void desenhar_topo(lgfx::LovyanGFX& d, const area_t& a)
   if (carregando) {
     estado = "Carregando"; cor_estado = COR_CARGA;
     if (media > 20.0f && m.pct >= 0 && m.pct < 100) {
-      duracao(dur, sizeof(dur), (100 - m.pct) / 100.0f * TAB5_CAPACIDADE_MAH / media);
+      duracao(dur, sizeof(dur), (100 - m.pct) / 100.0f * TAB5_CAPACITY_MAH / media);
       snprintf(buf, sizeof(buf), "cheia em ~%s", dur);
     }
   } else if (na_bateria) {
     estado = "Na bateria"; cor_estado = TFT_WHITE;
     if (media < -20.0f && m.pct >= 0) {
-      const float h = m.pct / 100.0f * TAB5_CAPACIDADE_MAH / -media;
+      const float h = m.pct / 100.0f * TAB5_CAPACITY_MAH / -media;
       if (h < 100.0f) { duracao(dur, sizeof(dur), h); snprintf(buf, sizeof(buf), "dura ~%s neste ritmo", dur); }
     }
   } else {
@@ -500,7 +500,7 @@ static void desenhar_topo(lgfx::LovyanGFX& d, const area_t& a)
 
   // INDICE: seis cartoes. Os cinco primeiros sao as series - tocar escolhe o
   // grafico 1; o sexto e o gasto das 24 h (o total do grafico 2).
-  float temp = -273.0f; const bool tem_temp = tab5_sensores_temp(&temp);
+  float temp = -273.0f; const bool tem_temp = tab5_sensors_temp(&temp);
   const int cl = cart_l(a.largura);
   for (int i = 0; i < 6; ++i) {
     const int cx = a.x + M + (i % 3) * (cl + CART_V), cy = a.y + CART_Y + (i / 3) * (CART_A + CART_V);
@@ -583,7 +583,7 @@ static void desenhar_eixo_y(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, 
 static void desenhar_grafico1(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int gx = a.x + plot_x(), gl = plot_l(a.largura), gy = a.y + G1_PLOT_Y, ga = G1_A;
-  tab5_tela_limpar(a.x, a.y + G1_Y, a.largura, G1_FIM - G1_Y, TFT_BLACK);
+  tab5_screen_clear(a.x, a.y + G1_Y, a.largura, G1_FIM - G1_Y, TFT_BLACK);
   char buf[48];
 
   // Cabecalho: o que e o grafico (com unidade) e o periodo.
@@ -711,7 +711,7 @@ static void quadradinho(lgfx::LovyanGFX& d, int* xr, int ym, uint16_t cor, const
 static void desenhar_grafico2(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int gx = a.x + plot_x(), gl = plot_l(a.largura), gy = a.y + G2_PLOT_Y, ga = G2_A;
-  tab5_tela_limpar(a.x, a.y + G2_Y, a.largura, a.altura - G2_Y, TFT_BLACK);
+  tab5_screen_clear(a.x, a.y + G2_Y, a.largura, a.altura - G2_Y, TFT_BLACK);
   char buf[96], dur[24];
 
   fn(d, 28); d.setTextDatum(middle_left); d.setTextColor(COR_GASTO_TELA, TFT_BLACK);
@@ -791,12 +791,12 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   uint32_t grav; registro_estado(nullptr, &grav, nullptr);
   if (grav != s_gravadas_lidas || (s_dia && janela_t0() != s_dia->t0)) { s_gravadas_lidas = grav; pedir_24h(); }
 
-  if (tudo) { tab5_tela_limpar(a.x, a.y, a.largura, a.altura, TFT_BLACK); }
+  if (tudo) { tab5_screen_clear(a.x, a.y, a.largura, a.altura, TFT_BLACK); }
 
   // Os graficos so mudam quando chega dado (anel a cada TAB5_HIST_SEG, cartao
   // a cada carga) ou quando um toque mudou a selecao.
   static int s_assin = -1;
-  const int n = tab5_power_historico(s_m->ram);
+  const int n = tab5_power_history(s_m->ram);
   const int assin = (int)s_dia_ver * 7919 + n * 1000003 + (n ? (int)(s_m->ram[n - 1].mA * 10) : 0);
   if (tudo || s_graf_sujo || assin != s_assin) {
     s_assin = assin;
@@ -885,9 +885,9 @@ static void icone_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_ENERGY = {
-  .nome  = "Energia",
+  .name  = "Energia",
   .cor   = TFT_ORANGE,
-  // Perfil: so o brilho. Todo o resto vem dos defaults do tab5_perfil_t,
+  // Perfil: so o brilho. Todo o resto vem dos defaults do tab5_profile_t,
   // que sao 'desligado' - por isso nao precisa listar o que nao se usa.
   .perfil = { },
   .piso_repouso_mhz = 0,  // sem trabalho de fundo: pode descer ao minimo

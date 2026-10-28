@@ -13,22 +13,22 @@
 
 static const char *TAG = "grove";
 
-// Mesmos pinos do Azimutal - o Grove e um so.
+// Mesmos pins do Azimutal - o Grove e um so.
 #define GROVE_UART   UART_NUM_1
 #define GROVE_RX     54
 #define GROVE_TX     53
 
-// Tempo para o modulo subir depois de receber energia. O C6L tem um ESP32-C6
-// que boota o Meshtastic inteiro; 1,2s e folgado para ele chegar ao ponto de
+// Tempo para o modulo start depois de receber energia. O C6L tem um ESP32-C6
+// que boota o Meshtastic inteiro; 1,2s e folgado para ele chegar ao point de
 // responder. Curto demais aqui faz o C6L parecer ausente.
-// Tempo para o modulo subir DEPOIS de receber energia.
+// Tempo para o modulo start DEPOIS de receber energia.
 //
 // 1,2s bastava para um GPS, que comeca a falar quase na hora. NAO basta para o
 // Unit C6L: ele roda o Meshtastic inteiro num ESP32-C6 e leva segundos. Com a
 // espera curta ele era reiniciado a cada sondagem e nunca chegava a responder -
 // a sonda dizia "nada" com o modulo plugado e funcionando.
 //
-// Se o trilho JA estiver ligado (ajuste "Grove sempre ligado"), nao ha boot
+// Se o trilho JA estiver on (ajuste "Grove sempre on"), nao ha boot
 // nenhum a esperar e a sonda e imediata.
 #define ESPERA_BOOT_MS   4000
 
@@ -36,58 +36,58 @@ static const char *TAG = "grove";
 // caso, entao 1,5s garante pelo menos uma.
 #define ESCUTA_MS        1500
 
-static grove_tipo_t s_tipo = GROVE_NADA;
-static grove_dono_t s_dono = GROVE_DONO_NINGUEM;
+static grove_type_t s_tipo = GROVE_NOTHING;
+static grove_owner_t s_dono = GROVE_OWNER_NONE;
 
-const char* grove_dono_nome(grove_dono_t d)
+const char* grove_owner_name(grove_owner_t d)
 {
   switch (d) {
-    case GROVE_DONO_MESH: return "servico Meshtastic";
-    case GROVE_DONO_GPS:  return "GPS";
+    case GROVE_OWNER_MESH: return "service Meshtastic";
+    case GROVE_OWNER_GPS:  return "GPS";
     default:              return "ninguem";
   }
 }
 
-grove_dono_t tab5_grove_dono(void) { return s_dono; }
+grove_owner_t tab5_grove_owner(void) { return s_dono; }
 
-bool tab5_grove_tomar(grove_dono_t quem)
+bool tab5_grove_acquire(grove_owner_t who)
 {
-  if (s_dono != GROVE_DONO_NINGUEM && s_dono != quem) {
+  if (s_dono != GROVE_OWNER_NONE && s_dono != who) {
     ESP_LOGW(TAG, "Grove ja e do %s - %s nao pode assumir",
-             grove_dono_nome(s_dono), grove_dono_nome(quem));
+             grove_owner_name(s_dono), grove_owner_name(who));
     return false;
   }
-  s_dono = quem;
-  ESP_LOGI(TAG, "Grove agora e do %s", grove_dono_nome(quem));
+  s_dono = who;
+  ESP_LOGI(TAG, "Grove agora e do %s", grove_owner_name(who));
   return true;
 }
 
-void tab5_grove_soltar(grove_dono_t quem)
+void tab5_grove_release(grove_owner_t who)
 {
-  // So o dono solta. Sem esta guarda, um app que fechasse depois de ter
-  // FALHADO em tomar liberaria o Grove de quem estava usando de verdade.
-  if (s_dono != quem) { return; }
-  s_dono = GROVE_DONO_NINGUEM;
-  ESP_LOGI(TAG, "Grove liberado por %s", grove_dono_nome(quem));
+  // So o owner solta. Sem esta guarda, um app que fechasse depois de ter
+  // FALHADO em acquire liberaria o Grove de who estava usando de verdade.
+  if (s_dono != who) { return; }
+  s_dono = GROVE_OWNER_NONE;
+  ESP_LOGI(TAG, "Grove liberado por %s", grove_owner_name(who));
 }
 
-const char* grove_nome(grove_tipo_t t)
+const char* grove_name(grove_type_t t)
 {
   switch (t) {
     case GROVE_GPS:          return "GPS (NMEA)";
     case GROVE_MESHTASTIC:   return "Meshtastic (C6L)";
-    case GROVE_DESCONHECIDO: return "desconhecido";
+    case GROVE_UNKNOWN: return "desconhecido";
     default:                 return "nada";
   }
 }
 
-grove_tipo_t tab5_grove_tipo(void) { return s_tipo; }
+grove_type_t tab5_grove_type(void) { return s_tipo; }
 
 static bool abrir(int baud)
 {
   // Cala o driver da UART durante a sonda.
   //
-  // O M5.Ex_I2C e inicializado no boot nos pinos do Grove (54/53) e RESERVA os
+  // O M5.Ex_I2C e inicializado no boot nos pins do Grove (54/53) e RESERVA os
   // GPIOs. Quando o tab5_keyboard reaponta esse barramento para o ExtPort1, o
   // release() do M5GFX solta o barramento mas nao devolve a reserva - ela fica
   // pendurada. O uart_set_pin entao avisa "GPIO 53 is not usable" e configura o
@@ -103,7 +103,7 @@ static bool abrir(int baud)
   cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   cfg.source_clk = UART_SCLK_DEFAULT;
 
-  tab5_marco("grove: UART a", baud);   // instala o driver - e a trava de PM dele
+  tab5_mark("grove: UART a", baud);   // instala o driver - e a trava de PM dele
   if (uart_driver_install(GROVE_UART, 2048, 512, 0, NULL, 0) != ESP_OK) {
     esp_log_level_set("uart", ESP_LOG_WARN); return false;
   }
@@ -128,13 +128,13 @@ static void fechar(void)
 }
 
 // Le o que chegar na janela e devolve quantos bytes pegou.
-static int escutar(uint8_t* buf, int tam, int ms)
+static int escutar(uint8_t* buf, int size, int ms)
 {
   int n = 0;
-  const TickType_t fim = xTaskGetTickCount() + pdMS_TO_TICKS(ms);
-  while (n < tam && xTaskGetTickCount() < fim)
+  const TickType_t end = xTaskGetTickCount() + pdMS_TO_TICKS(ms);
+  while (n < size && xTaskGetTickCount() < end)
   {
-    const int r = uart_read_bytes(GROVE_UART, buf + n, tam - n, pdMS_TO_TICKS(100));
+    const int r = uart_read_bytes(GROVE_UART, buf + n, size - n, pdMS_TO_TICKS(100));
     if (r > 0) { n += r; }
   }
   return n;
@@ -143,25 +143,25 @@ static int escutar(uint8_t* buf, int tam, int ms)
 // ---------------------------------------------------------------------------
 // Sonda do Meshtastic (115200, ativa)
 // ---------------------------------------------------------------------------
-// Pede ao Meshtastic que se apresente. Chamada com a UART JA aberta.
+// Pede ao Meshtastic que se apresente. Chamada com a UART JA open.
 //
-// Isto e obrigatorio: em modo PROTO o radio NAO fala sozinho, so responde. Uma
+// Isto e obrigatorio: em mode PROTO o radio NAO fala sozinho, so responde. Uma
 // escuta passiva devolve zero bytes mesmo com tudo funcionando - foi o que me
-// enganou ao usar o despejo cru para testar o C6L.
+// enganou ao usar o despejo raw para testar o C6L.
 //
 // Mandar estes bytes para um GPS e inofensivo: ele ignora o que nao entende.
 static void pedir_apresentacao(void)
 {
   // O StreamAPI do Meshtastic pede que o cliente acorde a porta com 32 bytes
-  // de START1 antes do primeiro pedido - o radio pode estar em modo de baixo
+  // de START1 antes do primeiro pedido - o radio pode estar em mode de baixo
   // consumo na serial e perder os primeiros bytes.
   uint8_t acorda[32];
   memset(acorda, 0x94, sizeof(acorda));
   uart_write_bytes(GROVE_UART, acorda, sizeof(acorda));
   vTaskDelay(pdMS_TO_TICKS(120));
 
-  // ToRadio{ want_config_id = 0x2A }  -- protobuf cru, montado a mao:
-  //   campo 3 (want_config_id), varint  -> tag 0x18, valor 0x2A
+  // ToRadio{ want_config_id = 0x2A }  -- protobuf raw, mounted a mao:
+  //   campo 3 (want_config_id), varint  -> tag 0x18, value 0x2A
   // Enquadrado: 0x94 0xC3 <tam_hi> <tam_lo> <payload>
   const uint8_t quadro[] = { 0x94, 0xC3, 0x00, 0x02, 0x18, 0x2A };
   uart_write_bytes(GROVE_UART, quadro, sizeof(quadro));
@@ -198,7 +198,7 @@ static bool sondar_gps(int* bytes_vistos)
   ESP_LOGI(TAG, "sondagem a 9600 baud (GPS?): %d byte(s) recebidos", n);
 
   // Assinatura NMEA: '$' seguido de duas letras maiusculas (GP, GL, GN, GA...).
-  // Exigir as letras evita casar com um '$' que caiu no meio de lixo binario.
+  // Exigir as letras evita casar com um '$' que caiu no storage de lixo binario.
   for (int i = 0; i + 2 < n; ++i)
   {
     if (buf[i] == '$' && buf[i+1] >= 'A' && buf[i+1] <= 'Z'
@@ -209,14 +209,14 @@ static bool sondar_gps(int* bytes_vistos)
 
 // ---------------------------------------------------------------------------
 
-void tab5_grove_despejar(int baud, int ms)
+void tab5_grove_dump(int baud, int ms)
 {
   // PERGUNTA ANTES DE LIGAR - senao a resposta seria sempre "sim" (o proprio
   // tab5_power_grove(true) logo abaixo). Estado de hardware de verdade, nao
-  // preferencia (ver o comentario em tab5_power_grove_ligado()).
-  const bool ja_ligado = tab5_power_grove_ligado();
+  // preferencia (ver o comentario em tab5_power_grove_on()).
+  const bool ja_ligado = tab5_power_grove_on();
   tab5_power_grove(true);
-  // Se o trilho acabou de subir, o modulo esta bootando: esperar. Ver o
+  // Se o trilho acabou de start, o modulo esta bootando: esperar. Ver o
   // comentario de ESPERA_BOOT_MS - foi isso que fez o C6L parecer mudo.
   vTaskDelay(pdMS_TO_TICKS(ja_ligado ? 300 : ESPERA_BOOT_MS));
 
@@ -245,7 +245,7 @@ void tab5_grove_despejar(int baud, int ms)
     }
     printf("|\n");
   }
-  printf("--- fim ---\n");
+  printf("--- end ---\n");
 }
 
 // TEM ALGUEM NO CABO? Uma leitura de GPIO, e so.
@@ -256,20 +256,20 @@ void tab5_grove_despejar(int baud, int ms)
 // nunca mais revista.
 //
 // Mas identificar QUEM esta la e caro; perceber que ALGUEM chegou e barato. A
-// linha de dados denuncia sozinha: em UART, repouso e nivel ALTO, e todo modulo
+// linha de data denuncia sozinha: em UART, sleep e nivel ALTO, e todo modulo
 // mantem o TX dele nesse nivel mesmo sem falar nada. Sem modulo, o pino fica
 // solto.
 //
-// Entao: pull-down interno ligado e uma leitura.
-//   modulo presente -> o TX dele (push-pull) vence o pull-down  -> ALTO
+// Entao: pull-down interno on e uma leitura.
+//   modulo present -> o TX dele (push-pull) vence o pull-down  -> ALTO
 //   nada no cabo    -> so o pull-down sustenta o pino           -> BAIXO
 //
 // Custo: um gpio_config e um gpio_get_level. A 0,5Hz e ruido estatistico ao
 // lado de qualquer coisa que a tela faca.
 //
 // SO COM A PORTA LIVRE. Com a UART instalada o pino e do driver dela, e
-// reconfigurar por baixo quebraria a leitura de quem esta usando.
-bool tab5_grove_presenca(void)
+// reconfigurar por baixo quebraria a leitura de who esta usando.
+bool tab5_grove_present(void)
 {
   gpio_config_t c = { };
   c.pin_bit_mask = (1ULL << GROVE_RX);
@@ -281,7 +281,7 @@ bool tab5_grove_presenca(void)
 
   // O pull-down e fraco (dezenas de kohm) e precisa descarregar a capacitancia
   // do pino e do cabo. Sem esta pausa a primeira leitura pega o nivel VELHO -
-  // e um modulo recem-tirado ainda pareceria presente.
+  // e um modulo recem-tirado ainda pareceria present.
   esp_rom_delay_us(500);
 
   return gpio_get_level((gpio_num_t)GROVE_RX) != 0;
@@ -289,22 +289,22 @@ bool tab5_grove_presenca(void)
 
 // Esquece o que foi detectado. Para quando o cabo fica vazio: nao ha o que
 // identificar, entao nao se paga sondagem nenhuma para concluir "nada".
-void tab5_grove_esquecer(void) { s_tipo = GROVE_NADA; }
+void tab5_grove_forget(void) { s_tipo = GROVE_NOTHING; }
 
-grove_tipo_t tab5_grove_detectar(void)
+grove_type_t tab5_grove_detect(void)
 {
   ESP_LOGI(TAG, "sondando o Grove...");
 
   // Energia primeiro: sem os 5V nenhum modulo se apresenta, e a sonda diria
-  // "nada" com o aparelho plugado - o pior tipo de resposta errada.
+  // "nada" com o aparelho plugado - o pior type de resposta errada.
   //
-  // ESTADO DE HARDWARE, nao a preferencia "manter sempre ligado" - as duas
+  // ESTADO DE HARDWARE, nao a preferencia "manter sempre on" - as duas
   // costumavam coincidir, mas nao sao a mesma pergunta (o trilho pode estar
-  // ligado agora por outro motivo mesmo com a preferencia desligada). Corrigido
+  // on agora por outro motivo mesmo com a preferencia desligada). Corrigido
   // junto com a auditoria de camadas - HAL pergunta a HAL, nunca
-  // a um servico (ver WRITING_APPS.md secao 8).
-  if (tab5_power_grove_ligado()) {
-    ESP_LOGI(TAG, "trilho ja estava ligado - sondando sem esperar boot");
+  // a um service (ver WRITING_APPS.md secao 8).
+  if (tab5_power_grove_on()) {
+    ESP_LOGI(TAG, "trilho ja estava on - sondando sem esperar boot");
   } else {
     tab5_power_grove(true);
     ESP_LOGI(TAG, "liguei o trilho agora - esperando %dms o modulo bootar", ESPERA_BOOT_MS);
@@ -317,12 +317,12 @@ grove_tipo_t tab5_grove_detectar(void)
   if (sondar_meshtastic()) { s_tipo = GROVE_MESHTASTIC; }
   else
   {
-    int vistos = 0;
-    if (sondar_gps(&vistos))  { s_tipo = GROVE_GPS; }
-    else if (vistos > 0)      { s_tipo = GROVE_DESCONHECIDO; }
-    else                      { s_tipo = GROVE_NADA; }
+    int seen_devices = 0;
+    if (sondar_gps(&seen_devices))  { s_tipo = GROVE_GPS; }
+    else if (seen_devices > 0)      { s_tipo = GROVE_UNKNOWN; }
+    else                      { s_tipo = GROVE_NOTHING; }
   }
 
-  ESP_LOGI(TAG, "Grove: %s", grove_nome(s_tipo));
+  ESP_LOGI(TAG, "Grove: %s", grove_name(s_tipo));
   return s_tipo;
 }

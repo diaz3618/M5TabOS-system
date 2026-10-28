@@ -36,20 +36,20 @@ static void na_carona(void)
   memcpy(copia, s_r, sizeof(copia));
   taskEXIT_CRITICAL(&s_mux);
   // O arquivo inteiro na memoria e UMA troca pela porta do sistema
-  // (tab5_sd_substituir): nunca meio arquivo, e com o cartao emprestado ao
+  // (tab5_sd_replace): nunca meio arquivo, e com o cartao emprestado ao
   // computador vai para o diario. SIGILOSO: as senhas do arquivo antigo sao
   // zeradas antes de ele sair.
-  const size_t cap = 64 + (size_t)MESH_WIFI_REDES_MAX * (sizeof(copia[0].ssid) + TAB5_WIFI_CIFRA_HEX + 2);
+  const size_t cap = 64 + (size_t)MESH_WIFI_REDES_MAX * (sizeof(copia[0].ssid) + TAB5_WIFI_CIPHER_HEX + 2);
   char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
   if (!txt) { s_gravar_pend = true; memset(copia, 0, sizeof(copia)); return; }
   size_t k = (size_t)snprintf(txt, cap, "# redes do Wi-Fi do no Meshtastic (senhas cifradas)\n");
   for (int i = 0; i < n && k < cap; ++i) {
-    char hex[TAB5_WIFI_CIFRA_HEX];
-    if (copia[i].aberta) { snprintf(hex, sizeof(hex), "-"); }
-    else if (!tab5_wifi_cifrar_texto(copia[i].senha, hex, sizeof(hex))) { continue; }
+    char hex[TAB5_WIFI_CIPHER_HEX];
+    if (copia[i].open) { snprintf(hex, sizeof(hex), "-"); }
+    else if (!tab5_wifi_encrypt_text(copia[i].senha, hex, sizeof(hex))) { continue; }
     k += (size_t)snprintf(txt + k, cap - k, "%s\n%s\n", copia[i].ssid, hex);
   }
-  if (!tab5_sd_substituir(PASTA, ARQ, txt, k < cap ? k : cap - 1, TAB5_SD_SIGILOSO)) {
+  if (!tab5_sd_replace(PASTA, ARQ, txt, k < cap ? k : cap - 1, TAB5_SD_SIGILOSO)) {
     s_gravar_pend = true;   // sem cartao: tenta de novo na proxima volta
   }
   heap_caps_free(txt);
@@ -60,13 +60,13 @@ void mesh_wifi_no_carregar(void)
 {
   if (s_carregado) { return; }
   static bool carona = false;
-  if (!carona) { carona = tab5_sd_carona(na_carona); }
+  if (!carona) { carona = tab5_sd_piggyback(na_carona); }
   // Sem cartao NAO marca como carregado: a lista vazia da RAM nao pode virar
   // o arquivo. Tenta de novo na carona, ate o cartao aparecer.
-  if (!tab5_sd_montar()) { return; }
-  FILE* f = tab5_sd_abrir(PASTA, ARQ, "r");
+  if (!tab5_sd_mount()) { return; }
+  FILE* f = tab5_sd_open(PASTA, ARQ, "r");
   if (f) {
-    char ssid[48], hex[TAB5_WIFI_CIFRA_HEX + 8];
+    char ssid[48], hex[TAB5_WIFI_CIPHER_HEX + 8];
     int n = 0;
     taskENTER_CRITICAL(&s_mux);
     s_n = 0;
@@ -79,8 +79,8 @@ void mesh_wifi_no_carregar(void)
       mesh_wifi_rede_t r;
       memset(&r, 0, sizeof(r));
       snprintf(r.ssid, sizeof(r.ssid), "%s", ssid);
-      if (strcmp(hex, "-") == 0) { r.aberta = true; }
-      else if (!tab5_wifi_decifrar_texto(hex, r.senha, sizeof(r.senha))) { continue; }   // outro aparelho: nao decifra
+      if (strcmp(hex, "-") == 0) { r.open = true; }
+      else if (!tab5_wifi_decrypt_text(hex, r.senha, sizeof(r.senha))) { continue; }   // outro aparelho: nao decifra
       taskENTER_CRITICAL(&s_mux);
       s_r[s_n++] = r;
       taskEXIT_CRITICAL(&s_mux);
@@ -88,7 +88,7 @@ void mesh_wifi_no_carregar(void)
     }
     fclose(f);
   }
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   s_carregado = true;
   ++s_versao;
   ESP_LOGI(TAG, "%d rede(s) guardada(s) para o no", s_n);
@@ -129,7 +129,7 @@ bool mesh_wifi_no_salvar(const char* ssid, const char* senha)
   memset(&r, 0, sizeof(r));
   snprintf(r.ssid, sizeof(r.ssid), "%s", ssid);
   snprintf(r.senha, sizeof(r.senha), "%s", senha ? senha : "");
-  r.aberta = (r.senha[0] == 0);
+  r.open = (r.senha[0] == 0);
   taskENTER_CRITICAL(&s_mux);
   topo_locked(r);
   taskEXIT_CRITICAL(&s_mux);
@@ -157,11 +157,11 @@ bool mesh_wifi_no_esquecer(int i)
 
 int mesh_wifi_no_trazer_do_tab5(void)
 {
-  if (tab5_wifi_n_conhecidas() == 0) { return -1; }
+  if (tab5_wifi_known_count() == 0) { return -1; }
   int novas = 0;
-  for (int i = 0; i < tab5_wifi_n_conhecidas(); ++i) {
+  for (int i = 0; i < tab5_wifi_known_count(); ++i) {
     char ssid[33], senha[65];
-    if (!tab5_wifi_rede_guardada(i, ssid, sizeof(ssid), senha, sizeof(senha))) { break; }
+    if (!tab5_wifi_saved_network(i, ssid, sizeof(ssid), senha, sizeof(senha))) { break; }
     bool ja = false;
     for (int k = 0; k < s_n; ++k) { if (strcmp(s_r[k].ssid, ssid) == 0) { ja = true; break; } }
     if (ja) { continue; }

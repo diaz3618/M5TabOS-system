@@ -60,7 +60,7 @@ typedef enum {
 } mesh_cfg_estado_t;
 
 typedef struct {
-  uint8_t  estado;                 // mesh_cfg_estado_t
+  uint8_t  state;                  // mesh_cfg_estado_t
   bool     conhecido[MESH_CFG_N];  // a secao do campo veio no dump
   int32_t  v[MESH_CFG_N];          // valor (proto3: ausente = 0)
 

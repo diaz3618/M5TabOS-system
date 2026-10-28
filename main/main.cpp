@@ -36,7 +36,7 @@ extern "C" void app_main(void)
     ajustes_iniciar();
     tab5_mem_marco("ajustes (NVS)");
 
-    tab5_perfil_t boot = sistema_perfil_de_boot();
+    tab5_profile_t boot = sistema_perfil_de_boot();
 
     // As preferencias do usuario valem JA NO BOOT, nao a partir do primeiro app
     // aberto. Antes so o brilho era imposto aqui, e o 5V do Grove nascia
@@ -46,9 +46,9 @@ extern "C" void app_main(void)
     auto cfg = M5.config();
     tab5_power_config(cfg, boot);     // fase 1: antes do begin
     M5.begin(cfg);                    // trilhos, painel MIPI-DSI, touch
-    tab5_power_aplicar(boot);         // fase 2: depois do begin
+    tab5_power_apply(boot);         // fase 2: depois do begin
     tab5_mem_marco("M5.begin (painel, toque)");
-    tab5_painel();                    // qual das tres telas (tab5_power.hpp) - antes de mexer no relogio
+    tab5_panel();                     // qual das tres telas (tab5_power.hpp) - antes de mexer no relogio
 
     // VOLUME salvo, aplicado JA - antes que qualquer app toque o primeiro som
     // (M5.Speaker.tone()/playWav() sobe o ES8388 sozinho, na hora, ver o
@@ -85,10 +85,10 @@ extern "C" void app_main(void)
     // Logo DEPOIS do M5.begin(), que e quando o painel MIPI-DSI e inicializado:
     // se e o painel que prende a CPU no maximo, a trava dele aparece aqui e nao
     // antes. E a medicao que substitui a nossa deducao sobre o clock travado.
-    tab5_power_travas("apos M5.begin");
+    tab5_power_locks("apos M5.begin");
 
     // O SPLASH ("M5Tab OS" na tela) NAO desenha aqui - moveu para dentro de
-    // vTaskInterface (kernel/core.cpp), depois de tab5_power_relogio_dpi(). Ver o
+    // vTaskInterface (kernel/core.cpp), depois de tab5_power_dpi_clock(). Ver o
     // aviso la: desenhar antes daquele ponto significa desenhar antes do
     // painel assumir o relogio final, e a troca de relogio remonta o DSI e
     // apaga o que estiver na tela - foi exatamente a piscada observada em

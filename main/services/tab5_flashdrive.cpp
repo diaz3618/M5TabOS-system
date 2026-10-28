@@ -432,7 +432,7 @@ static void vTaskPendrive(void*)
     }
     tusb_deinit(0);              // no mesmo nucleo em que a interrupcao nasceu
   }
-  tab5_dono_esquecer(xTaskGetCurrentTaskHandle());
+  tab5_owner_forget(xTaskGetCurrentTaskHandle());
   xSemaphoreGive(s_parou);
   vTaskDelete(nullptr);
 }
@@ -530,7 +530,7 @@ static bool usb_ligar(sdmmc_card_t* cartao)
     s_cartao = nullptr;
     return false;
   }
-  tab5_dono_registrar(s_tarefa, DONO_SERVICO, "Pendrive");
+  tab5_owner_register(s_tarefa, OWNER_SERVICE, "Pendrive");
   clock_maximo(true);
   tud_connect();
   s_ligado = true;
@@ -549,7 +549,7 @@ static void usb_desligar(void)
   // tocado pelo USB.
   //
   // ESPERA SEM PRAZO. Seguir depois de um prazo seria soltar o PHY debaixo
-  // do TinyUSB ainda rodando e, logo depois (tab5_sd_devolver), liberar o
+  // do TinyUSB ainda rodando e, logo depois (tab5_sd_return), liberar o
   // cartao cru que a tarefa pode estar usando no meio de um
   // sdmmc_read/write_sectors - memoria liberada em uso e o FAT do Tab5
   // montando por cima de uma escrita do computador. Cada comando do cartao
@@ -648,7 +648,7 @@ static void recusou(tab5_pendrive_motivo_t m)
 // recebidos, 11 com os dados e o status entregues. E, quando tudo para por
 // mais de 3 s, ONDE parou (ver tab5_pendrive_espera_t).
 typedef struct {
-  uint32_t config, inquiry, capacidade, leituras, erros, soltou, marca;
+  uint32_t config, inquiry, capacidade, leituras, erros, soltou, brand;
   uint32_t ops_ok[8], ops_recusa[8];
   bool     ejetado;
   bool     suspenso;
@@ -703,8 +703,8 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
                        + u->n_leituras_ok + u->n_cmd_leitura + u->erros + (uint32_t)(u->gravados >> 9);
   const int64_t intervalo = u->n_leituras_ok ? 10000000 : 3000000;
   const int64_t agora = esp_timer_get_time();
-  if (marca != d->marca && agora - d->resumo_us > intervalo) {
-    d->marca = marca;
+  if (marca != d->brand && agora - d->resumo_us > intervalo) {
+    d->brand = marca;
     d->resumo_us = agora;
     // Curta de proposito: o log corta a linha em 200 caracteres.
     ESP_LOGI(TAG, "USB: cfg %lu inq %lu pronto %lu sense %lu tam %lu resp %lu (0x%02X) solt %lu"
@@ -771,10 +771,10 @@ static void vTaskSessao(void*)
   // 1. O cartao. Quem EXIGE o cartao (Arquivos, Camera) nao pode estar aberto:
   //    o sistema nao tira o cartao de baixo dele (app_t.exige_sd).
   if (sistema_app_exige_sd()) { recusou(PENDRIVE_RECUSA_APP); vTaskDelete(nullptr); return; }
-  switch (tab5_sd_emprestar(3000)) {
-    case SD_EMPRESTADO:             break;
-    case SD_EMPRESTIMO_EM_USO:      recusou(PENDRIVE_RECUSA_EM_USO);     vTaskDelete(nullptr); return;
-    case SD_EMPRESTIMO_SEM_DIARIO:  recusou(PENDRIVE_RECUSA_SEM_DIARIO); vTaskDelete(nullptr); return;
+  switch (tab5_sd_lend(3000)) {
+    case SD_LENT:             break;
+    case SD_LENDING_IN_USE:      recusou(PENDRIVE_RECUSA_EM_USO);     vTaskDelete(nullptr); return;
+    case SD_LENDING_NO_JOURNAL:  recusou(PENDRIVE_RECUSA_SEM_DIARIO); vTaskDelete(nullptr); return;
     default:                        recusou(PENDRIVE_RECUSA_SEM_CARTAO); vTaskDelete(nullptr); return;
   }
   // 2. O USB. Antes, o alto-falante sai dos pinos que o ESP-IDF confunde com
@@ -783,9 +783,9 @@ static void vTaskSessao(void*)
   if (!sistema_som_ceder_pinos(3000)) {
     ESP_LOGW(TAG, "a interface nao calou o alto-falante em 3 s - seguindo (a sentinela do pad cobre)");
   }
-  if (!usb_ligar(tab5_sd_cru())) {
+  if (!usb_ligar(tab5_sd_raw())) {
     sistema_som_devolver_pinos();
-    tab5_sd_devolver();
+    tab5_sd_return();
     recusou(PENDRIVE_RECUSA_USB);
     vTaskDelete(nullptr);
     return;
@@ -796,8 +796,8 @@ static void vTaskSessao(void*)
   // 3. Enquanto o computador estiver com o cartao. Sai quando ele ejeta (nada
   //    mais em cache do lado de la) ou quando a pessoa manda devolver (a tela
   //    pede confirmacao antes, se ele ainda estiver montado).
-  tab5_sd_resumo_t r0;
-  tab5_sd_resumo(&r0);
+  tab5_sd_summary_t r0;
+  tab5_sd_summary(&r0);
   bool avisou_cheio = false;
   // O CAMINHO ATE O DISCO APARECER, no log (que vai ao diario e chega ao
   // cartao na volta) - escrito AQUI, nunca nos retornos do USB.
@@ -816,10 +816,10 @@ static void vTaskSessao(void*)
     registrar_eventos(&d, &u);
     // O DIARIO ENCHENDO: passou de 90%, ou ja perdeu gravacao - a pessoa
     // precisa saber para devolver o cartao antes de perder mais.
-    tab5_sd_resumo_t rr;
-    tab5_sd_resumo(&rr);
-    const bool cheio = rr.perdidas > r0.perdidas
-                    || (rr.diario_total && (uint64_t)rr.diario_usado * 10 >= (uint64_t)rr.diario_total * 9);
+    tab5_sd_summary_t rr;
+    tab5_sd_summary(&rr);
+    const bool cheio = rr.lost > r0.lost
+                    || (rr.journal_total && (uint64_t)rr.journal_used * 10 >= (uint64_t)rr.journal_total * 9);
     if (cheio != avisou_cheio) {
       avisou_cheio = cheio;
       if (cheio) { avisar(1, NOTIF_ATENCAO, "Memória do pendrive cheia"); }
@@ -868,18 +868,18 @@ static void vTaskSessao(void*)
   usb_desligar();
   sistema_som_devolver_pinos();
   sistema_manter_acordado(SISTEMA_ACORDADO_PENDRIVE, false);
-  tab5_sd_devolver();
-  tab5_sd_gravar_pendentes();   // aplica o diario agora (e espera)
+  tab5_sd_return();
+  tab5_sd_flush_pending();   // aplica o diario agora (e espera)
 
-  tab5_sd_resumo_t r;
-  tab5_sd_resumo(&r);
-  if (r.conflitos) {
+  tab5_sd_summary_t r;
+  tab5_sd_summary(&r);
+  if (r.conflicts) {
     char t[NOTIF_RESUMO];
-    snprintf(t, sizeof(t), "%u arquivo(s) em .tab5", (unsigned)r.conflitos);
-    avisar((int)r.conflitos, NOTIF_ATENCAO, t);   // fica ate a pessoa ver em Ajustes > USB
+    snprintf(t, sizeof(t), "%u arquivo(s) em .tab5", (unsigned)r.conflicts);
+    avisar((int)r.conflicts, NOTIF_ATENCAO, t);   // fica ate a pessoa ver em Ajustes > USB
     s_resultado_aviso = true;
-  } else if (r.no_diario) {
-    avisar((int)r.no_diario, NOTIF_ATENCAO, "Gravações esperando cartão");   // cabe em NOTIF_RESUMO
+  } else if (r.in_journal) {
+    avisar((int)r.in_journal, NOTIF_ATENCAO, "Gravações esperando cartão");   // cabe em NOTIF_RESUMO
     s_resultado_aviso = true;
   } else {
     avisar(0, NOTIF_INFO, nullptr);
@@ -889,7 +889,7 @@ static void vTaskSessao(void*)
   s_fase = PENDRIVE_PARADO;
   ESP_LOGI(TAG, "pendrive encerrado (%s): %u gravacao(oes) do diario aplicadas, %u conflito(s)",
            s_devolvido_por_ejecao ? "ejetado no computador" : "devolvido no Tab5",
-           (unsigned)r.aplicadas, (unsigned)r.conflitos);
+           (unsigned)r.applied, (unsigned)r.conflicts);
   tab5_log_descarregar_logo();
   vTaskDelete(nullptr);
 }
@@ -975,7 +975,7 @@ static int64_t s_ausente_desde_us = 0;
 static void vigiar(void*)
 {
   const int64_t agora = esp_timer_get_time();
-  if (s_fase != PENDRIVE_PARADO || tab5_sd_emprestado()) {
+  if (s_fase != PENDRIVE_PARADO || tab5_sd_lent()) {
     s_antes = true;
     s_carencia_ate_us = agora + CARENCIA_FIM_US;   // conta a partir do fim da sessao
     return;
@@ -991,7 +991,7 @@ static void vigiar(void*)
   if (pc) {
     s_ausente_desde_us = 0;
     if (!s_antes && agora >= s_carencia_ate_us && ajustes_pendrive()) {
-      const bool trancado = sistema_bloqueado() || (tab5_power_em_repouso() && ajustes_bloqueio());
+      const bool trancado = sistema_bloqueado() || (tab5_power_is_sleeping() && ajustes_bloqueio());
       if (!trancado && !sistema_app_atual()) {
         ESP_LOGI(TAG, "computador no USB-C: ligando o pendrive");
         tab5_pendrive_iniciar();

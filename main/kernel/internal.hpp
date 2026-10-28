@@ -97,7 +97,7 @@ bool sistema_trocar_relogio_painel(int mhz);
 // barra de status, limpeza da area (+ barra de navegacao) e o conteudo
 // (o desenhar() do app, ou a home).
 typedef struct {
-  const char* nome;
+  const char* name;
   uint32_t n;
   uint32_t max_us;
   uint64_t us, us_barra, us_limpar, us_conteudo;

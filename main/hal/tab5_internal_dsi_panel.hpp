@@ -1,50 +1,48 @@
 #pragma once
 
-// GAMBIARRA CONTIDA - PONTO UNICO, consolidado.
+// CONTAINED WORKAROUND - ONE CONSOLIDATED POINT.
 //
-// tab5_screen.cpp (double buffer) e tab5_power.cpp (repouso/desmontagem do
-// painel) precisam chegar em membros PROTEGIDOS de lgfx::Panel_DSI que o
-// M5GFX nao expoe por getter publico: o handle do painel DPI
-// (_disp_panel_handle), o vetor de ponteiros de linha (_lines_buffer), o
-// buffer guardado em _config_detail e as dimensoes em _cfg.
-// cada arquivo tinha a SUA PROPRIA subclasse fazendo a mesma coisa
-// (PainelAberto num, PainelDSIAberto no outro) - duas copias do mesmo truque,
-// cada uma expondo um subconjunto diferente dos mesmos campos. O risco disso
-// nao e teorico: se o M5GFX reorganizar Panel_DSI, as duas podem quebrar em
-// momentos DIFERENTES (uma ainda compila "por acaso" enquanto a outra ja
-// parou), escondendo o problema atras de um comportamento parcialmente
-// migrado em vez de um erro de compilacao limpo e imediato.
+// tab5_screen.cpp (double buffering) and tab5_power.cpp (sleep/panel teardown)
+// need access to PROTECTED lgfx::Panel_DSI members for which M5GFX exposes no
+// public getter: the DPI panel handle (_disp_panel_handle), line-pointer array
+// (_lines_buffer), buffer stored in _config_detail, and dimensions in _cfg.
+// Each file used to have ITS OWN subclass doing the same thing (PainelAberto in
+// one, PainelDSIAberto in the other): two copies of one trick, each exposing a
+// different subset of the same fields. The risk is not theoretical. If M5GFX
+// rearranges Panel_DSI, the two can break at DIFFERENT times (one may compile
+// "by accident" after the other has stopped), hiding the problem behind a
+// partial migration instead of one immediate, clean compile error.
 //
-// Um ponto so, usado pelos dois arquivos: quebra (em tempo de COMPILACAO, nao
-// silenciosamente em runtime - a mesma garantia de antes) atinge os dois ao
-// mesmo tempo, do mesmo jeito, e o conserto e feito uma vez so.
+// One point shared by both files: if it breaks, it does so at COMPILE TIME,
+// not silently at runtime. Both users fail together in the same way, and the
+// fix is made once.
 //
-// Nao instanciamos esta classe nunca - ela so serve de "chave" no
-// static_cast, igual as duas que ela substitui.
+// This class is never instantiated. It exists only as a "key" for static_cast,
+// just like the two classes it replaces.
 #include "lgfx/v1/platforms/esp32p4/Panel_DSI.hpp"
 #include "esp_lcd_mipi_dsi.h"
 
 namespace {
-  struct PainelDSIInterno : public lgfx::Panel_DSI {
-    esp_lcd_panel_handle_t pegar_handle(void)  { return _disp_panel_handle; }
-    void      zerar_handle(void)               { _disp_panel_handle = nullptr; }
+  struct InternalDSIPanel : public lgfx::Panel_DSI {
+    esp_lcd_panel_handle_t get_handle(void)  { return _disp_panel_handle; }
+    void      clear_handle(void)               { _disp_panel_handle = nullptr; }
 
-    uint8_t** pegar_lines(void)                { return _lines_buffer; }
-    void      trocar_lines(uint8_t** v)        { _lines_buffer = v; }
-    void      zerar_lines(void)                { _lines_buffer = nullptr; }
+    uint8_t** get_lines(void)                { return _lines_buffer; }
+    void      set_lines(uint8_t** v)        { _lines_buffer = v; }
+    void      clear_lines(void)                { _lines_buffer = nullptr; }
 
-    void      zerar_buffer(void)               { _config_detail.buffer = nullptr; }
+    void      clear_buffer(void)               { _config_detail.buffer = nullptr; }
 
-    int       largura(void)                    { return _cfg.panel_width; }
-    int       altura(void)                     { return _cfg.panel_height; }
+    int       width(void)                    { return _cfg.panel_width; }
+    int       height(void)                     { return _cfg.panel_height; }
   };
 
-  // Devolve nullptr se o painel atual nao for um Panel_DSI (repouso em
-  // andamento, por exemplo) - todo chamador ja trata esse caso.
-  inline PainelDSIInterno* tab5_painel_dsi_interno(void)
+  // Returns nullptr if the current panel is not a Panel_DSI (during sleep, for
+  // example). Every caller already handles that case.
+  inline InternalDSIPanel* tab5_internal_dsi_panel(void)
   {
     auto* p = M5.Display.panel();
     if (p == nullptr) { return nullptr; }
-    return static_cast<PainelDSIInterno*>(static_cast<lgfx::Panel_DSI*>(p));
+    return static_cast<InternalDSIPanel*>(static_cast<lgfx::Panel_DSI*>(p));
   }
 }

@@ -11,7 +11,7 @@
 static const char *TAG = "notif";
 
 typedef struct {
-  const char*   nome;
+  const char*   name;
   const char*   app;                    // ver notif_associar_app()
   int           quantidade;
   notif_nivel_t nivel;
@@ -44,7 +44,7 @@ int notif_registrar(const char* nome)
   int id = -1;
   // Mesmo nome = mesma fonte: a vaga volta, zerada (ver o .hpp).
   for (int i = 0; i < s_n; ++i) {
-    if (s_fontes[i].usada && strcmp(s_fontes[i].nome, nome) == 0) { id = i; break; }
+    if (s_fontes[i].usada && strcmp(s_fontes[i].name, nome) == 0) { id = i; break; }
   }
   if (id >= 0) {
     // A VAGA VOLTA COM O ESTADO DELA (ver o .h). Zerar aqui era o aviso do
@@ -55,7 +55,7 @@ int notif_registrar(const char* nome)
   if (s_n < NOTIF_MAX_FONTES) {
     id = s_n++;
     memset(&s_fontes[id], 0, sizeof(s_fontes[id]));
-    s_fontes[id].nome  = nome;
+    s_fontes[id].name  = nome;
     s_fontes[id].app   = nome;   // padrao: o app de mesmo nome (notif_associar_app)
     s_fontes[id].usada = true;
   }
@@ -157,7 +157,7 @@ static bool antes(const fonte_t* a, const fonte_t* b)
 
 static void copiar(notif_item_t* saida, const fonte_t* f)
 {
-  saida->nome       = f->nome;
+  saida->name       = f->name;
   saida->app        = f->app;
   saida->quantidade = f->quantidade;
   saida->nivel      = f->nivel;

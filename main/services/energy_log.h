@@ -43,7 +43,7 @@
 #include <stdint.h>
 
 // Liga o registro (carona na tarefa "cartao"). Chamar depois do M5.begin()
-// e do tab5_sd_iniciar().
+// e do tab5_sd_init().
 void registro_iniciar(void);
 
 // Nome do app em primeiro plano, para o sistema informar ao registro.

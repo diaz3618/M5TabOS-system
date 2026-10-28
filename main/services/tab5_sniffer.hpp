@@ -16,7 +16,7 @@
 //
 // CANAIS: com o WiFi conectado o C6 fica no canal do roteador (trocar
 // derrubaria a conexao). Para varrer varios canais, solte o roteador antes
-// (tab5_wifi_modo_so_radio) - e o que o canal fixo do ESP-NOW ja faz.
+// (tab5_wifi_radio_only_mode) - e o que o canal fixo do ESP-NOW ja faz.
 #pragma once
 
 #include <stdint.h>
@@ -31,9 +31,9 @@ typedef struct {
   int8_t   rssi_max;      // do ultimo lote
   int8_t   rssi_med;      // do ultimo lote
   uint8_t  tipos;         // C6_FT_*, acumulado desde que apareceu
-  uint8_t  canal;
-  uint32_t quadros;       // acumulado
-  uint32_t visto_ms;      // tab5_agora_ms() do ultimo lote em que apareceu
+  uint8_t  channel;
+  uint32_t frames;        // acumulado
+  uint32_t seen_ms;       // tab5_agora_ms() do ultimo lote em que apareceu
 } farejo_item_t;
 
 // Liga, ou troca a configuracao (c6_farejo_cfg_t em tab5_c6.h; cfg->liga e

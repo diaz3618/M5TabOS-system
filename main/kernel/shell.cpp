@@ -126,7 +126,7 @@ typedef enum {
   EN_TOMADA        // alimentado por fora, bateria sem trocar carga (cheia)
 } estado_energia_t;
 
-static estado_energia_t estado_energia(const tab5_medida_t& m)
+static estado_energia_t estado_energia(const tab5_measurement_t& m)
 {
   if (m.mA < -20.0f) { return EN_BATERIA;    }
   if (m.mA >  20.0f) { return EN_CARREGANDO; }
@@ -342,10 +342,10 @@ static void desenhar_espnow(lgfx::LovyanGFX& d, int cx, int cy, bool no_ar)
 // claro = ligado; cinza escuro = subindo; vermelho = falhou.
 static int bt_visual(void)
 {
-  const tab5_ble_estado_t e = tab5_ble_estado();
-  if (e == TAB5_BLE_DESLIGADO) { return 0; }
-  if (e == TAB5_BLE_FALHOU)    { return 3; }
-  if (e == TAB5_BLE_SUBINDO || e == TAB5_BLE_DESLIGANDO) { return 1; }
+  const tab5_ble_state_t e = tab5_ble_state();
+  if (e == TAB5_BLE_OFF) { return 0; }
+  if (e == TAB5_BLE_FAILED)    { return 3; }
+  if (e == TAB5_BLE_STARTING || e == TAB5_BLE_STOPPING) { return 1; }
   return mesh_ble_conectado() ? 4 : 2;
 }
 
@@ -369,7 +369,7 @@ static void desenhar_bt(lgfx::LovyanGFX& d, int cx, int cy, int v)
 static int radio_visual(void)
 {
   if (tab5_espnow_canal_fixo()) { return tab5_espnow_pronto() ? 100 : 101; }
-  return (int)tab5_wifi_estado();
+  return (int)tab5_wifi_state();
 }
 
 static void hora_agora(char* out, size_t n);   // mais abaixo, junto da faixa de baixo
@@ -410,17 +410,17 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   // Le do CACHE. A leitura de verdade acontece uma vez por segundo no loop da
   // tarefa; ir ao I2C aqui de novo seria uma transacao a mais por redesenho da
   // barra, sem nenhum dado novo.
-  tab5_medida_t m = tab5_power_ultima();
+  tab5_measurement_t m = tab5_power_latest();
   const estado_energia_t est = estado_energia(m);
 
   // EM FAIXAS. 1280x64 em deitado sao ~164KB escritos de uma vez, e a barra e
   // repintada em toda troca de app - o mesmo tipo de rajada que produzia a
-  // piscada, so que menor. tab5_tela_limpar respira entre as faixas.
+  // piscada, so que menor. tab5_screen_clear respira entre as faixas.
   if (completo) {
-    tab5_tela_limpar(0, 0, L, ALTURA_BARRA, SIS_FUNDO);
+    tab5_screen_clear(0, 0, L, ALTURA_BARRA, SIS_FUNDO);
     // Os blocos da esquerda, meio e direita limpam os proprios retangulos logo
     // abaixo, todos em SIS_FUNDO e todos dentro deste. Marcados, eles somem.
-    tab5_tela_marcar_limpo(0, 0, L, ALTURA_BARRA, SIS_FUNDO);
+    tab5_screen_mark_clean(0, 0, L, ALTURA_BARRA, SIS_FUNDO);
   }
 
   // Fora do 'completo', NAO apagamos a barra inteira.
@@ -453,7 +453,7 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   static const int APP_X          = 168;
   static const int ESQ_FIM        = 340;
 
-  tab5_tela_limpar(0, 4, ESQ_FIM, ALTURA_BARRA - 8, SIS_FUNDO);
+  tab5_screen_clear(0, 4, ESQ_FIM, ALTURA_BARRA - 8, SIS_FUNDO);
   if (!s_bloqueado) {
     hora_agora(buf, sizeof(buf));
     tab5_fonte_corpo_negrito(d);
@@ -466,7 +466,7 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
     // Ordem de leitura: "P4", o termometro, o numero. O rotulo diz DE QUEM e a
     // medida, o simbolo diz o QUE e, o numero diz QUANTO.
     float c = 0.0f;
-    const bool tem = tab5_sensores_temp(&c);
+    const bool tem = tab5_sensors_temp(&c);
     tab5_texto(d, 3.0f);   // +20%
     d.setTextDatum(middle_left);
     d.setTextColor(TFT_LIGHTGREY, SIS_FUNDO);
@@ -504,19 +504,19 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   tab5_titulo(d, 28);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, SIS_FUNDO);
-  snprintf(buf, sizeof(buf), "%.14s", s_app ? s_app->nome : "Início");
+  snprintf(buf, sizeof(buf), "%.14s", s_app ? s_app->name : "Início");
   d.drawString(buf, APP_X, ALTURA_BARRA / 2);
   tab5_fonte_corpo(d);
 
   // Estado do WiFi. Tudo daqui sai de cache: tab5_wifi_* nunca vai ao C6, quem
   // conversa pelo SDIO e a tarefa do servico, uma vez a cada 5s.
-  const tab5_wifi_estado_t ew = tab5_wifi_estado();
+  const tab5_wifi_state_t ew = tab5_wifi_state();
 
   uint16_t cor_wifi = TFT_LIGHTGREY;
   int      barras   = 0;
   bool     cortado  = true;
 
-  if (ew == TAB5_WIFI_CONECTADO)
+  if (ew == TAB5_WIFI_CONNECTED)
   {
     cor_wifi = TFT_GREENYELLOW;
     cortado  = false;
@@ -524,10 +524,10 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
     // Sem leitura de sinal, mostramos o icone CHEIO em vez de vazio: estamos
     // conectados de fato (temos IP), e desenhar zero barras diria ao olho que a
     // conexao esta ruim - trocaria uma informacao ausente por uma errada.
-    barras = (r == TAB5_WIFI_RSSI_DESCONHECIDO) ? 4
+    barras = (r == TAB5_WIFI_RSSI_UNKNOWN) ? 4
            : (r >= -55) ? 4 : (r >= -65) ? 3 : (r >= -75) ? 2 : 1;
   }
-  else if (ew == TAB5_WIFI_SUBINDO || ew == TAB5_WIFI_CONECTANDO)
+  else if (ew == TAB5_WIFI_STARTING || ew == TAB5_WIFI_CONNECTING)
   {
     // Amarelo e SEM o X: esta tentando, ainda nao falhou. Mostrar o X aqui
     // faria a tela dizer "sem conexao" durante uma conexao em andamento.
@@ -535,8 +535,8 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
     barras   = 0;
     cortado  = false;
   }
-  else if (ew == TAB5_WIFI_FALHOU || ew == TAB5_WIFI_SEM_CREDENCIAL
-        || ew == TAB5_WIFI_C6_MUDO)
+  else if (ew == TAB5_WIFI_FAILED || ew == TAB5_WIFI_NO_CREDENTIALS
+        || ew == TAB5_WIFI_C6_UNRESPONSIVE)
   {
     // C6_MUDO tem que estar AQUI e em Ajustes: nao esta desligado, esta
     // QUEBRADO, e a diferenca decide se voce vai ao Ajustes religar (inutil) ou
@@ -571,7 +571,7 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   notif_item_t lista[NOTIF_MAX_FONTES];
   const int n_avisos = notif_listar(lista, NOTIF_MAX_FONTES);
   const notif_item_t& it = lista[0];
-  tab5_tela_limpar(meio_ini, 4, meio_fim - meio_ini, ALTURA_BARRA - 8, SIS_FUNDO);
+  tab5_screen_clear(meio_ini, 4, meio_fim - meio_ini, ALTURA_BARRA - 8, SIS_FUNDO);
   if (n_avisos > 0) {
     // UM PONTO POR APP A MAIS, na cor da gravidade dele, a direita da
     // pastilha. Antes as outras viravam so "+N" - dava para saber QUANTAS,
@@ -599,7 +599,7 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
     char av[40];
     char resumo[NOTIF_RESUMO];
     if (it.resumo[0]) { snprintf(resumo, sizeof(resumo), "%s", it.resumo); }
-    else              { snprintf(resumo, sizeof(resumo), "%d %s", it.quantidade, it.nome); }
+    else              { snprintf(resumo, sizeof(resumo), "%d %s", it.quantidade, it.name); }
     if (outras > 0) { snprintf(av, sizeof(av), "+%d %s", outras, resumo); }
     else            { snprintf(av, sizeof(av), "%s", resumo); }
     // PASTILHA, e nao texto solto. Fundo colorido com o texto escuro por cima:
@@ -659,9 +659,9 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
 
   // 56 de largura, e nao 32: o icone cresceu para caber o X ao lado. Um
   // retangulo curto deixaria meio X na tela quando a conexao voltasse.
-  tab5_tela_limpar(wifi_cx - 26, 4, 60, ALTURA_BARRA - 8, SIS_FUNDO);
+  tab5_screen_clear(wifi_cx - 26, 4, 60, ALTURA_BARRA - 8, SIS_FUNDO);
   if (bt_v) {
-    tab5_tela_limpar(bt_cx - 14, 4, 28, ALTURA_BARRA - 8, SIS_FUNDO);
+    tab5_screen_clear(bt_cx - 14, 4, 28, ALTURA_BARRA - 8, SIS_FUNDO);
     desenhar_bt(d, bt_cx, ALTURA_BARRA / 2, bt_v);
   }
   s_barra_bt = bt_v;
@@ -689,28 +689,28 @@ void desenhar_barra_status(lgfx::LovyanGFX& d, bool completo)
   else           { snprintf(buf, sizeof(buf), "%3d%%", m.pct); }
   d.drawString(buf, pct_dir, ALTURA_BARRA / 2);
 
-  { float c = 0.0f; s_barra_temp = tab5_sensores_temp(&c) ? (int)(c + 0.5f) : -999; }
+  { float c = 0.0f; s_barra_temp = tab5_sensors_temp(&c) ? (int)(c + 0.5f) : -999; }
   hora_agora(s_barra_hora, sizeof(s_barra_hora));
   s_barra_bloq   = s_bloqueado;
   s_barra_pct    = m.pct;
   s_barra_wifi   = rv;
   s_barra_notif  = notif_versao();
   s_barra_estado = est;
-  s_barra_nome   = s_app ? s_app->nome : nullptr;
+  s_barra_nome   = s_app ? s_app->name : nullptr;
 }
 
 // Verdadeiro se algo visivel na barra mudou desde o ultimo desenho dela.
 bool barra_mudou(void)
 {
-  tab5_medida_t m = tab5_power_ultima();     // idem: cache, nao I2C
-  const char* nome = s_app ? s_app->nome : nullptr;
+  tab5_measurement_t m = tab5_power_latest();     // idem: cache, nao I2C
+  const char* nome = s_app ? s_app->name : nullptr;
   // GRAU INTEIRO, e nao o float: a decimal muda quase toda leitura e a barra
   // seria repintada 1x por segundo para sempre - justamente o gasto que a
   // funcao existe para evitar.
   // A temperatura so conta na tela de bloqueio (e o unico lugar em que ela
   // esta nesta barra); fora dela, o que vira sozinho e a hora.
   float c = 0.0f;
-  const int temp = tab5_sensores_temp(&c) ? (int)(c + 0.5f) : -999;
+  const int temp = tab5_sensors_temp(&c) ? (int)(c + 0.5f) : -999;
   char hora[8];
   hora_agora(hora, sizeof(hora));
 
@@ -756,7 +756,7 @@ static void hora_agora(char* out, size_t n)
 //   o  47°C
 //
 // A rubrica diz DE QUEM e a medida e traz a MEDIA desde o boot
-// (tab5_sensores_temp_media): um numero sozinho nao diz se 47 e muito ou e o
+// (tab5_sensors_average_temp): um numero sozinho nao diz se 47 e muito ou e o
 // normal deste aparelho; ao lado da media, diz. O termometro sobe e muda de
 // cor com a leitura (cor_da_temp), entao da para ler o estado sem ler o numero.
 
@@ -765,8 +765,8 @@ static void hora_agora(char* out, size_t n)
 static void temp_chave(char* out, size_t n)
 {
   float c = 0.0f, m = 0.0f;
-  const int ci = tab5_sensores_temp(&c) ? (int)(c + 0.5f) : -999;
-  const int mi = tab5_sensores_temp_media(&m) ? (int)(m + 0.5f) : -999;
+  const int ci = tab5_sensors_temp(&c) ? (int)(c + 0.5f) : -999;
+  const int mi = tab5_sensors_average_temp(&m) ? (int)(m + 0.5f) : -999;
   snprintf(out, n, "%d/%d", ci, mi);
 }
 
@@ -778,8 +778,8 @@ static int temp_textos(lgfx::LovyanGFX& d, char* rot, size_t nr, char* val, size
                        bool* tem, float* c)
 {
   float m = 0.0f;
-  *tem = tab5_sensores_temp(c);
-  if (tab5_sensores_temp_media(&m)) { snprintf(rot, nr, "P4 · méd %.0f°", (double)m); }
+  *tem = tab5_sensors_temp(c);
+  if (tab5_sensors_average_temp(&m)) { snprintf(rot, nr, "P4 · méd %.0f°", (double)m); }
   else                              { snprintf(rot, nr, "P4"); }
   if (*tem) { snprintf(val, nv, "%.0f°C", (double)*c); }
   else      { snprintf(val, nv, "--"); }
@@ -823,7 +823,7 @@ static void desenhar_temp_nav_app(lgfx::LovyanGFX& d)
   const int y = d.height() - ALTURA_NAV;
   int l = d.width() / 2 - NAV_BTN_L / 2 - 24;   // ate perto da pilula, sem encostar
   if (l > 240) { l = 240; }
-  tab5_tela_limpar(16, y + 1, l, ALTURA_NAV - 1, TFT_BLACK);
+  tab5_screen_clear(16, y + 1, l, ALTURA_NAV - 1, TFT_BLACK);
   desenhar_temp_nav(d, 24);
 }
 
@@ -839,21 +839,21 @@ static void montar_servicos(char* esq, size_t te, char* dir, size_t td)
     // esta respondendo e quantos nos alcanca.
     snprintf(esq, te, "Meshtastic - %d nós, %s",
              tab5_mesh_num_nos(), tab5_mesh_no_ar() ? "no ar" : "mudo");
-  } else if (tab5_gps_servico_ativo()) {
+  } else if (tab5_gps_service_active()) {
     // Mesma ideia do Mesh acima: o que importa e se ha FIX de verdade, nao so
     // "tem um GPS ali". qualidade==0 e "recebo o modulo mas ainda sem fix" -
     // acontece nos primeiros segundos, ou a ceu fechado.
-    const nmea_posicao_t p = tab5_gps_posicao();
-    if (p.valida && p.qualidade > 0) {
+    const nmea_position_t p = tab5_gps_position();
+    if (p.valid && p.qualidade > 0) {
       snprintf(esq, te, "GPS - fix (%u sats)", (unsigned)p.sats_usados);
     } else {
       snprintf(esq, te, "GPS - sem fix");
     }
   } else {
-    snprintf(esq, te, "%s", grove_nome(tab5_grove_tipo()));
+    snprintf(esq, te, "%s", grove_name(tab5_grove_type()));
   }
 
-  snprintf(dir, td, "%s", tab5_sd_descricao());
+  snprintf(dir, td, "%s", tab5_sd_description());
 }
 
 // DUAS COLUNAS COM RUBRICA, e nao uma linha corrida.
@@ -868,7 +868,7 @@ static void desenhar_servicos(lgfx::LovyanGFX& d, const char* esq, const char* d
 
   // A MAIOR DAS QUE SOBRARAM. 1280x95 sao ~243KB numa
   // rajada, e ela e repintada a cada mudanca da linha de servicos.
-  tab5_tela_limpar(0, y + 1, L, ALTURA_NAV - 1, TFT_BLACK);
+  tab5_screen_clear(0, y + 1, L, ALTURA_NAV - 1, TFT_BLACK);
 
   // Teto e divisor: e o que transforma dois textos soltos num painel. O divisor
   // vai so na altura do conteudo, sem encostar nas bordas - encostando, ele
@@ -986,11 +986,11 @@ void desenhar_barra_nav(lgfx::LovyanGFX& d)
   const int L = d.width();
   const int y = d.height() - ALTURA_NAV;
 
-  tab5_tela_limpar(0, y, L, ALTURA_NAV, TFT_BLACK);
+  tab5_screen_clear(0, y, L, ALTURA_NAV, TFT_BLACK);
   // MARCA. O desenhar_servicos logo abaixo pede a mesma limpeza - e pede sem
   // condicao, como deve. Sem esta marca a faixa era limpa DUAS vezes na home:
   // 276KB onde 138 bastavam, na transicao mais pesada que existe.
-  tab5_tela_marcar_limpo(0, y, L, ALTURA_NAV, TFT_BLACK);
+  tab5_screen_mark_clean(0, y, L, ALTURA_NAV, TFT_BLACK);
   d.drawFastHLine(0, y, L, SIS_LINHA);
 
   // NA HOME, A FAIXA CONTA O QUE ESTA LIGADO NO APARELHO.
@@ -1146,7 +1146,7 @@ static void ordem_de_nomes(const char* nomes, const char* ocultos)
     const char* fim = strchr(p, ',');
     const size_t len = fim ? (size_t)(fim - p) : strlen(p);
     for (int i = 0; i < total; ++i) {
-      const char* nome = SISTEMA_APPS[i]->nome;
+      const char* nome = SISTEMA_APPS[i]->name;
       const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
       if (!oculto && !usado[i] && strlen(nome) == len && strncasecmp(nome, p, len) == 0) {
         usado[i] = true; nova[n++] = (uint8_t)i; break;
@@ -1156,7 +1156,7 @@ static void ordem_de_nomes(const char* nomes, const char* ocultos)
     p = fim + 1;
   }
   for (int i = 0; i < total; ++i) {
-    const char* nome = SISTEMA_APPS[i]->nome;
+    const char* nome = SISTEMA_APPS[i]->name;
     const bool oculto = strcasecmp(nome, "Ajustes") != 0 && nome_na_lista(ocultos, nome);
     if (!usado[i] && !oculto) { nova[n++] = (uint8_t)i; }
   }
@@ -1179,7 +1179,7 @@ static void ordem_gravar(void)
   size_t k = 0;
   nomes[0] = 0;
   for (int i = 0; i < home_n(); ++i) {
-    const char* nome = sistema_home_app(i)->nome;
+    const char* nome = sistema_home_app(i)->name;
     const size_t len = strlen(nome);
     if (k + len + 2 > tam) { break; }
     if (k) { nomes[k++] = ','; }
@@ -1284,7 +1284,7 @@ bool home_segurar(int tx, int ty, uint32_t agora, uint32_t segurando_ms, int des
     s_mover_mudou = false;
     s_borda_desde = 0;
     s_sujo_layout = true;
-    ESP_LOGI(TAG, "movendo '%s' (posicao %d)", sistema_home_app(pos)->nome, pos + 1);
+    ESP_LOGI(TAG, "movendo '%s' (posicao %d)", sistema_home_app(pos)->name, pos + 1);
     return true;
   }
 
@@ -1322,7 +1322,7 @@ bool home_soltar(void)
 {
   if (s_mover < 0) { return false; }
   if (s_mover_mudou) {
-    ESP_LOGI(TAG, "'%s' agora na posicao %d", sistema_home_app(s_mover)->nome, s_mover + 1);
+    ESP_LOGI(TAG, "'%s' agora na posicao %d", sistema_home_app(s_mover)->name, s_mover + 1);
     ordem_gravar();
   }
   s_mover = -1;
@@ -1395,7 +1395,7 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
       app->icone(d, px, py, ICONE_LADO);
     } else {
       d.fillRoundRect(px, py, ICONE_LADO, ICONE_LADO, 28, app->cor);
-      char inicial[2] = { app->nome[0], 0 };
+      char inicial[2] = { app->name[0], 0 };
       tab5_texto(d, 6.25f);   // 6.25 = escala real 2.0
       d.setTextDatum(middle_center);
       d.setTextColor(TFT_BLACK, app->cor);
@@ -1428,11 +1428,11 @@ void desenhar_home(lgfx::LovyanGFX& d, const area_t& a)
     const int largura_disponivel = ICONE_LADO + vao;   // meia folga de cada lado
     // Encolhe em ALTURAS NATIVAS, nunca por escala.
     int alt_nome = 30;
-    while ((int)d.textWidth(app->nome) > largura_disponivel && alt_nome > 22) {
+    while ((int)d.textWidth(app->name) > largura_disponivel && alt_nome > 22) {
       alt_nome -= 2;
       tab5_titulo(d, alt_nome);
     }
-    d.drawString(app->nome, px + ICONE_LADO / 2, py + ICONE_LADO + 12);
+    d.drawString(app->name, px + ICONE_LADO / 2, py + ICONE_LADO + 12);
     tab5_fonte_corpo(d);
   }
   desenhar_bolinhas(d, a);
@@ -1625,9 +1625,9 @@ void desenhar_bloqueio(lgfx::LovyanGFX& d, const area_t& a, bool completo)
     if (i == cabem - 1 && n_av > cabem) {
       snprintf(txt, sizeof(txt), "+%d outros avisos", n_av - i);
     } else if (lista[i].resumo[0]) {
-      snprintf(txt, sizeof(txt), "%s: %s", lista[i].nome, lista[i].resumo);
+      snprintf(txt, sizeof(txt), "%s: %s", lista[i].name, lista[i].resumo);
     } else {
-      snprintf(txt, sizeof(txt), "%s: %d", lista[i].nome, lista[i].quantidade);
+      snprintf(txt, sizeof(txt), "%s: %d", lista[i].name, lista[i].quantidade);
     }
     const int k = snprintf(aviso + usado, sizeof(aviso) - usado, "%c%s\n",
                            (char)('0' + (int)lista[i].nivel), txt);
@@ -1708,7 +1708,7 @@ static const app_t* app_por_nome(const char* nome)
 {
   if (!nome) { return nullptr; }
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
-    if (strcmp(SISTEMA_APPS[i]->nome, nome) == 0) { return SISTEMA_APPS[i]; }
+    if (strcmp(SISTEMA_APPS[i]->name, nome) == 0) { return SISTEMA_APPS[i]; }
   }
   return nullptr;
 }
@@ -1774,7 +1774,7 @@ void desenhar_painel_avisos(lgfx::LovyanGFX& d, const area_t& a, bool completo)
     // Quem (negrito) e o que (resumo). Quem abre outro app ganha a seta.
     const bool abre = app_por_nome(it.app) != nullptr;
     char quem[40];
-    snprintf(quem, sizeof(quem), abre ? "%s  >" : "%s", it.nome);
+    snprintf(quem, sizeof(quem), abre ? "%s  >" : "%s", it.name);
     d.setTextDatum(middle_left);
     d.setTextColor(TFT_WHITE, SIS_FUNDO);
     tab5_texto(d, 3.2f);
@@ -1849,7 +1849,7 @@ void tratar_gesto(int dx, int dy)
 // MESMA definicao para decidir se chama esta funcao.
 //
 // MORA NO SHELL, e a CHAMADA mora em core.cpp, depois de
-// tab5_power_relogio_dpi() - defeito observado: o splash piscava e sumia
+// tab5_power_dpi_clock() - defeito observado: o splash piscava e sumia
 // antes dos apps. Causa: desenhar antes daquela chamada
 // significa desenhar antes do painel assumir o relogio final, e a troca de
 // relogio DESMONTA E REMONTA o DSI, apagando o que estiver na tela.

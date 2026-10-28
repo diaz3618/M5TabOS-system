@@ -8,7 +8,7 @@
 // Mesmo molde do Mesh: o servico e dono do radio e do historico, avisa pela
 // notificacao com o app fechado, e o app ESP-NOW e so a janela.
 //
-// SO EXISTE com o firmware nosso no C6 (tab5_wifi_c6_nosso). Com o de fabrica,
+// SO EXISTE com o firmware nosso no C6 (tab5_wifi_c6_is_ours). Com o de fabrica,
 // o servico fica esperando, calado - nada quebra.
 //
 // O CANAL: ESP-NOW so chega entre aparelhos no MESMO canal WiFi. Associado a
@@ -16,7 +16,7 @@
 // precisa estar nesse canal. tab5_espnow_canal() diz qual e.
 //
 // ENERGIA: cochilando entre beacons (modem sleep) o C6 perde frames de
-// ESP-NOW. O servico PEDE o receptor ligado (tab5_wifi_manter_acordado) so com
+// ESP-NOW. O servico PEDE o receptor ligado (tab5_wifi_keep_awake) so com
 // o canal fixo, com o app aberto e a tela acesa, ou com conversa nos ultimos
 // 5 min; fora disso o radio economiza como qualquer WiFi.
 #pragma once

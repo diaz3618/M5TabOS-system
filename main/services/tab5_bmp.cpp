@@ -43,11 +43,11 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
 
   uint8_t* bloco = (uint8_t*)heap_caps_malloc(BLOCO, MALLOC_CAP_SPIRAM);
   if (!bloco) { ESP_LOGE(TAG, "sem PSRAM para o bloco de escrita"); return false; }
-  if (!tab5_sd_montar()) { heap_caps_free(bloco); ESP_LOGE(TAG, "cartao indisponivel"); return false; }
+  if (!tab5_sd_mount()) { heap_caps_free(bloco); ESP_LOGE(TAG, "cartao indisponivel"); return false; }
 
   char arquivo[48];
   snprintf(arquivo, sizeof(arquivo), "%s.bmp", nome);
-  FILE* f = tab5_sd_abrir(pasta, arquivo, "wb");
+  FILE* f = tab5_sd_open(pasta, arquivo, "wb");
   bool ok = (f != nullptr);
   if (ok) { ok = fwrite(cab, 1, cab_tam, f) == cab_tam; }
 
@@ -64,7 +64,7 @@ bool tab5_bmp_salvar(const char* pasta, const char* nome, const uint16_t* dados,
     ok = fwrite(bloco, 1, n * linha_bytes, f) == n * linha_bytes;
   }
   if (f) { ok = (fclose(f) == 0) && ok; }
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   heap_caps_free(bloco);
 
   if (ok) {

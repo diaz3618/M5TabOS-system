@@ -71,12 +71,12 @@ static int          s_cand      = -1;          // a rotacao que esta pedindo pas
 static int          s_seguidas  = 0;
 
 // A rotacao que a postura de AGORA pede, ou -1 (zona morta, IMU sem leitura).
-static int rotacao_pedida(tab5_imu_dados_t* m)
+static int rotacao_pedida(tab5_imu_data_t* m)
 {
   // Teclado fisico encaixado: deitado, sempre. Em pe ele ficaria pendurado
   // na lateral, e girar no colo enquanto se digita seria o pior defeito.
-  if (tab5_teclado_presente()) { return ROT_DEITADO; }
-  if (!tab5_imu_ultima(m)) { return -1; }
+  if (tab5_keyboard_present()) { return ROT_DEITADO; }
+  if (!tab5_imu_latest(m)) { return -1; }
   const float ax = fabsf(m->ax), ay = fabsf(m->ay);
   if (ax * ax + ay * ay < PLANO_MIN_G2) { return -1; }
   if (ay > ax * PLANO_RAZAO) { return ROT_EM_PE; }
@@ -92,11 +92,11 @@ static int rotacao_pedida(tab5_imu_dados_t* m)
 // Aqui: ate 6 leituras, 10 ms entre elas, ate o modulo da gravidade fazer
 // sentido (0,6 a 1,4 g - parado, so a gravidade). ~60 ms no pior caso, uma vez
 // por abertura de app.
-static bool ler_postura_fresca(tab5_imu_dados_t* m)
+static bool ler_postura_fresca(tab5_imu_data_t* m)
 {
   for (int k = 0; k < 6; ++k) {
-    tab5_imu_medir();
-    if (tab5_imu_ultima(m)) {
+    tab5_imu_measure();
+    if (tab5_imu_latest(m)) {
       const float g2 = m->ax * m->ax + m->ay * m->ay + m->az * m->az;
       if (g2 > 0.36f && g2 < 1.96f) { return true; }
     }
@@ -106,9 +106,9 @@ static bool ler_postura_fresca(tab5_imu_dados_t* m)
 }
 
 // A rotacao para ABRIR (ver ABRIR_RAZAO), ou -1 para ficar como a tela esta.
-static int rotacao_para_abrir(tab5_imu_dados_t* m)
+static int rotacao_para_abrir(tab5_imu_data_t* m)
 {
-  if (tab5_teclado_presente()) { return ROT_DEITADO; }
+  if (tab5_keyboard_present()) { return ROT_DEITADO; }
   if (!ler_postura_fresca(m)) { return -1; }
   const float ax = fabsf(m->ax), ay = fabsf(m->ay);
   if (ax * ax + ay * ay < ABRIR_MIN_G2) { return -1; }
@@ -132,7 +132,7 @@ void orientacao_ao_abrir(const app_t* app)
   s_ultima_ms = s_girou_ms = tab5_agora_ms();
 
   uint8_t rot = ROT_EM_PE;
-  tab5_imu_dados_t m = { };
+  tab5_imu_data_t m = { };
   int p = -1;
   if (s_modo == ORI_DEITADO) {
     rot = ROT_DEITADO;
@@ -148,12 +148,12 @@ void orientacao_ao_abrir(const app_t* app)
   aplicar(rot);
   if (s_modo == ORI_SEGUE_IMU) {
     // A gravidade junto, como no giro: confirma no log por que abriu assim.
-    ESP_LOGI(TAG, "'%s' abre %s, seguindo o aparelho (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s", app->nome,
+    ESP_LOGI(TAG, "'%s' abre %s, seguindo o aparelho (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s", app->name,
              rot == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
              (double)m.ax, (double)m.ay, (double)m.az,
-             tab5_teclado_presente() ? "  (teclado encaixado)" : p < 0 ? "  (sem decisao: a posicao da tela)" : "");
+             tab5_keyboard_present() ? "  (teclado encaixado)" : p < 0 ? "  (sem decisao: a posicao da tela)" : "");
   } else {
-    ESP_LOGI(TAG, "'%s' abre %s (%dx%d)", app->nome, rot == ROT_EM_PE ? "em pe" : "deitado",
+    ESP_LOGI(TAG, "'%s' abre %s (%dx%d)", app->name, rot == ROT_EM_PE ? "em pe" : "deitado",
              M5.Display.width(), M5.Display.height());
   }
 }
@@ -180,8 +180,8 @@ bool orientacao_vigiar(uint32_t agora, bool pode_girar)
   if ((agora - s_ultima_ms) < AMOSTRA_MS) { return false; }
   s_ultima_ms = agora;
 
-  tab5_imu_medir();
-  tab5_imu_dados_t m = { };
+  tab5_imu_measure();
+  tab5_imu_data_t m = { };
   const int p = rotacao_pedida(&m);
   if (p < 0 || p == (int)M5.Display.getRotation()) {
     s_cand = -1;
@@ -201,6 +201,6 @@ bool orientacao_vigiar(uint32_t agora, bool pode_girar)
   // limiar estao certos neste aparelho.
   ESP_LOGI(TAG, "girou para %s (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s",
            p == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
-           (double)m.ax, (double)m.ay, (double)m.az, tab5_teclado_presente() ? "  (teclado encaixado)" : "");
+           (double)m.ax, (double)m.ay, (double)m.az, tab5_keyboard_present() ? "  (teclado encaixado)" : "");
   return true;
 }

@@ -3,7 +3,7 @@
 #include "tab5_owners.hpp"
 #include "tab5_wifi.hpp"
 #include "tab5_sd.hpp"
-#include "tab5_power.hpp"   // tab5_power_em_repouso
+#include "tab5_power.hpp"   // tab5_power_is_sleeping
 #include "notification.h"
 #include "settings.h"
 #include "app.h"
@@ -72,7 +72,7 @@ static inline void destravar(void) { xSemaphoreGive(s_trava); }
 // interface pela MESMA queue, porque eh_host_peer_data_send() BLOQUEIA ate o C6
 // responder (ate 5 s) - na interface isso seria tela congelada.
 typedef struct {
-  uint32_t tipo;                         // C6_MSG_* recebido, ou EV_ENVIAR
+  uint32_t type;                         // C6_MSG_* recebido, ou EV_ENVIAR
   uint16_t n;
   uint8_t  dados[7 + C6_TEXTO_MAX + 1];
 } evento_t;
@@ -93,7 +93,7 @@ static void ao_peer_data(uint32_t msg_id, const uint8_t* dados, size_t n, void*)
   // stack nao e nossa - 270 bytes a mais nela e aposta. So essa tarefa chama
   // aqui (uma por vez), e o xQueueSend copia antes de voltar.
   static evento_t ev;
-  ev.tipo = msg_id;
+  ev.type = msg_id;
   ev.n = (uint16_t)(n > sizeof(ev.dados) ? sizeof(ev.dados) : n);
   if (dados && ev.n) { memcpy(ev.dados, dados, ev.n); }
   xQueueSend(s_fila, &ev, 0);   // nunca espera: perder um frame e melhor que travar o WiFi
@@ -133,7 +133,7 @@ static int guardar(const espnow_msg_t* m)
 // linha dentro dele. Flags: m/r (minha/recebida), d/u (difusao/direta) - EM
 // MAIUSCULA (D/U) quando veio no formato Espressif, o que mantem legivel o
 // historico gravado antes de existir o dialeto -, e o estado do envio.
-// Pelo gravador do sistema (tab5_sd_anexar, urgente): a tarefa do servico nao
+// Pelo gravador do sistema (tab5_sd_enqueue_append, urgente): a tarefa do servico nao
 // monta mais o cartao a cada mensagem.
 static void gravar_no_cartao(const espnow_msg_t* m)
 {
@@ -149,7 +149,7 @@ static void gravar_no_cartao(const espnow_msg_t* m)
            m->minha ? 'm' : 'r',
            m->espressif ? (m->difusao ? 'D' : 'U') : (m->difusao ? 'd' : 'u'),
            (unsigned)m->envio, txt);
-  tab5_sd_anexar(ESPNOW_PASTA, ESPNOW_ARQUIVO, linha, nullptr, true);
+  tab5_sd_enqueue_append(ESPNOW_PASTA, ESPNOW_ARQUIVO, linha, nullptr, true);
 }
 
 // No boot do servico: as ultimas ESPNOW_HIST mensagens do cartao voltam para a
@@ -165,9 +165,9 @@ static void gravar_no_cartao(const espnow_msg_t* m)
 #define ESPNOW_CAUDA_BYTES ((long)ESPNOW_HIST * 300)
 static void carregar_do_cartao(void)
 {
-  if (!tab5_sd_montar()) { return; }
+  if (!tab5_sd_mount()) { return; }
   s_lendo_cartao = true;
-  FILE* f = tab5_sd_abrir(ESPNOW_PASTA, ESPNOW_ARQUIVO, "r");
+  FILE* f = tab5_sd_open(ESPNOW_PASTA, ESPNOW_ARQUIVO, "r");
   if (f) {
     static char linha[400];   // estatico: a stack e da montagem do cartao
     int lidas = 0;
@@ -210,7 +210,7 @@ static void carregar_do_cartao(void)
     if (lidas) { ESP_LOGI(TAG, "cartao: %d mensagem(ns) no historico", lidas); }
   }
   s_lendo_cartao = false;
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
 }
 
 static void contar_visto(const uint8_t mac[6])
@@ -242,7 +242,7 @@ static void falhar_pendentes(void)
     if (!achou) { return; }
     static evento_t falha;   // mesmo caminho do ESTADO do C6: marca e grava no cartao
     memset(&falha, 0, sizeof(falha));
-    falha.tipo = C6_MSG_ESTADO;
+    falha.type = C6_MSG_ESTADO;
     falha.n = 7;
     memset(falha.dados, 0xFF, 6);
     tratar(&falha);
@@ -251,7 +251,7 @@ static void falhar_pendentes(void)
 
 static void tratar(const evento_t* ev)
 {
-  switch (ev->tipo) {
+  switch (ev->type) {
     case C6_MSG_PRONTO: {
       if (ev->n < 7) { return; }
       memcpy(s_mac, ev->dados, 6);
@@ -269,7 +269,7 @@ static void tratar(const evento_t* ev)
         if (s_canal_fixo) {
           static evento_t canal;
           memset(&canal, 0, sizeof(canal));
-          canal.tipo = EV_CANAL;
+          canal.type = EV_CANAL;
           canal.n = 1;
           canal.dados[0] = s_canal_fixo;
           tratar(&canal);
@@ -365,7 +365,7 @@ static void tratar(const evento_t* ev)
           // O C6 nem recebeu o pedido: nao vai haver ESTADO para este envio.
           static evento_t falha;
           memset(&falha, 0, sizeof(falha));
-          falha.tipo = C6_MSG_ESTADO;
+          falha.type = C6_MSG_ESTADO;
           falha.n = 7;
           memset(falha.dados, 0xFF, 6);
           falha.dados[6] = 0;
@@ -384,13 +384,13 @@ static void tratar(const evento_t* ev)
       ajustes_definir_espnow_canal(c);   // sobrevive ao reinicio (so grava se mudou)
       if (c == 0) {
         // De volta ao roteador: o canal passa a ser o dele (o loop confere).
-        tab5_wifi_modo_so_radio(false);
+        tab5_wifi_radio_only_mode(false);
         notif_limpar(s_notif_canal);
         ESP_LOGI(TAG, "canal: o do roteador");
       } else {
         // O radio so muda de canal SOLTO do roteador: pede e espera soltar.
-        tab5_wifi_modo_so_radio(true);
-        for (int k = 0; k < 30 && tab5_wifi_estado() == TAB5_WIFI_CONECTADO; ++k) {
+        tab5_wifi_radio_only_mode(true);
+        for (int k = 0; k < 30 && tab5_wifi_state() == TAB5_WIFI_CONNECTED; ++k) {
           vTaskDelay(pdMS_TO_TICKS(100));
         }
         // CONFERE NO C6, e repete. Pedido no meio de uma
@@ -435,7 +435,7 @@ static bool quer_receptor_ligado(void)
 {
   if (!s_pronto) { return false; }
   if (s_canal_fixo) { return true; }
-  if (s_janela && !tab5_power_em_repouso()) { return true; }
+  if (s_janela && !tab5_power_is_sleeping()) { return true; }
   const int64_t agora = esp_timer_get_time();
   const int64_t ult = (s_ultimo_rx_us > s_ultimo_tx_us) ? s_ultimo_rx_us : s_ultimo_tx_us;
   return ult && (agora - ult) < CONVERSA_VIVA_US;
@@ -451,10 +451,10 @@ static void vTaskEspnow(void*)
   static evento_t ev;
 
   for (;;) {
-    const bool enlace = tab5_wifi_c6_nosso() && tab5_wifi_c6_enlace();
+    const bool enlace = tab5_wifi_c6_is_ours() && tab5_wifi_c6_link();
     // ESP-NOW precisa do RADIO INICIADO, nao so do enlace: desligar o WiFi no
     // Ajustes para o radio com o C6 alimentado e o enlace de pe.
-    const bool no_ar = enlace && tab5_wifi_radio_ativo();
+    const bool no_ar = enlace && tab5_wifi_radio_active();
 
     if (enlace && !registrado) {
       eh_host_peer_data_register(C6_MSG_PRONTO,   ao_peer_data, nullptr);
@@ -486,7 +486,7 @@ static void vTaskEspnow(void*)
     // O canal segue o roteador (reconexao pode trocar): confere de tempos em
     // tempos - acordado. Em repouso ninguem ve o canal, e cada conferencia e
     // uma ida ao C6 pelo SDIO; ao acordar, a proxima volta confere.
-    if (s_pronto && !tab5_power_em_repouso() && (agora - canal_us) >= (int64_t)CANAL_MS * 1000) {
+    if (s_pronto && !tab5_power_is_sleeping() && (agora - canal_us) >= (int64_t)CANAL_MS * 1000) {
       canal_us = agora;
       uint8_t c = 0; wifi_second_chan_t sec;
       if (esp_wifi_get_channel(&c, &sec) == ESP_OK && c && c != s_canal) {
@@ -497,11 +497,11 @@ static void vTaskEspnow(void*)
     }
 
     // O pedido so vai ao WiFi quando MUDA (a API ja ignora repeticao).
-    tab5_wifi_manter_acordado(TAB5_ACORDADO_ESPNOW, quer_receptor_ligado());
+    tab5_wifi_keep_awake(TAB5_AWAKE_ESPNOW, quer_receptor_ligado());
 
     // SEM ENLACE COM O C6 (Wi-Fi nunca subiu, ou o C6 nao tem o firmware
     // nosso) nada aqui muda ate a pilha subir - e o Wi-Fi avisa nessa hora
-    // (tab5_wifi_ao_subir -> espnow_cutucar). Entao dorme 30 s em vez de
+    // (tab5_wifi_on_stack_ready -> espnow_cutucar). Entao dorme 30 s em vez de
     // acordar todo segundo para perguntar.
     const uint32_t espera_ms = enlace ? 1000 : 30000;
     if (xQueueReceive(s_fila, &ev, pdMS_TO_TICKS(espera_ms)) == pdTRUE) { tratar(&ev); }
@@ -536,7 +536,7 @@ static void espnow_cutucar(void)
   if (!s_fila) { return; }
   evento_t ev;
   memset(&ev, 0, sizeof(ev));
-  ev.tipo = EV_NADA;
+  ev.type = EV_NADA;
   xQueueSend(s_fila, &ev, 0);
 }
 
@@ -557,7 +557,7 @@ void tab5_espnow_iniciar(void)
   // a vontade estar em s_canal_fixo antes disso.
   s_canal_fixo = ajustes_espnow_canal();
   tab5_hora_ao_saltar(ao_saltar_relogio);
-  tab5_wifi_ao_subir(espnow_cutucar);   // sem enlace a tarefa dorme 30 s; o Wi-Fi acorda ela
+  tab5_wifi_on_stack_ready(espnow_cutucar);   // sem enlace a tarefa dorme 30 s; o Wi-Fi acorda ela
   // 6 KB, e nao 4: esta tarefa MONTA O CARTAO (gravar/carregar o historico),
   // e o f_mount do FATFS desce fundo na stack. Com 4 KB o monitor viu 140
   // bytes livres e o envio seguinte estourou a stack no meio da montagem
@@ -567,7 +567,7 @@ void tab5_espnow_iniciar(void)
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskEspnow, "espnow", 6144, nullptr, 3, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "ESP-NOW");   // ver hal/tab5_owners.hpp
+    tab5_owner_register(h, OWNER_SERVICE, "ESP-NOW");   // ver hal/tab5_owners.hpp
   }
   ESP_LOGI(TAG, "servico no ar (espera o firmware nosso no C6)");
 }
@@ -575,7 +575,7 @@ void tab5_espnow_iniciar(void)
 bool    tab5_espnow_pronto(void)          { return s_pronto; }
 uint8_t tab5_espnow_canal(void)           { return s_canal; }
 void    tab5_espnow_meu_mac(uint8_t out[6]) { memcpy(out, s_mac, 6); }
-bool    tab5_espnow_c6_compativel(void)   { return tab5_wifi_c6_nosso(); }
+bool    tab5_espnow_c6_compativel(void)   { return tab5_wifi_c6_is_ours(); }
 
 int tab5_espnow_n(void)
 {
@@ -614,7 +614,7 @@ bool tab5_espnow_definir_canal(uint8_t canal)
   if (!s_fila || canal > 13) { return false; }
   evento_t ev;
   memset(&ev, 0, sizeof(ev));
-  ev.tipo = EV_CANAL;
+  ev.type = EV_CANAL;
   ev.n = 1;
   ev.dados[0] = canal;
   return xQueueSend(s_fila, &ev, 0) == pdTRUE;
@@ -624,7 +624,7 @@ bool tab5_espnow_enviar(const char* texto)
 {
   if (!s_fila || !texto || !texto[0]) { return false; }
   evento_t ev;   // local: ver tab5_espnow_definir_canal
-  ev.tipo = EV_ENVIAR;
+  ev.type = EV_ENVIAR;
   size_t n = strlen(texto);
   if (n > C6_TEXTO_MAX) { n = C6_TEXTO_MAX; }
   ev.n = (uint16_t)n;
@@ -640,7 +640,7 @@ void tab5_espnow_janela(bool aberta)
   if (s_fila) {   // reavalia ja, sem esperar a volta de 1 s do loop
     evento_t ev;
     memset(&ev, 0, sizeof(ev));
-    ev.tipo = EV_NADA;
+    ev.type = EV_NADA;
     xQueueSend(s_fila, &ev, 0);
   }
 }

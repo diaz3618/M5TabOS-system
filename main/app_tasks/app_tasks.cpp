@@ -40,17 +40,17 @@ static const int LIN = 34;
 // depois os SERVICOS, e por fim o SISTEMA (kernel, drivers, IDF). O dono vem
 // declarado por quem criou a tarefa - hal/tab5_owners.hpp -, nao adivinhado
 // pelo nome. Cada linha da lista e um cabecalho de grupo ou uma tarefa.
-static const dono_tipo_t GRUPOS[] = { DONO_APP, DONO_FUNDO, DONO_SERVICO, DONO_SISTEMA };
-static const char* const GRUPO_NOME[] = { "SISTEMA", "SERVIÇOS", "APP ABERTO", "APPS EM FUNDO" };   // por dono_tipo_t
-static int s_linhas[MON_MAX_TAREFAS + 4];   // >= 0: indice em s_f.t; < 0: cabecalho (-1 - dono_tipo_t)
+static const owner_type_t GRUPOS[] = { OWNER_APP, OWNER_BACKGROUND, OWNER_SERVICE, OWNER_SYSTEM };
+static const char* const GRUPO_NOME[] = { "SISTEMA", "SERVIÇOS", "APP ABERTO", "APPS EM FUNDO" };   // por owner_type_t
+static int s_linhas[MON_MAX_TAREFAS + 4];   // >= 0: indice em s_f.t; < 0: cabecalho (-1 - owner_type_t)
 static int s_nlinhas = 0;
 
 static uint16_t cor_grupo(int tipo)
 {
   switch (tipo) {
-    case DONO_APP:     return TFT_CYAN;
-    case DONO_FUNDO:   return TFT_VIOLET;
-    case DONO_SERVICO: return TFT_GOLD;
+    case OWNER_APP:     return TFT_CYAN;
+    case OWNER_BACKGROUND:   return TFT_VIOLET;
+    case OWNER_SERVICE: return TFT_GOLD;
     default:           return TFT_DARKGREY;
   }
 }
@@ -58,12 +58,12 @@ static uint16_t cor_grupo(int tipo)
 static void montar_linhas(void)
 {
   s_nlinhas = 0;
-  for (dono_tipo_t g : GRUPOS) {
+  for (owner_type_t g : GRUPOS) {
     int n = 0;
-    for (int i = 0; i < s_f.n; ++i) { if (s_f.t[i].tipo == g) { ++n; } }
+    for (int i = 0; i < s_f.n; ++i) { if (s_f.t[i].type == g) { ++n; } }
     if (!n) { continue; }
     s_linhas[s_nlinhas++] = -1 - (int)g;
-    for (int i = 0; i < s_f.n; ++i) { if (s_f.t[i].tipo == g) { s_linhas[s_nlinhas++] = i; } }
+    for (int i = 0; i < s_f.n; ++i) { if (s_f.t[i].type == g) { s_linhas[s_nlinhas++] = i; } }
   }
 }
 static int  linha_altura(int, void*);
@@ -163,7 +163,7 @@ static int linha_altura(int, void*) { return LIN; }
 // O TEXTO DE UMA LINHA DA TABELA, exatamente como ela vai para a tela -
 // usado para desenhar e para saber se a linha mudou desde a ultima amostra.
 typedef struct {
-  char nome[40], cpu[12], pico[12], nucleo[8], prio[8], pilha[12];
+  char name[40], cpu[12], pico[12], nucleo[8], prio[8], pilha[12];
   uint16_t cor_nome, cor_pico, cor_grupo;
   bool cabecalho;
 } linha_txt_t;
@@ -175,17 +175,17 @@ static void linha_texto(int li, linha_txt_t* t)
   if (i < 0) {   // cabecalho do grupo
     const int tipo = -1 - i;
     int n = 0;
-    for (int k = 0; k < s_f.n; ++k) { if (s_f.t[k].tipo == tipo) { ++n; } }
+    for (int k = 0; k < s_f.n; ++k) { if (s_f.t[k].type == tipo) { ++n; } }
     t->cabecalho = true;
     t->cor_grupo = cor_grupo(tipo);
-    snprintf(t->nome, sizeof(t->nome), "%s (%d)", GRUPO_NOME[tipo], n);
+    snprintf(t->name, sizeof(t->name), "%s (%d)", GRUPO_NOME[tipo], n);
     return;
   }
   const mon_tarefa_t& m = s_f.t[i];
-  t->cor_grupo = cor_grupo(m.tipo);
+  t->cor_grupo = cor_grupo(m.type);
   t->cor_nome  = m.pilha_livre < 512 ? TFT_RED : TFT_WHITE;
   t->cor_pico  = m.pct_pico > 60 ? TFT_ORANGE : TFT_LIGHTGREY;
-  snprintf(t->nome, sizeof(t->nome), "%-14.14s", m.nome);
+  snprintf(t->name, sizeof(t->name), "%-14.14s", m.name);
   snprintf(t->cpu,  sizeof(t->cpu),  "%5.1f", (double)m.pct);
   snprintf(t->pico, sizeof(t->pico), "%5.1f", (double)m.pct_pico);
   if (m.core == tskNO_AFFINITY) { snprintf(t->nucleo, sizeof(t->nucleo), " --"); }
@@ -214,13 +214,13 @@ static void linha_desenhar(lgfx::LovyanGFX& d, int li, int x0, int y, int, void*
   d.setTextDatum(top_left);
   if (t.cabecalho) {
     d.setTextColor(t.cor_grupo, TFT_BLACK);
-    d.drawString(t.nome, x, y + 2);
-    d.drawFastHLine(x + (int)d.textWidth(t.nome) + 12, y + LIN / 2, 400, t.cor_grupo);
+    d.drawString(t.name, x, y + 2);
+    d.drawFastHLine(x + (int)d.textWidth(t.name) + 12, y + LIN / 2, 400, t.cor_grupo);
     return;
   }
   d.fillRect(x0 + 4, y + 4, 6, LIN - 8, t.cor_grupo);   // a marca do grupo
   d.setTextColor(t.cor_nome, TFT_BLACK);
-  d.drawString(t.nome, x, y);
+  d.drawString(t.name, x, y);
   d.drawString(t.cpu,  x + 240, y);
   d.setTextColor(t.cor_pico, TFT_BLACK);
   d.drawString(t.pico, x + 340, y);
@@ -345,7 +345,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
     int k = snprintf(resumo, sizeof(resumo), "EM FUNDO: ");
     if (nf == 0) { snprintf(resumo + k, sizeof(resumo) - k, "nenhum app"); }
     for (int j = 0; j < nf && k < (int)sizeof(resumo); ++j) {
-      k += snprintf(resumo + k, sizeof(resumo) - k, "%s%s", j ? ", " : "", fi[j].nome);
+      k += snprintf(resumo + k, sizeof(resumo) - k, "%s%s", j ? ", " : "", fi[j].name);
     }
     campo(d, &s_c_resumo, resumo, nf ? TFT_VIOLET : TFT_DARKGREY, x, g.y_resumo, larg, lin);
   }
@@ -528,7 +528,7 @@ static void icone_tarefas(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_TASKS = {
-  .nome  = "Tarefas",
+  .name  = "Tarefas",
   .cor   = TFT_GREENYELLOW,
   .perfil = { },
   .piso_repouso_mhz = 0,

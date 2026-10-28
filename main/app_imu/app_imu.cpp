@@ -18,7 +18,7 @@
 // este app existe na tabela, o BMI270 e ligado no boot para a SESSAO
 // INTEIRA - com giroscopio ativo e advanced power save desligado, o pior
 // caso de consumo do chip (e o M5Unified quem decide assim; nao da para
-// mudar depois do M5.begin()). tab5_power_imu_so_acelerometro() ja existe
+// mudar depois do M5.begin()). tab5_power_imu_accelerometer_only() ja existe
 // pronta para cortar isso quando nada estiver usando o giroscopio, mas
 // nao e chamada por ninguem ainda - fica de fora deste app de proposito:
 // e uma decisao de politica de energia do SISTEMA (quando ligar/desligar
@@ -216,7 +216,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   static pintura_t s_p;
   pintura_iniciar(&s_p);
 
-  // O sistema tenta subir de novo uma IMU que falhou no boot (tab5_imu_medir):
+  // O sistema tenta subir de novo uma IMU que falhou no boot (tab5_imu_measure):
   // quando ela aparece, o aviso sai numa repintura completa.
   static bool s_sem_imu = false;
   if (!M5.Imu.isEnabled()) {
@@ -240,7 +240,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   // interno sem mutex). M5.Imu.update() e quem fala com o BMI270; getAccel/
   // getGyro so leem o cache que ele acabou de encher.
   //
-  // POR QUE NAO tab5_imu_ultima() (ver hal/tab5_imu.hpp): aquele
+  // POR QUE NAO tab5_imu_latest() (ver hal/tab5_imu.hpp): aquele
   // cache existe para OUTROS apps perguntarem "como o aparelho esta" sem
   // tocar no I2C - mas so e alimentado 1x/segundo, rapido demais para
   // energia/temperatura, devagar demais para um nivel bolha nao parecer
@@ -336,7 +336,7 @@ static void icone_imu(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_IMU = {
-  .nome  = "IMU",
+  .name  = "IMU",
   .cor   = TFT_PURPLE,
   // So a IMU. E FASE 1 (ver o aviso grande no topo do arquivo): uma vez
   // registrado, o BMI270 fica ligado o boot inteiro, nao so enquanto este

@@ -22,7 +22,7 @@
 #include <M5Unified.h>
 
 // Liga o objeto de desenho as paginas do painel e o torna o alvo do sistema
-// (tab5_tela_definir_alvo). Chamar uma vez, da tarefa de interface.
+// (tab5_screen_set_target). Chamar uma vez, da tarefa de interface.
 bool tela_virtual_iniciar(void);
 
 // O alvo de desenho. Enquanto ele nao existir, e o M5.Display.

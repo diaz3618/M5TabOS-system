@@ -15,7 +15,7 @@
 typedef struct {
   char ssid[33];
   char senha[65];     // texto puro, so na RAM; vazio = rede aberta
-  bool aberta;
+  bool open;
 } mesh_wifi_rede_t;
 
 void     mesh_wifi_no_carregar(void);                    // cartao -> RAM, na subida do servico

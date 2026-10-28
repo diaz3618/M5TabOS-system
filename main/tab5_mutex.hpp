@@ -24,7 +24,7 @@
 // simplesmente nao aconteceu (pior que nao ter mutex nenhum: parece seguro).
 //
 // tab5_sd.cpp ja bateu nesse risco de verdade e resolveu DIFERENTE: cria o
-// mutex uma vez, em tab5_sd_iniciar(), chamado antes de existir concorrencia
+// mutex uma vez, em tab5_sd_init(), chamado antes de existir concorrencia
 // - ver o comentario la. NAO troque tab5_sd.cpp para usar isto aqui: a
 // escolha dele e deliberada e melhor para o caso dele (tem uma fase de boot
 // clara e unica onde criar o mutex sem risco).

@@ -1,47 +1,45 @@
-// PRIORIDADE NO BARRAMENTO DE MEMORIA (AXI-ICM do ESP32-P4).
+// MEMORY-BUS PRIORITY (ESP32-P4 AXI-ICM).
 //
-// O PROBLEMA, na raiz. A tela e um painel MIPI-DSI em modo DPI: o controlador
-// le o framebuffer da PSRAM CONTINUAMENTE, linha a linha, no ritmo do relogio
-// de pixel. A 80MHz num painel 720x1280 com os porticos, sao ~119 MB/s que NAO
-// podem atrasar - cada linha tem que estar no FIFO quando o painel a pede.
+// THE ROOT PROBLEM. The screen is a MIPI-DSI panel in DPI mode: the controller
+// reads the PSRAM framebuffer CONTINUOUSLY, line by line, at the pixel-clock
+// rate. At 80MHz for a 720x1280 panel including porches, that is about 119 MB/s
+// which CANNOT be delayed; every line must be in the FIFO when requested.
 //
-// Quando o processador tambem martela a PSRAM (limpar a tela, desenhar baloes,
-// descarregar 256KB de cache), os dois disputam o mesmo barramento. Se o DMA da
-// tela perde a disputa por tempo demais, o FIFO esvazia - e o proprio driver do
-// IDF descreve o que acontece:
+// When the processor also hammers PSRAM (clearing the screen, drawing bubbles,
+// writing back 256KB of cache), both contend for the same bus. If screen DMA
+// loses for too long, the FIFO empties. IDF's own driver says what happens:
 //
 //   "when an underrun happens, the LCD display may already becomes blue,
 //    it's too late to recover the display, so we just print an error message
 //    as a hint to the user that he should optimize the memory bandwidth
 //    (with AXI-ICM)"                        (esp_lcd_panel_dpi.c, linha 113)
 //
-// E A PISCADA AZUL. Nao e bug de nenhum app: e arbitragem de barramento.
+// THAT IS THE BLUE FLICKER. It is not an app bug; it is bus arbitration.
 //
-// O QUE VINHAMOS FAZENDO ERA REMENDO. Limpar em faixas com pausas, evitar
-// limpar duas vezes, espacar repinturas - tudo isso REDUZ a demanda do lado da
-// CPU, e ajuda. Mas nao resolve, porque a cada app novo alguem tem que lembrar
-// de todas as regras, e a disputa continua existindo.
+// WHAT WE HAD BEEN DOING WAS A WORKAROUND. Clearing in strips with pauses,
+// avoiding duplicate clears, and spacing out repaints all REDUCE CPU-side
+// demand and help. They do not solve it: every new app must remember every
+// rule, while the underlying contention remains.
 //
-// A SOLUCAO QUE O PROPRIO DRIVER APONTA e o AXI-ICM: a matriz de interconexao
-// tem prioridade de arbitragem POR MESTRE, e por padrao TODOS valem 0 - o DMA
-// da tela e tratado igual ao cache do processador. Dando prioridade maior ao
-// mestre que alimenta o painel, o arbitro serve a tela primeiro e o FIFO deixa
-// de secar, independentemente do que a CPU esteja fazendo.
+// THE SOLUTION THE DRIVER ITSELF POINTS TO is AXI-ICM. The interconnect matrix
+// has PER-MASTER arbitration priorities, all 0 by default, so screen DMA is
+// treated exactly like the processor cache. Giving the panel's master higher
+// priority makes the arbiter serve the screen first, preventing FIFO starvation
+// regardless of what the CPU is doing.
 //
-// O DPI le por DW-GDMA (esp_lcd_panel_dpi.c usa esp_private/dw_gdma.h), que
-// aparece na ICM como gdma_mst1 e gdma_mst2.
+// DPI reads through DW-GDMA (esp_lcd_panel_dpi.c uses esp_private/dw_gdma.h),
+// which appears in ICM as gdma_mst1 and gdma_mst2.
 //
-// HONESTIDADE SOBRE O RISCO: nenhum componente do IDF chama esta API - ela e
-// exposta e nao usada. Nao consegui testar em hardware. Por isso existe o
-// comando de console para ligar e desligar em execucao: da para comparar os
-// dois estados sem regravar, e o log do driver ("underrun happens") diz na hora
-// qual deles esta certo.
+// HONESTY ABOUT THE RISK: no IDF component calls this exposed API. I could not
+// test it on hardware. That is why a console command can enable and disable it
+// at runtime: both states can be compared without reflashing, and the driver's
+// "underrun happens" log immediately tells us which is right.
 #pragma once
 
 #include <stdbool.h>
 
-// Aplica a prioridade. Uma vez, no boot.
-void tab5_barramento_priorizar_tela(bool ligar);
+// Applies the priority once at boot.
+void tab5_bus_prioritize_screen(bool enable);
 
-// Estado atual, para o console mostrar.
-bool tab5_barramento_priorizado(void);
+// Current state for display by the console.
+bool tab5_bus_is_prioritized(void);

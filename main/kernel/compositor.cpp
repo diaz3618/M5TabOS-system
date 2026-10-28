@@ -32,15 +32,15 @@ static const int FB_A = 1280;
 // (ver s_ult_contem).
 #define MAX_AREAS 96
 
-typedef struct { tab5_ret_t r[MAX_AREAS]; int n; } areas_t;
+typedef struct { tab5_rect_t r[MAX_AREAS]; int n; } areas_t;
 
 static areas_t s_sujas;      // o que vai ser desenhado no proximo frame
 static areas_t s_anterior;   // o que o frame anterior desenhou (falta na pagina que saiu)
 static uint32_t s_estouros = 0;
 
-static inline int area(const tab5_ret_t& r) { return r.l * r.a; }
+static inline int area(const tab5_rect_t& r) { return r.l * r.a; }
 
-static tab5_ret_t envolver(const tab5_ret_t& a, const tab5_ret_t& b)
+static tab5_rect_t envolver(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   const int x0 = a.x < b.x ? a.x : b.x;
   const int y0 = a.y < b.y ? a.y : b.y;
@@ -50,19 +50,19 @@ static tab5_ret_t envolver(const tab5_ret_t& a, const tab5_ret_t& b)
 }
 
 // Quanto de pixel NAO pedido a fusao de a e b obriga a copiar.
-static inline int desperdicio(const tab5_ret_t& a, const tab5_ret_t& b)
+static inline int desperdicio(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   return area(envolver(a, b)) - area(a) - area(b);
 }
 
-static bool contem(const tab5_ret_t& fora, const tab5_ret_t& dentro)
+static bool contem(const tab5_rect_t& fora, const tab5_rect_t& dentro)
 {
   return dentro.x >= fora.x && dentro.y >= fora.y
       && dentro.x + dentro.l <= fora.x + fora.l
       && dentro.y + dentro.a <= fora.y + fora.a;
 }
 
-static bool recortar_na_tela(tab5_ret_t& r)
+static bool recortar_na_tela(tab5_rect_t& r)
 {
   int x0 = r.x < 0 ? 0 : r.x, y0 = r.y < 0 ? 0 : r.y;
   int x1 = r.x + r.l > FB_L ? FB_L : r.x + r.l;
@@ -78,9 +78,9 @@ static bool recortar_na_tela(tab5_ret_t& r)
 // poupa varrer a lista inteira, que agora e longa.
 static int s_ult_contem = 0;
 
-void comp_invalidar(const tab5_ret_t& entrada)
+void comp_invalidar(const tab5_rect_t& entrada)
 {
-  tab5_ret_t r = entrada;
+  tab5_rect_t r = entrada;
   if (!recortar_na_tela(r)) { return; }
   if (s_ult_contem < s_sujas.n && contem(s_sujas.r[s_ult_contem], r)) { return; }
 
@@ -133,7 +133,7 @@ static bool     s_pendente = false;   // pedimos troca e ainda nao confirmamos
 static uint32_t s_geracao  = 0;       // de qual painel sao as paginas que conhecemos
 static uint32_t s_geracao_vista = 0;  // ultimo painel anunciado ao core (comp_painel_novo)
 static void*    s_tras     = nullptr; // a pagina de tras do quadro aberto
-static uint32_t s_epoca    = 0;       // g_tab5_tela_epoca quando o quadro abriu
+static uint32_t s_epoca    = 0;       // g_tab5_screen_epoch quando o quadro abriu
 static uint32_t s_rodada   = 0;
 static int64_t  s_ult_quadro_us = 0;  // diagnostico: quando saiu o ultimo quadro
 static uint32_t s_ult_quadro_px = 0;  // e quantos pixels ele mudou
@@ -156,16 +156,16 @@ static comp_estat_t s_est = {};       // a medida (ver comp_estat)
 static uint64_t     s_us_dentro = 0;  // tempo gasto aqui dentro (abrir + copias)
 static uint64_t     s_marca_dentro = 0;
 
-static bool intersecta(const tab5_ret_t& a, const tab5_ret_t& b)
+static bool intersecta(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   return a.x < b.x + b.l && b.x < a.x + a.l && a.y < b.y + b.a && b.y < a.y + a.a;
 }
 
 // Toda copia do compositor passa por aqui: e onde o tempo de DMA e contado.
-static bool copiar(void* destino, const tab5_ret_t& r, const void* origem, int ox, int oy)
+static bool copiar(void* destino, const tab5_rect_t& r, const void* origem, int ox, int oy)
 {
   const int64_t t0 = esp_timer_get_time();
-  const bool ok = tab5_quadro_copiar_de(destino, r, origem, ox, oy);
+  const bool ok = tab5_frame_copy_from(destino, r, origem, ox, oy);
   const uint64_t dt = (uint64_t)(esp_timer_get_time() - t0);
   s_est.us_copia += dt;
   s_us_dentro += dt;
@@ -176,7 +176,7 @@ static void esperar_troca_pendente(void)
 {
   if (!s_pendente) { return; }
   const int64_t t0 = esp_timer_get_time();
-  if (!tab5_quadro_esperar_troca(50)) { ESP_LOGW(TAG, "troca nao confirmada em 50 ms"); }
+  if (!tab5_frame_wait_for_swap(50)) { ESP_LOGW(TAG, "troca nao confirmada em 50 ms"); }
   const uint64_t dt = (uint64_t)(esp_timer_get_time() - t0);
   s_est.us_espera += dt;
   s_us_dentro += dt;
@@ -205,7 +205,7 @@ static void descartar(void)
 // tocado trazia a janela junto - 1,6 MB que a rolagem sobrescreve em seguida.
 // Agora so a INTERSECAO vem (ou e descartada), e o resto da pendente continua
 // pendente, em ate 4 pedacos.
-static tab5_ret_t intersecao(const tab5_ret_t& a, const tab5_ret_t& b)
+static tab5_rect_t intersecao(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   const int x0 = a.x > b.x ? a.x : b.x;
   const int y0 = a.y > b.y ? a.y : b.y;
@@ -217,11 +217,11 @@ static tab5_ret_t intersecao(const tab5_ret_t& a, const tab5_ret_t& b)
 // Tira a pendente i e devolve a lista o que dela fica FORA de 'r' (faixa de
 // cima, de baixo, esquerda, direita). false = nao coube na lista: nada foi
 // mexido, e quem chamou copia a pendente inteira.
-static bool recortar_pendente(int i, const tab5_ret_t& r)
+static bool recortar_pendente(int i, const tab5_rect_t& r)
 {
-  const tab5_ret_t p = s_pend.r[i];
-  const tab5_ret_t c = intersecao(p, r);
-  tab5_ret_t pedaco[4];
+  const tab5_rect_t p = s_pend.r[i];
+  const tab5_rect_t c = intersecao(p, r);
+  tab5_rect_t pedaco[4];
   int n = 0;
   if (c.y > p.y)                 { pedaco[n++] = { p.x, p.y, p.l, (int16_t)(c.y - p.y) }; }
   if (c.y + c.a < p.y + p.a)     { pedaco[n++] = { p.x, (int16_t)(c.y + c.a), p.l, (int16_t)(p.y + p.a - c.y - c.a) }; }
@@ -233,7 +233,7 @@ static bool recortar_pendente(int i, const tab5_ret_t& r)
   return true;
 }
 
-static void copiar_pendente(const tab5_ret_t& a)
+static void copiar_pendente(const tab5_rect_t& a)
 {
   copiar(s_tras, a, s_frente_pg, a.x, a.y);
   s_est.px_sinc += (uint32_t)area(a);
@@ -243,25 +243,25 @@ static void copiar_pendente(const tab5_ret_t& a)
 // percorre de tras para frente nao perde ninguem).
 static void sincronizar(int i)
 {
-  const tab5_ret_t a = s_pend.r[i];
+  const tab5_rect_t a = s_pend.r[i];
   s_pend.r[i] = s_pend.r[--s_pend.n];
   copiar_pendente(a);
 }
 
 // Percorre de tras para frente: os pedacos acrescentados no fim ficam FORA
 // de 'r' e nao precisam ser revistos.
-void comp_preparar(const tab5_ret_t& r)
+void comp_preparar(const tab5_rect_t& r)
 {
   if (!s_aberto || s_pend.n == 0) { return; }
   for (int i = s_pend.n - 1; i >= 0; --i) {
     if (i >= s_pend.n || !intersecta(s_pend.r[i], r)) { continue; }
-    const tab5_ret_t c = intersecao(s_pend.r[i], r);
+    const tab5_rect_t c = intersecao(s_pend.r[i], r);
     if (recortar_pendente(i, r)) { copiar_pendente(c); }
     else                         { sincronizar(i); }
   }
 }
 
-void comp_cobrir(const tab5_ret_t& r)
+void comp_cobrir(const tab5_rect_t& r)
 {
   if (!s_aberto) { return; }
   for (int i = s_pend.n - 1; i >= 0; --i) {
@@ -278,19 +278,19 @@ void* comp_abrir(void)
     // uma comparacao, nada mais. Um quadro aberto nao pode atravessar a
     // troca do painel (repouso, relogio) - a pagina dele foi liberada junto
     // com o painel antigo -, e a epoca das paginas sobe exatamente nisso.
-    if (s_epoca == g_tab5_tela_epoca) { return s_tras; }
+    if (s_epoca == g_tab5_screen_epoch) { return s_tras; }
     descartar();
   }
 
   // Sem painel (repouso): nada a abrir.
-  if (!tab5_tela_iniciar()) { return nullptr; }
+  if (!tab5_screen_init()) { return nullptr; }
 
   // PAINEL NOVO (repouso, troca de relogio, boot): as paginas que
   // conheciamos nao existem mais, e as novas nao tem nada nosso - nao ha o
   // que sincronizar. O core ja foi (ou vai ser) avisado por
   // comp_painel_novo() e redesenha a tela inteira.
-  if (!s_ativo || tab5_tela_geracao() != s_geracao) {
-    s_geracao = tab5_tela_geracao();
+  if (!s_ativo || tab5_screen_generation() != s_geracao) {
+    s_geracao = tab5_screen_generation();
     s_ativo = true;
     s_pendente = false;
     s_anterior.n = 0;
@@ -298,8 +298,8 @@ void* comp_abrir(void)
 
   // 1. A pagina de tras so esta livre depois que o painel trocou.
   esperar_troca_pendente();
-  void* tras   = tab5_tela_pagina(true);
-  void* frente = tab5_tela_pagina(false);
+  void* tras   = tab5_screen_page(true);
+  void* frente = tab5_screen_page(false);
   if (!tras || !frente) { return nullptr; }
 
   // 2. Sincronia, PREGUICOSA: o que o quadro anterior desenhou fica
@@ -309,18 +309,18 @@ void* comp_abrir(void)
 
   s_tras = tras;
   s_frente_pg = frente;
-  s_epoca = g_tab5_tela_epoca;
+  s_epoca = g_tab5_screen_epoch;
   s_aberto = true;
   return s_tras;
 }
 
-bool comp_desenhado_neste_quadro(const tab5_ret_t& src)
+bool comp_desenhado_neste_quadro(const tab5_rect_t& src)
 {
   for (int i = 0; i < s_sujas.n; ++i) { if (intersecta(s_sujas.r[i], src)) { return true; } }
   return false;
 }
 
-bool comp_copiar_da_frente(const tab5_ret_t& r, int ox, int oy)
+bool comp_copiar_da_frente(const tab5_rect_t& r, int ox, int oy)
 {
   void* tras = comp_abrir();
   if (!tras) { return false; }
@@ -331,7 +331,7 @@ bool comp_copiar_da_frente(const tab5_ret_t& r, int ox, int oy)
   return true;
 }
 
-bool comp_copiar_imagem(const void* imagem, const tab5_ret_t& r)
+bool comp_copiar_imagem(const void* imagem, const tab5_rect_t& r)
 {
   void* tras = comp_abrir();
   if (!tras || !imagem) { return false; }
@@ -356,7 +356,7 @@ bool comp_apresentar(void)
 
   // O painel sumiu ou foi trocado DEPOIS de abrir: a pagina em que
   // desenhamos nao existe mais.
-  if (!tab5_tela_iniciar() || tab5_tela_geracao() != s_geracao) { descartar(); return false; }
+  if (!tab5_screen_init() || tab5_screen_generation() != s_geracao) { descartar(); return false; }
 
   // O que ninguem tocou continua pendente: vem agora, senao a pagina de tras
   // iria ao ar com o quadro de duas trocas atras nesses pontos.
@@ -365,7 +365,7 @@ bool comp_apresentar(void)
   int y_min = FB_A, y_max = 0;
   uint32_t px = 0;
   for (int k = 0; k < s_sujas.n; ++k) {
-    const tab5_ret_t& a = s_sujas.r[k];
+    const tab5_rect_t& a = s_sujas.r[k];
     if (a.y < y_min) { y_min = a.y; }
     if (a.y + a.a > y_max) { y_max = a.y + a.a; }
     px += (uint32_t)area(a);
@@ -375,7 +375,7 @@ bool comp_apresentar(void)
   //    de tras (o que a CPU escreveu e ainda esta so no cache) e muda o
   //    indice. Se recusar, o quadro fica aberto e tenta de novo na proxima
   //    volta - fechar aqui faria a sincronia apagar o que foi desenhado.
-  if (!tab5_tela_pedir_troca(y_min, y_max)) { return false; }
+  if (!tab5_screen_request_swap(y_min, y_max)) { return false; }
   s_pendente = true;
   s_anterior = s_sujas;
   s_sujas.n = 0;
@@ -386,7 +386,7 @@ bool comp_apresentar(void)
 
   s_ult_quadro_us = esp_timer_get_time();
   s_ult_quadro_px = px;
-  ++s_est.quadros;
+  ++s_est.frames;
   s_est.px_quadro += px;
   if (px >= (uint32_t)FB_L * FB_A / 10 * 9) { ++s_est.cheios; }
   return true;
@@ -394,8 +394,8 @@ bool comp_apresentar(void)
 
 bool comp_painel_novo(void)
 {
-  if (!tab5_tela_iniciar()) { return false; }
-  const uint32_t g = tab5_tela_geracao();
+  if (!tab5_screen_init()) { return false; }
+  const uint32_t g = tab5_screen_generation();
   if (g == s_geracao_vista) { return false; }
   s_geracao_vista = g;
   return true;
@@ -424,7 +424,7 @@ void comp_contar_volta(uint32_t us)
   // O periodo MEDIDO do painel (hal/tab5_frame), e nao um numero fixo: o
   // relogio do painel e ajuste do usuario (59 MHz = 20,6 ms, 80 MHz = 15,7).
   uint32_t periodo = 0;
-  tab5_quadro_atrasos(nullptr, &periodo);
+  tab5_frame_delays(nullptr, &periodo);
   if (periodo == 0) { periodo = 16667; }
   uint32_t f = us / periodo;          // 0 = coube em 1 periodo
   if (f > COMP_FAIXAS - 1) { f = COMP_FAIXAS - 1; }
@@ -440,5 +440,5 @@ void comp_estat(comp_estat_t* out)
   if (!out) { return; }
   *out = s_est;
   out->estouros = s_estouros;
-  tab5_tela_rolagem_custo(&out->px_rolados, &out->us_rolar);
+  tab5_screen_scroll_cost(&out->px_rolados, &out->us_rolar);
 }

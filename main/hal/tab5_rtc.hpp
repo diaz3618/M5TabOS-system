@@ -1,30 +1,29 @@
-// RTC (RX8130) - bateria propria, guarda a hora entre boots.
-// ele so era LIGADO (perfil.rtc=true) e nunca lido nem ajustado por ninguem -
-// M5.begin() ja chama M5.Rtc.setSystemTimeFromRtc() sozinho (ver
-// M5Unified.cpp), entao QUALQUER CODIGO que precise "que dia e hoje" so
-// precisa chamar time()/gmtime() da libc - nao ha leitura de I2C nenhuma
-// nisso, e por isso nao existe um "tab5_rtc_ler()" aqui: nao faz falta.
+// RTC (RX8130) - has its own battery and keeps time across boots.
+// It used to be merely ENABLED (profile.rtc=true), never read or set by anyone.
+// M5.begin() already calls M5.Rtc.setSystemTimeFromRtc() itself (see
+// M5Unified.cpp), so ANY CODE that needs today's date only has to call libc's
+// time()/gmtime(). That performs no I2C read, which is why there is no
+// tab5_rtc_read() here: it is unnecessary.
 //
-// O QUE FALTAVA ERA ESCREVER. Sem alguem AJUSTAR o RX8130 pelo menos uma vez,
-// ele guarda uma hora sem sentido (de fabrica) - a bateria preserva o que foi
-// gravado, nao inventa a hora certa sozinha. Ver services/tab5_time.hpp para
-// QUEM decide quando ajustar e de qual fonte.
+// WRITING WAS THE MISSING PIECE. Until someone sets the RX8130 at least once,
+// it keeps a meaningless factory time. The battery preserves what was written;
+// it cannot invent the correct time. See services/tab5_time.hpp for WHO decides
+// when to set it and which source to use.
 #pragma once
 
 #include <stdbool.h>
 #include <time.h>
 
-// Escreve o RTC E o relogio do sistema (settimeofday) NA MESMA CHAMADA - sem
-// o segundo passo, so a PROXIMA vez que o aparelho ligar e que a sessao
-// passaria a responder certo em time()/gmtime() (e so entao porque
-// M5.begin() le o RTC sozinho); com os dois juntos, quem chamar time() JA
-// AGORA, nesta mesma sessao, ve a hora certa.
+// Writes the RTC AND the system clock (settimeofday) IN THE SAME CALL. Without
+// the second step, time()/gmtime() would return the right value only after the
+// NEXT boot (because M5.begin() reads the RTC then). Doing both means callers
+// see the correct time immediately, in this same session.
 //
-// SO DA TAREFA DE INTERFACE - o RX8130 e I2C interno (RTC_Base usa In_I2C
-// por padrao, mesmo barramento do toque/IMU/PMIC), mesma regra documentada
-// em tab5_power.hpp. 'epoch_utc' em segundos desde 1970, UTC.
-bool tab5_rtc_definir(time_t epoch_utc);
+// UI TASK ONLY - the RX8130 is on internal I2C (RTC_Base uses In_I2C by
+// default, the same bus as touch/IMU/PMIC), under the rule documented in
+// tab5_power.hpp. epoch_utc is UTC seconds since 1970.
+bool tab5_rtc_set(time_t epoch_utc);
 
-// O RX8130 responde no barramento? (nao diz se a hora gravada esta CERTA, so
-// se o chip existe e esta acessivel).
-bool tab5_rtc_disponivel(void);
+// Does the RX8130 respond on the bus? (This says only that the chip exists and
+// is accessible, not that its stored time is CORRECT.)
+bool tab5_rtc_available(void);

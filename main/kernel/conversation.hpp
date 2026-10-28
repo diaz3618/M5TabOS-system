@@ -52,7 +52,7 @@ typedef struct {
   char     texto[CONVERSA_TEXTO];
   bool     minha;               // a direita, com a marca de envio
   uint32_t quando;              // epoch UTC; 0 = sem data (nao abre divisor de dia)
-  char     nome[16];            // rotulo do remetente ("" = sem rotulo)
+  char     name[16];            // rotulo do remetente ("" = sem rotulo)
   uint16_t cor_nome;
   char     meta[24];            // linha pequena embaixo ("" = sem)
   uint16_t cor_meta;

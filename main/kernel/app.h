@@ -51,7 +51,7 @@ typedef enum {
 //
 //     app <app> <comando> [argumentos]       ex.: app exemplo contar 5
 //
-// <app> e o .nome do app sem diferenca de maiusculas; espacos e hifens podem
+// <app> e o .name do app sem diferenca de maiusculas; espacos e hifens podem
 // ser omitidos ('app espnow' acha "ESP-NOW").
 //
 // ONDE RODA: na tarefa do CONSOLE, nao na de interface. Entao, como em
@@ -66,7 +66,7 @@ typedef enum {
 //
 // A lista termina numa entrada com nome = nullptr.
 typedef struct {
-  const char* nome;       // a palavra depois do nome do app
+  const char* name;       // a palavra depois do nome do app
   const char* uso;        // "argumentos\to que faz", uma forma por linha (sem 'app <app> <comando>')
   void (*fn)(int argc, char** argv);   // argv[0] = o nome do comando
   bool so_aberto;
@@ -74,7 +74,7 @@ typedef struct {
 
 typedef struct {
   // ---- identidade ---------------------------------------------------------
-  const char* nome;     // aparece na barra de status e sob o icone
+  const char* name;     // aparece na barra de status e sob o icone
   uint16_t    cor;      // cor do icone na tela inicial
 
   // ---- energia ------------------------------------------------------------
@@ -82,7 +82,7 @@ typedef struct {
   // enquanto ele estiver em primeiro plano, e volta ao estado do sistema
   // quando ele fechar. E o mecanismo que impede o aparelho de esquentar
   // alimentando coisa que o app nem usa.
-  tab5_perfil_t perfil;
+  tab5_profile_t perfil;
 
   // Este app grava ou le arquivos. O sistema MONTA o cartao antes de chamar
   // ao_abrir() e DESMONTA depois de ao_fechar() - com contagem de referencia,
@@ -90,7 +90,7 @@ typedef struct {
   //
   // O app nao chama montar nem desmontar. Ele so pede um arquivo dentro da
   // propria pasta:
-  //     FILE* f = tab5_sd_abrir(APP_MEU.nome, "dados.csv", "a");
+  //     FILE* f = tab5_sd_open(APP_MEU.name, "dados.csv", "a");
   // e escreve com fprintf/fwrite normais. A pasta /sdcard/apps/<Nome>/ e criada
   // sozinha na primeira vez.
   bool usa_sd;
@@ -201,13 +201,13 @@ typedef struct {
   // pela tecla morta tem 2 bytes); para as teclas especiais ele vem VAZIO e o
   // que vale e 'codigo' (hal/tab5_keyboard.hpp):
   //
-  //   TAB5_TECLA_ENTER, _APAGAR (Backspace), _DEL, _ESC, _TAB,
+  //   TAB5_KEY_ENTER, _APAGAR (Backspace), _DEL, _ESC, _TAB,
   //   _ESQUERDA, _DIREITA, _CIMA, _BAIXO
   //
   // Codigo que o app nao conhece: ignore (vira tecla nova, nao texto). Com
   // Ctrl/Alt segurados o texto vem assim mesmo - e atalho, nao digitacao.
   //
-  // 'modificador' e a combinacao de TAB5_TECLA_CTRL/SHIFT/ALT no momento.
+  // 'modificador' e a combinacao de TAB5_KEY_CTRL/SHIFT/ALT no momento.
   //
   // POR QUE ISTO EXISTE, e e uma correcao e nao um recurso: o sistema lia o
   // teclado desde sempre e IMPRIMIA A TECLA NO LOG, sem entregar a ninguem. E
@@ -409,7 +409,7 @@ void sistema_superficie_mudou(const area_t& r);
 // radio, 5V do Grove. Chamada pelo boot, pela home e ao abrir cada app - se um
 // caminho novo aplicar perfil, TEM que passar por aqui, senao a preferencia
 // gravada nao vale naquele caminho (ver o comentario em kernel/core.cpp).
-void sistema_impor_preferencias(tab5_perfil_t& p);
+void sistema_impor_preferencias(tab5_profile_t& p);
 
 // Reaplica o perfil do app ATUAL (ou da home, se nenhum estiver aberto) com as
 // preferencias de AGORA. E o caminho para um ajuste valer na hora, sem esperar
@@ -572,7 +572,7 @@ const char* sistema_app_atual(void);
 // ser decididas ANTES do begin, e nao da para inicializar o IMU depois.
 // O que e chaveavel em runtime (trilhos de 5V, camera, radio, brilho) NAO entra
 // aqui: isso e aplicado por app, na hora de abrir.
-tab5_perfil_t sistema_perfil_de_boot(void);
+tab5_profile_t sistema_perfil_de_boot(void);
 
 // Cria a tarefa de interface. Chamar depois do M5.begin().
 void sistema_iniciar(void);

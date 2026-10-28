@@ -91,7 +91,7 @@ static void finalizar(fundo_s* f)
 {
   if (f->def->ao_parar) { f->def->ao_parar(); }
   notif_limpar(f->notif);
-  ESP_LOGI(TAG, "'%s' parou (rodou %lld s)", f->def->nome,
+  ESP_LOGI(TAG, "'%s' parou (rodou %lld s)", f->def->name,
            (esp_timer_get_time() - f->desde_us) / 1000000);
   zerar_vaga(f);
   s_perfil_sujo = true;
@@ -102,7 +102,7 @@ static bool saiu(const fundo_s* f) { return !parada_rodando(&f->parada); }
 
 bool sistema_fundo_iniciar(const fundo_def_t* d)
 {
-  if (!d || !d->corpo || !d->nome) { return false; }
+  if (!d || !d->corpo || !d->name) { return false; }
   if (achar(d)) { return false; }   // ja rodando (ou ainda saindo)
 
   fundo_s* f = nullptr;
@@ -110,12 +110,12 @@ bool sistema_fundo_iniciar(const fundo_def_t* d)
     if (!s_f[i].em_uso) { f = &s_f[i]; }
   }
   if (!f) {
-    ESP_LOGW(TAG, "sem vaga para '%s' (limite %d)", d->nome, FUNDO_MAX);
+    ESP_LOGW(TAG, "sem vaga para '%s' (limite %d)", d->name, FUNDO_MAX);
     return false;
   }
 
   if (d->ao_iniciar && !d->ao_iniciar()) {
-    ESP_LOGW(TAG, "'%s' recusou iniciar", d->nome);
+    ESP_LOGW(TAG, "'%s' recusou iniciar", d->name);
     return false;
   }
 
@@ -128,7 +128,7 @@ bool sistema_fundo_iniciar(const fundo_def_t* d)
 
   // VISIVEL DESDE O PRIMEIRO INSTANTE - a pastilha cinza e a promessa de
   // "nada roda escondido". O registro e idempotente pelo nome.
-  f->notif = notif_registrar(d->nome);
+  f->notif = notif_registrar(d->name);
   notif_silenciar(f->notif, d->com_som ? !d->com_som() : false);
   notif_publicar(f->notif, 1, NOTIF_ESTADO, f->resumo);
 
@@ -137,16 +137,16 @@ bool sistema_fundo_iniciar(const fundo_def_t* d)
   f->em_uso = true;   // por ultimo e sob a trava: quem lista ve a vaga ja completa
   taskEXIT_CRITICAL(&s_mux);
   if (!pronta
-   || !pool_criar(nullptr, trampolim, f, d->nome, d->pilha ? d->pilha : 4096,
-                  FUNDO_PRIORIDADE, DONO_FUNDO, d->nome)) {   // dono: ver hal/tab5_owners.hpp
-    ESP_LOGE(TAG, "sem memoria para a tarefa de '%s'", d->nome);
+   || !pool_criar(nullptr, trampolim, f, d->name, d->pilha ? d->pilha : 4096,
+                  FUNDO_PRIORIDADE, OWNER_BACKGROUND, d->name)) {   // dono: ver hal/tab5_owners.hpp
+    ESP_LOGE(TAG, "sem memoria para a tarefa de '%s'", d->name);
     parada_desistir(&f->parada);
     finalizar(f);
     return false;
   }
   s_perfil_sujo = true;
   sistema_acordar_interface();
-  ESP_LOGI(TAG, "'%s' rodando em fundo", d->nome);
+  ESP_LOGI(TAG, "'%s' rodando em fundo", d->name);
   return true;
 }
 
@@ -167,7 +167,7 @@ bool sistema_fundo_parar(const fundo_def_t* d)
   // Nao matamos a tarefa (ver o porque em kernel/app_task.h): o pedido fica
   // de pe, ela sai quando puder, e fundo_manter() limpa nessa hora. A
   // pastilha diz a verdade enquanto isso.
-  ESP_LOGE(TAG, "'%s' nao saiu em %d ms - fica parando em fundo", d->nome, FUNDO_PARAR_MS);
+  ESP_LOGE(TAG, "'%s' nao saiu em %d ms - fica parando em fundo", d->name, FUNDO_PARAR_MS);
   notif_publicar(f->notif, 1, NOTIF_ESTADO, "parando...");
   f->abandonada = true;
   f->parando = false;
@@ -194,7 +194,7 @@ int sistema_fundo_listar(fundo_info_t* out, int max)
   for (int i = 0; i < FUNDO_MAX && n < max; ++i) {
     const fundo_s* f = &s_f[i];
     if (!f->em_uso) { continue; }
-    out[n].nome = f->def->nome;
+    out[n].name = f->def->name;
     out[n].ha_s = (uint32_t)((agora - f->desde_us) / 1000000);
     memcpy(out[n].resumo, f->resumo, sizeof(out[n].resumo));
     ++n;
@@ -213,7 +213,7 @@ bool sistema_fundo_parar_nome(const char* nome)
   taskENTER_CRITICAL(&s_mux);
   for (int i = 0; i < FUNDO_MAX; ++i) {
     fundo_s* f = &s_f[i];
-    if (f->em_uso && !f->abandonada && strcmp(f->def->nome, nome) == 0) {
+    if (f->em_uso && !f->abandonada && strcmp(f->def->name, nome) == 0) {
       f->parar_pedido = true;
       achou = true;
     }
@@ -261,16 +261,16 @@ void fundo_estado(fundo_t* f, int quantidade, const char* resumo)
 // Sob a trava: sistema_impor_preferencias() pode ser chamada fora da
 // interface. So SOMA - e o teto de clock (cpu_max) fica com a tela: um fundo
 // com o perfil padrao (360) apagaria o teto mais baixo que um app pediu.
-void fundo_somar_perfil(tab5_perfil_t& p)
+void fundo_somar_perfil(tab5_profile_t& p)
 {
   taskENTER_CRITICAL(&s_mux);
   for (int i = 0; i < FUNDO_MAX; ++i) {
     const fundo_s* f = &s_f[i];
     if (!f->em_uso) { continue; }
-    const tab5_perfil_t& q = f->def->perfil;
+    const tab5_profile_t& q = f->def->perfil;
     p.imu          = p.imu          || q.imu;
-    p.microfone    = p.microfone    || q.microfone;
-    p.alto_falante = p.alto_falante || q.alto_falante;
+    p.microphone    = p.microphone    || q.microphone;
+    p.speaker = p.speaker || q.speaker;
     p.grove_5v     = p.grove_5v     || q.grove_5v;
     p.usb_a_5v     = p.usb_a_5v     || q.usb_a_5v;
     p.camera       = p.camera       || q.camera;
@@ -311,5 +311,5 @@ void fundo_manter(void)
   // O conjunto mudou: o perfil efetivo (tela + fundos) e reaplicado aqui, na
   // interface, e so aqui. EM REPOUSO ESPERA: aplicar perfil mexe em brilho e
   // teto de clock, que o repouso esta segurando - vale ao acordar.
-  if (!tab5_power_em_repouso() && s_perfil_sujo.exchange(false)) { sistema_reaplicar_perfil(); }
+  if (!tab5_power_is_sleeping() && s_perfil_sujo.exchange(false)) { sistema_reaplicar_perfil(); }
 }

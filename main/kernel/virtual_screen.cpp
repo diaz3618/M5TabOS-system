@@ -80,7 +80,7 @@ struct PainelRastreado : public lgfx::Panel_Sprite
     if (tras && s_lixeira) { soltar_lixeira(); }   // ja apontando para a pagina, nao para ela
   }
 
-  tab5_ret_t fisico(int x, int y, int w, int h) const
+  tab5_rect_t fisico(int x, int y, int w, int h) const
   {
     const uint_fast8_t r = _rotation;
     if (r) {
@@ -97,7 +97,7 @@ struct PainelRastreado : public lgfx::Panel_Sprite
   {
     if (w <= 0 || h <= 0) { return; }
     abrir();
-    const tab5_ret_t f = fisico(x, y, w, h);
+    const tab5_rect_t f = fisico(x, y, w, h);
     // Atalho: o mesmo retangulo de novo (texto sao dezenas de fillRect
     // pequenos dentro de um mesmo glifo) nao precisa ir ate a lista.
     // Vale so dentro da MESMA rodada: depois que o compositor consumiu a
@@ -144,7 +144,7 @@ struct PainelRastreado : public lgfx::Panel_Sprite
   {
     anotar(x, y, w, h, true);   // cor solida no retangulo inteiro
     if ((uint32_t)w * h >= PREENCHER_PPA_MIN && _write_bits == 16
-     && tab5_quadro_preencher(_img.get(), fisico(x, y, w, h), (uint16_t)cor)) { return; }
+     && tab5_frame_fill(_img.get(), fisico(x, y, w, h), (uint16_t)cor)) { return; }
     Panel_Sprite::writeFillRectPreclipped(x, y, w, h, cor);
   }
   void writeImage(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, lgfx::pixelcopy_t* p, bool dma) override
@@ -171,8 +171,8 @@ struct PainelRastreado : public lgfx::Panel_Sprite
   void copyRect(uint_fast16_t dx, uint_fast16_t dy, uint_fast16_t w, uint_fast16_t h, uint_fast16_t sx, uint_fast16_t sy) override
   {
     if (w == 0 || h == 0) { return; }
-    const tab5_ret_t dst = fisico(dx, dy, w, h);
-    const tab5_ret_t src = fisico(sx, sy, w, h);
+    const tab5_rect_t dst = fisico(dx, dy, w, h);
+    const tab5_rect_t src = fisico(sx, sy, w, h);
     abrir();
     if (!g_tela_rolar_cpu && !comp_desenhado_neste_quadro(src) && comp_copiar_da_frente(dst, src.x, src.y)) {
       anotar(dx, dy, w, h);
@@ -230,19 +230,19 @@ static TelaVirtual* s_tv = nullptr;
 bool tela_virtual_iniciar(void)
 {
   if (s_tv) { return true; }
-  if (!tab5_tela_iniciar()) {
+  if (!tab5_screen_init()) {
     ESP_LOGE(TAG, "painel sem paginas - seguindo com desenho direto no M5.Display");
     return false;
   }
   s_tv = new TelaVirtual();
   // Comeca apontando para a FRENTE: so leitura ate a primeira escrita, que
   // abre o quadro e troca para a de tras.
-  s_tv->criar(tab5_tela_pagina(false));
+  s_tv->criar(tab5_screen_page(false));
   // O desenho de emoji e um hook POR OBJETO de tela (setEmojiCallback): o
   // do display fisico nao vale aqui. Sem copiar, todo texto desenhado pelo
   // compositor perdia os emojis.
   s_tv->setEmojiCallback(M5.Display.getEmojiCallback());
-  tab5_tela_definir_alvo(s_tv);
+  tab5_screen_set_target(s_tv);
   ESP_LOGI(TAG, "desenho direto na pagina escondida, sem copia intermediaria");
   return true;
 }
@@ -317,7 +317,7 @@ bool sistema_superficie(const area_t& r, superficie_t* sup)
 void sistema_superficie_mudou(const area_t& r)
 {
   if (!s_superficie) { return; }
-  const tab5_ret_t f = { (int16_t)r.x, (int16_t)r.y, (int16_t)r.largura, (int16_t)r.altura };
+  const tab5_rect_t f = { (int16_t)r.x, (int16_t)r.y, (int16_t)r.largura, (int16_t)r.altura };
   comp_copiar_imagem(s_superficie, f);
   // A copia abriu o quadro: o rastreador passa a apontar para a pagina de
   // tras ja agora, e nao so na proxima escrita.

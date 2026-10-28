@@ -83,16 +83,16 @@ static void na_carona(void)
   s_limpar_pend = false;
   // Arquivo vazio pela porta do sistema: com o cartao emprestado, vai para o
   // diario - e o substituir grava antes as linhas que estavam para entrar.
-  if (!tab5_sd_substituir(PASTA, ARQ, "", 0)) { s_limpar_pend = true; }
+  if (!tab5_sd_replace(PASTA, ARQ, "", 0)) { s_limpar_pend = true; }
 }
 
 void mesh_diario_carregar(void)
 {
   if (s_carregado) { return; }
   static bool carona = false;
-  if (!carona) { carona = tab5_sd_carona(na_carona); }
-  if (!tab5_sd_montar()) { s_carregado = true; return; }   // sem cartao: so a RAM desta sessao
-  FILE* f = tab5_sd_abrir(PASTA, ARQ, "r");
+  if (!carona) { carona = tab5_sd_piggyback(na_carona); }
+  if (!tab5_sd_mount()) { s_carregado = true; return; }   // sem cartao: so a RAM desta sessao
+  FILE* f = tab5_sd_open(PASTA, ARQ, "r");
   if (f) {
     char l[160];
     mesh_reinicio_t r;
@@ -103,7 +103,7 @@ void mesh_diario_carregar(void)
     }
     fclose(f);
   }
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   s_carregado = true;
   ESP_LOGI(TAG, "diario: %d registro(s), ultimo contador %lu", s_n, (unsigned long)s_ult_cont);
 }
@@ -137,13 +137,13 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
   else if (!conectados_antes)     { r.origem = MESH_REI_AUSENTE; }
   else                            { r.origem = MESH_REI_SOZINHO; }
 
-  const tab5_medida_t m = tab5_power_ultima();
+  const tab5_measurement_t m = tab5_power_latest();
   r.centivolts = (uint16_t)(m.volts > 0 ? m.volts * 100.0f : 0);
   r.ma = (int32_t)m.mA;
   r.envio_s = ha_s(s_envio_ms);
   r.envio_tipo = s_envio_tipo;
-  r.grove_s = ha_s(tab5_power_grove_toque_ms());
-  r.perfil_s = ha_s(tab5_power_aplicar_ms());
+  r.grove_s = ha_s(tab5_power_grove_touch_ms());
+  r.perfil_s = ha_s(tab5_power_apply_ms());
   // O aviso chegou "foto" depois do reinicio: os tempos acima contam desde o
   // REGISTRO; tira o intervalo ja corrido para ficarem relativos ao reinicio.
   if (foto_fresca) {
@@ -158,7 +158,7 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
 
   char linha[160];
   linha_de(&r, linha, sizeof(linha));
-  tab5_sd_anexar(PASTA, ARQ, linha);
+  tab5_sd_enqueue_append(PASTA, ARQ, linha);
   ESP_LOGW(TAG, "no reiniciou (contador %lu -> %lu, origem %u): %s", (unsigned long)ant, (unsigned long)contador,
            (unsigned)r.origem, mesh_diario_veredito(&r));
 }

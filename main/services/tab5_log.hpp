@@ -57,7 +57,7 @@
 #include <stdint.h>
 
 // Instala a captura e pega carona na tarefa "cartao" para descarregar. Chamar UMA vez
-// no boot, depois de tab5_sd_iniciar() (ela usa tab5_sd_montar/abrir) - ver
+// no boot, depois de tab5_sd_init() (ela usa tab5_sd_mount/abrir) - ver
 // kernel/core.cpp.
 void tab5_log_iniciar(void);
 

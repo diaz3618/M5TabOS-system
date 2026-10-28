@@ -143,7 +143,7 @@ typedef struct {
   const uint8_t* val;      // o valor (tipo 2: os bytes; outros: o inicio)
   size_t         n_val;
   size_t         n_total;
-  int            num, tipo;
+  int            num, type;
   uint64_t       v;        // varint / fixed32 / fixed64 ja lidos
 } pb_campo_t;
 
@@ -151,9 +151,9 @@ static inline bool pb_campo(pb_leitor_t* l, pb_campo_t* c)
 {
   c->ini = l->p;
   c->v = 0;
-  if (!pb_proximo_campo(l, &c->num, &c->tipo)) { return false; }
+  if (!pb_proximo_campo(l, &c->num, &c->type)) { return false; }
   c->val = l->p;
-  switch (c->tipo) {
+  switch (c->type) {
     case PB_VARINT: if (!pb_varint(l, &c->v)) { return false; } break;
     case PB_FIXO64: if (pb_restam(l) < 8) { return false; } memcpy(&c->v, l->p, 8); l->p += 8; break;
     case PB_FIXO32: { uint32_t u; if (!pb_fixo32(l, &u)) { return false; } c->v = u; break; }
@@ -180,7 +180,7 @@ static inline bool pb_achar(const uint8_t* b, size_t n, int num, int tipo, pb_ca
   pb_campo_t c;
   bool achou = false;
   while (pb_campo(&l, &c)) {
-    if (c.num == num && c.tipo == tipo) { *saida = c; achou = true; }
+    if (c.num == num && c.type == tipo) { *saida = c; achou = true; }
   }
   return achou;
 }
@@ -291,7 +291,7 @@ static inline void mesh_pb_posicao(pb_escritor_t* w, int32_t lat_e7, int32_t lon
 // sao escritos.
 typedef struct {
   uint32_t       para;       // MeshPacket.to (fixed32)
-  int            canal;      // MeshPacket.channel; -1 = nao escrever
+  int            channel;    // MeshPacket.channel; -1 = nao escrever
   uint32_t       porta;      // Data.portnum
   const uint8_t* carga;      // Data.payload
   size_t         n_carga;
@@ -314,7 +314,7 @@ static inline size_t mesh_pb_to_radio(const mesh_pb_envelope_t* e, uint8_t* out,
   uint8_t b_pkt[sizeof(b_data) + 48];
   pb_escritor_t pkt = pb_escritor(b_pkt, sizeof(b_pkt));
   pb_w_fixo32(&pkt, 2, e->para);
-  if (e->canal >= 0) { pb_w_num(&pkt, 3, (uint64_t)e->canal); }
+  if (e->channel >= 0) { pb_w_num(&pkt, 3, (uint64_t)e->channel); }
   pb_w_sub(&pkt, 4, &data);
   if (e->id)       { pb_w_fixo32(&pkt, 6, e->id); }
   if (e->saltos)   { pb_w_num(&pkt, 9, e->saltos); }

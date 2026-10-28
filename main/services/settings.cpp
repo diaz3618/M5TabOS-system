@@ -183,7 +183,7 @@ void ajustes_definir_volume(uint8_t volume)
 
   // Sem custo de I2C aqui - setVolume() so grava o numero no objeto Speaker,
   // nao liga o ES8388 (ver o aviso grande em settings.h). Por isso e seguro
-  // chamar de QUALQUER tarefa, ao contrario de tab5_camera_iniciar() e
+  // chamar de QUALQUER tarefa, ao contrario de tab5_camera_start() e
   // companhia - a regra "so a tarefa de interface fala I2C" nao se aplica
   // aqui.
   M5.Speaker.setVolume(s_volume);

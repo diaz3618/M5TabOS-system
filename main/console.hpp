@@ -11,5 +11,5 @@
 
 #pragma once
 
-// Cria a tarefa do console. Chamar depois de tab5_sd_iniciar().
+// Cria a tarefa do console. Chamar depois de tab5_sd_init().
 void console_iniciar(void);

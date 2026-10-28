@@ -71,7 +71,7 @@ static uint32_t s_cont_seg = 0;
 
 static volatile bool s_mexendo = false;
 static volatile bool s_zerar = false;      // pedido de recomecar a referencia (outra tarefa)
-static tab5_ouvinte_t<tab5_csi_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
+static tab5_listener_t<tab5_csi_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
 
 // Servico.
 static volatile uint32_t s_quem = 0;
@@ -168,7 +168,7 @@ static void ao_peer_data(uint32_t msg_id, const uint8_t* d, size_t n, void*)
   if (agora - s_t_seg >= 1000000) { s_por_s = (uint16_t)s_cont_seg; s_cont_seg = 0; s_t_seg = agora; }
 
   medir(c, bytes, len);
-  tab5_ouvinte_chamar(&s_ouvinte, (const c6_csi_cab_t*)&c, bytes, len);
+  tab5_listener_call(&s_ouvinte, (const c6_csi_cab_t*)&c, bytes, len);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,16 +211,16 @@ static void vTarefa(void*)
   esp_ping_handle_t ping = nullptr;
   uint32_t gw_ping = 0;
   bool pediu_c6 = false;
-  tab5_wifi_manter_acordado(TAB5_ACORDADO_CSI, true);   // em modem sleep o C6 perde quadros
+  tab5_wifi_keep_awake(TAB5_AWAKE_CSI, true);   // em modem sleep o C6 perde quadros
 
   while (!parada_pedida(&s_parada)) {
     // Ha de onde medir? Firmware nosso com CSI, e WiFi conectado ao roteador.
-    const bool c6_ok = tab5_wifi_c6_nosso() && tab5_wifi_c6_enlace()
+    const bool c6_ok = tab5_wifi_c6_is_ours() && tab5_wifi_c6_link()
                        && (tab5_farejo_caps_c6() & C6_CAP_CSI);
     uint32_t gw = 0;
     wifi_ap_record_t ap;
     bool tem_ap = false;
-    if (c6_ok && tab5_wifi_estado() == TAB5_WIFI_CONECTADO) {
+    if (c6_ok && tab5_wifi_state() == TAB5_WIFI_CONNECTED) {
       esp_netif_t* nif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
       esp_netif_ip_info_t ip;
       if (nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK) { gw = ip.gw.addr; }
@@ -257,7 +257,7 @@ static void vTarefa(void*)
 
   ping_parar(&ping);
   if (pediu_c6) { c6_csi_cfg_t off = { }; mandar(off); }
-  tab5_wifi_manter_acordado(TAB5_ACORDADO_CSI, false);
+  tab5_wifi_keep_awake(TAB5_AWAKE_CSI, false);
   s_fase = TAB5_CSI_DESLIGADO;
   ESP_LOGI(TAG, "CSI desligado");
   parada_confirmar(&s_parada);   // a ULTIMA coisa: daqui em diante um ligar pode criar outra
@@ -304,7 +304,7 @@ void tab5_csi_ligar(uint32_t quem)
   s_nivel = TAB5_CSI_PARADO;
   s_fase = TAB5_CSI_APRENDENDO;
   if (!parada_preparar(&s_parada)
-   || !pool_criar(&s_id, vTarefa, nullptr, "csi", 3072, 3, DONO_SERVICO, "CSI")) {
+   || !pool_criar(&s_id, vTarefa, nullptr, "csi", 3072, 3, OWNER_SERVICE, "CSI")) {
     parada_desistir(&s_parada);
     s_quem = 0;
     s_fase = TAB5_CSI_DESLIGADO;
@@ -333,7 +333,7 @@ void tab5_csi_aparelho_mexendo(bool sim) { s_mexendo = sim; }
 void tab5_csi_ouvinte(tab5_csi_ouvinte_t cb)
 {
   preparar();
-  tab5_ouvinte_definir(&s_ouvinte, cb);
+  tab5_listener_set(&s_ouvinte, cb);
 }
 
 void tab5_csi_estado(tab5_csi_estado_t* out)

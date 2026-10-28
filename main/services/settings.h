@@ -1,13 +1,13 @@
 // Ajustes do sistema - as PREFERENCIAS DO USUARIO, guardadas na NVS.
 //
-// A distincao que motivou este modulo: o tab5_perfil_t de cada app diz "que
+// A distincao que motivou este modulo: o tab5_profile_t de cada app diz "que
 // hardware EU preciso ligado" - Grove, radio, IMU. Isso e requisito do
 // aplicativo. Ja o brilho e outra coisa: e preferencia de quem esta segurando
 // o aparelho, e nenhum app tem autoridade sobre ela. Estavam misturados no
 // mesmo struct, e o app vencia - errado.
 //
 // Agora o sistema sobrescreve o brilho do perfil na hora de abrir o app. O
-// campo continua existindo no tab5_perfil_t (que precisa seguir autocontido e
+// campo continua existindo no tab5_profile_t (que precisa seguir autocontido e
 // copiavel para outros projetos), mas quem manda aqui e este modulo.
 //
 // NVS e nao cartao: ajuste tem de funcionar sem cartao nenhum, e ser lido no
@@ -25,7 +25,7 @@
 // entao o piso tem de ser baixo - mas nao tanto: com 2 (0,9% de duty) a tela
 // ficava acesa ao arrastar a barra e VOLTAVA APAGADA depois do repouso, porque
 // o driver do backlight nao parte do zero com um pulso tao curto (ver
-// tab5_power_acender). 6 = 1,8% de duty: ainda escuro, mas sempre visivel.
+// tab5_power_wake_screen). 6 = 1,8% de duty: ainda escuro, mas sempre visivel.
 #define AJUSTES_BRILHO_MIN  6
 #define AJUSTES_BRILHO_MAX  255
 
@@ -82,7 +82,7 @@ void    ajustes_definir_tela_s(uint8_t segundos);
 // gasta atendendo). Guardado e nao so em RAM para sobreviver ao reinicio, e
 // exposto em Ajustes para quem nao estiver com o cabo serial na mao.
 //
-// A faixa e a MESMA que tab5_power_relogio_dpi() aceita (24..80) - limitada
+// A faixa e a MESMA que tab5_power_dpi_clock() aceita (24..80) - limitada
 // aqui tambem, e nao so la, pelo mesmo motivo do tela_s: um valor gravado por
 // engano nao pode virar um painel que nunca mais sobe.
 // Teto de 80 (era 100). Acima de 80 o
@@ -95,7 +95,7 @@ void    ajustes_definir_tela_s(uint8_t segundos);
 uint8_t ajustes_relogio_painel(void);
 
 // SO GRAVA - nao aplica no painel. Quem muda o relogio de verdade e
-// tab5_power_relogio_dpi(); o chamador (console, Ajustes) e quem decide a
+// tab5_power_dpi_clock(); o chamador (console, Ajustes) e quem decide a
 // ORDEM entre aplicar e gravar, porque so ele sabe se a troca deu certo.
 void    ajustes_definir_relogio_painel(uint8_t mhz);
 

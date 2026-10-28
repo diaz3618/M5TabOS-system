@@ -3,41 +3,40 @@
 #include "hal/axi_icm_ll.h"
 #include "esp_log.h"
 
-static const char* TAG = "barramento";
+static const char* TAG = "bus";
 
-// 0..15 nos dois campos, com 0 de fabrica para todo mundo.
+// 0..15 in both fields; the factory default is 0 for every master.
 //
-// 8 e nao 15 de proposito. O que importa e a ORDEM entre os mestres, e nao a
-// magnitude: basta a tela estar acima da CPU para vencer a disputa. Deixando
-// folga por cima, sobra faixa para um dia colocar algo entre os dois (o DMA do
-// audio, por exemplo) sem ter que rebaixar a tela.
-#define PRIO_TELA   8
-#define PRIO_PADRAO 0
+// Deliberately 8, not 15. The ORDER among masters matters, not the magnitude;
+// the screen only needs to rank above the CPU. Headroom leaves space to put
+// something between them later (audio DMA, for example) without demoting it.
+#define SCREEN_PRIORITY  8
+#define DEFAULT_PRIORITY 0
 
-static bool s_ligado = false;
+static bool s_enabled = false;
 
-void tab5_barramento_priorizar_tela(bool ligar)
+void tab5_bus_prioritize_screen(bool enable)
 {
-  const uint32_t p = ligar ? PRIO_TELA : PRIO_PADRAO;
+  const uint32_t p = enable ? SCREEN_PRIORITY : DEFAULT_PRIORITY;
 
-  // Prioridade de ARBITRAGEM: quem ganha o barramento quando dois pedem junto.
-  // E este o campo que decide a disputa.
+  // ARBITRATION priority: who wins when two masters request the bus together.
+  // This is the field that decides the contest.
   AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst1_priority = p;
   AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst2_priority = p;
 
-  // ARQOS do canal de LEITURA. Complementar: a arbitragem escolhe quem entra,
-  // o QoS diz o quanto o pedido dele vale para o controlador de memoria.
+  // ARQOS for the READ channel. Arbitration chooses who enters; QoS tells the
+  // memory controller how much that request is worth.
   //
-  // So leitura (arqos), nao escrita: o painel apenas LE o framebuffer. Mexer no
-  // canal de escrita nao ajudaria a tela e tiraria banda de quem escreve.
+  // Read only (arqos), not write: the panel only READS the framebuffer. Changing
+  // the write channel would not help the screen and would steal writer bandwidth.
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(0, 0, p);
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(1, 0, p);
 
-  s_ligado = ligar;
-  ESP_LOGI(TAG, "prioridade da tela no acesso a memoria: %s (gdma=%u, cache=%u)",
-           ligar ? "ALTA (contra a piscada azul)" : "padrao",
+  s_enabled = enable;
+  ESP_LOGI(TAG, "screen memory-access priority: %s (gdma=%u, cache=%u)",
+           enable ? "HIGH (prevents blue flicker)" : "default",
            (unsigned)AXI_ICM.mst_arb_priority_reg0.reg_gdma_mst1_priority,
            (unsigned)AXI_ICM.mst_arb_priority_reg0.reg_cache_priority);
 }
 
-bool tab5_barramento_priorizado(void) { return s_ligado; }
+bool tab5_bus_is_prioritized(void) { return s_enabled; }

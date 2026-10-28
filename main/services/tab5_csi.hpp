@@ -30,7 +30,7 @@
 #include <stdbool.h>
 #include "tab5_c6.h"
 
-// Quem pede (um bit cada, como tab5_wifi_manter_acordado): o servico fica
+// Quem pede (um bit cada, como tab5_wifi_keep_awake): o servico fica
 // ligado enquanto houver um.
 #define TAB5_CSI_RADAR    (1u << 0)
 #define TAB5_CSI_CONSOLE  (1u << 1)

@@ -55,7 +55,7 @@ bool tarefa_app_criar(tarefa_app_t* t, tarefa_app_corpo_t corpo,
   // O dono vai junto do pedido: a vaga o registra ANTES de a funcao comecar.
   const char* app = (sistema_app_atual() && sistema_na_interface()) ? sistema_app_atual() : nullptr;
   if (!pool_criar(&t->id, trampolim, t, nome, pilha, prioridade,
-                  app ? DONO_APP : DONO_SISTEMA, app)) {
+                  app ? OWNER_APP : OWNER_SYSTEM, app)) {
     vSemaphoreDelete(t->fim);
     t->fim = nullptr;
     return false;

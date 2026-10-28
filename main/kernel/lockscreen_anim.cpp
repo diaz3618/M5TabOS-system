@@ -284,7 +284,7 @@ static void fundo_ceu(lgfx::LGFX_Sprite& s, int W, int H)
 }
 
 // Sobe a imagem inteira para a tela, em faixas (um pushSprite por faixa: a
-// mesma regra de nao despejar 1,6 MB de uma vez - ver tab5_tela_limpar).
+// mesma regra de nao despejar 1,6 MB de uma vez - ver tab5_screen_clear).
 static void fundo_pintar_tudo(lgfx::LovyanGFX& d)
 {
   const int FAIXA = 128;
@@ -1506,7 +1506,7 @@ bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t s
     s_parede_l = a.largura; s_parede_a = a.altura;
   }
 
-  // EM FAIXAS, como toda escrita grande (ver tab5_tela_limpar): a imagem
+  // EM FAIXAS, como toda escrita grande (ver tab5_screen_clear): a imagem
   // inteira de uma vez seca o FIFO do painel. E coberta: o compositor nao
   // precisa trazer da pagina da frente o que vai ser sobrescrito.
   const int FAIXA = 128;

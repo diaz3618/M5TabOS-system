@@ -18,7 +18,7 @@ static float       s_dt       = 0.033f;
 static uint32_t periodo_painel(void)
 {
   uint32_t p = 0;
-  tab5_quadro_atrasos(nullptr, &p);
+  tab5_frame_delays(nullptr, &p);
   return (p >= 8000 && p <= 60000) ? p : 0;
 }
 
@@ -26,7 +26,7 @@ void ritmo_quadro(const void* dono, uint32_t periodo_ms)
 {
   const int64_t t  = esp_timer_get_time();
   const int64_t P  = periodo_painel();
-  const int64_t vs = tab5_quadro_ultimo_fim_us();
+  const int64_t vs = tab5_frame_last_end_us();
   const int64_t pedido = (int64_t)periodo_ms * 1000;
 
   // Sem medida do painel (boot, logo depois de acordar): o relogio de antes.

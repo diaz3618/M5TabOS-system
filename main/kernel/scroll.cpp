@@ -90,7 +90,7 @@ rolagem_passada_t rolagem_deslocar(rolagem_t* r, const area_t& janela, uint16_t 
   rolagem_passada_t p = {};
   p.delta = (r->ancoragem == ROLAGEM_INICIO) ? (r->atual - r->no_visor)
                                              : (r->no_visor - r->atual);
-  p.deslocou = tab5_tela_rolar(janela.x, janela.y, janela.largura, janela.altura, p.delta, cor);
+  p.deslocou = tab5_screen_scroll(janela.x, janela.y, janela.largura, janela.altura, p.delta, cor);
   if (p.deslocou) {
     const int ad = (p.delta > 0) ? p.delta : -p.delta;
     p.exposta = area_t{

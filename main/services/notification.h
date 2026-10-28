@@ -62,7 +62,7 @@ typedef enum {
 // dali em diante chegava sem aviso nenhum, ate reiniciar o aparelho.
 //
 // 'nome' precisa sobreviver ao registro (literal ou estatico): guardamos o
-// ponteiro, nao uma copia. E o mesmo contrato do app_t.nome.
+// ponteiro, nao uma copia. E o mesmo contrato do app_t.name.
 int notif_registrar(const char* nome);
 
 // Publica o estado ATUAL da fonte. quantidade 0 apaga o aviso.
@@ -95,7 +95,7 @@ void notif_silenciar(int id, bool silenciar);
 uint32_t notif_versao(void);
 
 typedef struct {
-  const char*   nome;
+  const char*   name;
   const char*   app;          // nome do app que o aviso abre (nullptr = nenhum)
   int           quantidade;
   notif_nivel_t nivel;

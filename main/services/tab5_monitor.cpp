@@ -211,7 +211,7 @@ static void anexar(const char* prefixo, const char* cabecalho, const char* linha
   if (n <= 0) { return; }
   char nome[40];
   nome_do_dia(prefixo, nome, sizeof(nome));
-  for (int i = 0; i < n; ++i) { tab5_sd_anexar(PASTA, nome, linhas + i * passo, cabecalho); }
+  for (int i = 0; i < n; ++i) { tab5_sd_enqueue_append(PASTA, nome, linhas + i * passo, cabecalho); }
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ static const char* nome_efetivo(const TaskStatus_t& st)
   const char* n = st.pcTaskName ? st.pcTaskName : "?";
   if (strncmp(n, "pool", 4) == 0) {
     const char* dono = nullptr;
-    tab5_dono_de(st.xHandle, &dono);
+    tab5_owner_of(st.xHandle, &dono);
     if (dono && dono[0]) { return dono; }
   }
   return n;
@@ -271,20 +271,20 @@ static void amostrar(bool primeira)
   // frame inteiro. ERA A CAUSA do "FRAME ATRASADO" com os dois cores em
   // IDLE - este loop roda em fase fixa de 1 s, e todos os
   // atrasos tinham a mesma fracao de segundo. Por isso a foto so e tirada
-  // logo DEPOIS de um fim de frame (tab5_quadro_esperar_fim).
+  // logo DEPOIS de um fim de frame (tab5_frame_wait_for_end).
   // EM REPOUSO O PAINEL ESTA DESMONTADO: nao ha fim de quadro para esperar
   // (nem quadro para perder). A espera so vencia pelo prazo - 40 despertares
   // de 1 tick, todo segundo, com a tela apagada.
-  if (!tab5_power_em_repouso()) { tab5_quadro_esperar_fim(40); }
+  if (!tab5_power_is_sleeping()) { tab5_frame_wait_for_end(40); }
   const int64_t t_foto = esp_timer_get_time();
   const UBaseType_t n = uxTaskGetSystemState(s_status, MON_MAX_TAREFAS, nullptr);
   const int64_t us_foto = esp_timer_get_time() - t_foto;
-  tab5_marco("monitor: foto das tarefas us", (int32_t)us_foto);
+  tab5_mark("monitor: foto das tarefas us", (int32_t)us_foto);
   if (us_foto > s_foto_pior_us) {
     s_foto_pior_us = us_foto;
     // Acima de 5 ms nem a janela entre frames cobre (~14 ms, mas o limite
     // de verdade depende de onde a espera acordou) - vale saber.
-    if (us_foto > 5000 && !tab5_power_em_repouso()) {
+    if (us_foto > 5000 && !tab5_power_is_sleeping()) {
       evento("foto das tarefas segurou o nucleo %d por %lld us", (int)xPortGetCoreID(), (long long)us_foto);
     }
   }
@@ -324,12 +324,12 @@ static void amostrar(bool primeira)
   float idle = 0;
   for (UBaseType_t i = 0; i < n; ++i) {
     mon_tarefa_t& t = nova.t[i];
-    snprintf(t.nome, sizeof(t.nome), "%s", nome_efetivo(s_status[i]));
+    snprintf(t.name, sizeof(t.name), "%s", nome_efetivo(s_status[i]));
     t.numero      = s_status[i].xTaskNumber;
     t.prioridade  = s_status[i].uxCurrentPriority;
     t.pilha_livre = (uint32_t)s_status[i].usStackHighWaterMark * sizeof(StackType_t);
     const char* dono = nullptr;
-    t.tipo = (uint8_t)tab5_dono_de(s_status[i].xHandle, &dono);
+    t.type = (uint8_t)tab5_owner_of(s_status[i].xHandle, &dono);
     snprintf(t.dono, sizeof(t.dono), "%s", dono ? dono : "");
 #if ( configTASKLIST_INCLUDE_COREID == 1 )
     t.core = s_status[i].xCoreID;
@@ -337,7 +337,7 @@ static void amostrar(bool primeira)
     t.core = tskNO_AFFINITY;
 #endif
     t.pct = total ? (100.0f * (float)deltas[i] / (float)total) : 0.0f;
-    if (strncmp(t.nome, "IDLE", 4) == 0) { idle += t.pct; }
+    if (strncmp(t.name, "IDLE", 4) == 0) { idle += t.pct; }
 
     // O pico desta tarefa vem da foto anterior (se ela ja existia).
     t.pct_pico = t.pct; t.pct_pico_em = agora;
@@ -359,13 +359,13 @@ static void amostrar(bool primeira)
   // e as vagas com dono conhecido.
   for (int i = 0; i < nova.n; ++i) {
     const mon_tarefa_t& t = nova.t[i];
-    if (strncmp(t.nome, "IDLE", 4) == 0 || strncmp(t.nome, "pool", 4) == 0) { continue; }
-    anotar_pilha(t.nome, t.pilha_livre);
+    if (strncmp(t.name, "IDLE", 4) == 0 || strncmp(t.name, "pool", 4) == 0) { continue; }
+    anotar_pilha(t.name, t.pilha_livre);
   }
   {
     pool_pilha_t pp[24];
     const int np = pool_pilhas(pp, 24);
-    for (int i = 0; i < np; ++i) { anotar_pilha(pp[i].nome, pp[i].livre_min); }
+    for (int i = 0; i < np; ++i) { anotar_pilha(pp[i].name, pp[i].livre_min); }
   }
 
   nova.cpu = 100.0f - idle;
@@ -440,7 +440,7 @@ static void amostrar(bool primeira)
   // (hal/tab5_frame) conta cada vez que o painel ficou sem dados; aqui cada
   // aumento vira evento com o APP QUE ESTAVA ABERTO - a piscada azul deixa de
   // ser relato e passa a ter hora e lugar.
-  const uint32_t und = tab5_quadro_underruns();
+  const uint32_t und = tab5_frame_underruns();
   if (!primeira && und > s_underruns_ant) {
     const char* app = sistema_app_atual();
     evento("UNDERRUN do painel (+%lu) com %s aberto", (unsigned long)(und - s_underruns_ant),
@@ -474,7 +474,7 @@ static void amostrar(bool primeira)
   // frame que atrasou (DMA religado tarde) e erro no DSI host.
   {
     uint32_t pior_us = 0, periodo_us = 0;
-    const uint32_t atr = tab5_quadro_atrasos(&pior_us, &periodo_us);
+    const uint32_t atr = tab5_frame_delays(&pior_us, &periodo_us);
     if (!primeira && atr > s_atrasos_ant) {
       const char* app = sistema_app_atual();
       evento("QUADRO ATRASADO (+%lu) pior %lu.%lums (normal %lu.%lums) com %s",
@@ -483,13 +483,13 @@ static void amostrar(bool primeira)
              (unsigned long)(periodo_us / 1000), (unsigned long)(periodo_us % 1000 / 100),
              app ? app : "a home");
       int nucleo = -1; char t0[16], t1[16];
-      tab5_quadro_atraso_quem(&nucleo, t0, t1);
+      tab5_frame_delay_source(&nucleo, t0, t1);
       evento("  atraso: ISR no nucleo %d; rodando c0=%s c1=%s", nucleo, t0, t1);
       // O QUE ACONTECEU PERTO: quanto tempo antes do atraso o cartao montou/
       // desmontou de verdade e saiu o ultimo frame (e de que tamanho).
-      const int64_t t = tab5_quadro_atraso_quando();
+      const int64_t t = tab5_frame_delay_time();
       int64_t mont = 0, desm = 0, qd = 0; uint32_t px = 0;
-      tab5_sd_ultimas_transicoes(&mont, &desm);
+      tab5_sd_last_transitions(&mont, &desm);
       comp_ultimo_quadro(&qd, &px);
       auto ms = [&](int64_t x) { return x ? (long)((t - x) / 1000) : -1L; };
       evento("  em %ld.%03lds: sd +%ldms -%ldms, quadro %ldms antes (%luKpx)",
@@ -498,8 +498,8 @@ static void amostrar(bool primeira)
       // OS MARCOS DOS 300 ms ANTERIORES (hal/tab5_marks): trocas de clock da
       // CPU (e com elas o reajuste do barramento da PSRAM), repouso, sondagem
       // do Grove... Direto no log, e nao em evento(), porque a linha e longa.
-      tab5_marco_t m[12];
-      const int nm = tab5_marcos_entre(t - 300000, t + 2000, m, 12);
+      tab5_mark_t m[12];
+      const int nm = tab5_marks_between(t - 300000, t + 2000, m, 12);
       if (nm == 0) {
         ESP_LOGW(TAG, "  marcos: nenhum nos 300 ms antes");
       } else {
@@ -507,7 +507,7 @@ static void amostrar(bool primeira)
         int k = snprintf(linha, sizeof(linha), "  marcos:");
         for (int i = 0; i < nm && k < (int)sizeof(linha) - 48; ++i) {
           k += snprintf(linha + k, sizeof(linha) - k, " [%+ldms %s %ld]",
-                        (long)((m[i].us - t) / 1000), m[i].o_que, (long)m[i].valor);
+                        (long)((m[i].us - t) / 1000), m[i].what, (long)m[i].value);
         }
         ESP_LOGW(TAG, "%s", linha);
       }
@@ -515,7 +515,7 @@ static void amostrar(bool primeira)
     s_atrasos_ant = atr;
 
     uint32_t st0 = 0, st1 = 0;
-    const uint32_t err = tab5_quadro_erros_dsi(&st0, &st1);
+    const uint32_t err = tab5_frame_dsi_errors(&st0, &st1);
     if (!primeira && err > s_dsi_erros_ant) {
       const char* app = sistema_app_atual();
       evento("DSI host: erro st0=%08lx st1=%08lx (+%lu quadros) com %s",
@@ -564,7 +564,7 @@ static void amostrar(bool primeira)
       for (UBaseType_t i = 0; i < n; ++i) { if (novo_ant[i].numero == s_ant[k].numero) { viva = true; break; } }
       if (!viva) {
         const char* nome = "?";
-        for (int j = 0; j < velha.n; ++j) { if (velha.t[j].numero == s_ant[k].numero) { nome = velha.t[j].nome; } }
+        for (int j = 0; j < velha.n; ++j) { if (velha.t[j].numero == s_ant[k].numero) { nome = velha.t[j].name; } }
         if (!efemera(nome)) { evento("tarefa encerrada: %s", nome); }
       }
     }
@@ -615,7 +615,7 @@ static void amostrar(bool primeira)
     comp_estat_t a;
     comp_estat(&a);
     const comp_estat_t& b = s_qd_ant;
-    const uint32_t q = a.quadros - b.quadros;
+    const uint32_t q = a.frames - b.frames;
     if (q > 0) {
       auto ms = [&](uint64_t us) { return (double)us / 1000.0 / q; };
       char h[12], linha[200];
@@ -697,7 +697,7 @@ static void vTaskMonitor(void*)
     // Acordou, volta a 1 s na hora (a CPU de cada janela vem de deltas, vale
     // para qualquer intervalo).
     static uint32_t s_pulou = 0;
-    if (tab5_power_em_repouso() && ++s_pulou < 10) { continue; }
+    if (tab5_power_is_sleeping() && ++s_pulou < 10) { continue; }
     s_pulou = 0;
     amostrar(false);
   }
@@ -720,7 +720,7 @@ void tab5_monitor_iniciar(void)
   {
     TaskHandle_t h = nullptr;
     xTaskCreatePinnedToCore(vTaskMonitor, "monitor", 6144, nullptr, 1, &h, tskNO_AFFINITY);
-    tab5_dono_registrar(h, DONO_SERVICO, "Monitor");   // ver hal/tab5_owners.hpp
+    tab5_owner_register(h, OWNER_SERVICE, "Monitor");   // ver hal/tab5_owners.hpp
   }
 }
 

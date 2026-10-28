@@ -36,11 +36,11 @@ typedef struct {
   uint32_t          bytes;
   TaskHandle_t      h;
   SemaphoreHandle_t acordar;
-  std::atomic<int>  estado;
+  std::atomic<int>  state;
   volatile uint32_t geracao;
   pool_corpo_t      fn;
   void*             arg;
-  char              nome[16];
+  char              name[16];
 } vaga_t;
 
 static vaga_t s_v[POOL_N];
@@ -57,10 +57,10 @@ static void anotar_pilha(const char* nome, uint32_t livre)
 {
   taskENTER_CRITICAL(&s_mux);
   int k = 0;
-  while (k < s_pilhas_n && strncmp(s_pilhas[k].nome, nome, sizeof(s_pilhas[k].nome)) != 0) { ++k; }
+  while (k < s_pilhas_n && strncmp(s_pilhas[k].name, nome, sizeof(s_pilhas[k].name)) != 0) { ++k; }
   if (k < PILHAS_N) {
     if (k == s_pilhas_n) {
-      snprintf(s_pilhas[k].nome, sizeof(s_pilhas[k].nome), "%s", nome);
+      snprintf(s_pilhas[k].name, sizeof(s_pilhas[k].name), "%s", nome);
       s_pilhas[k].livre_min = livre;
       ++s_pilhas_n;
     } else if (livre < s_pilhas[k].livre_min) {
@@ -102,12 +102,12 @@ static void vTaskVaga(void* a)
 
     fn(v->arg);
 
-    tab5_dono_esquecer(v->h);
-    anotar_pilha(v->nome, (uint32_t)uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+    tab5_owner_forget(v->h);
+    anotar_pilha(v->name, (uint32_t)uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
     ulTaskNotifyTake(pdTRUE, 0);
     repintar();
     v->fn = nullptr;
-    v->estado.store(LIVRE, std::memory_order_release);
+    v->state.store(LIVRE, std::memory_order_release);
   }
 }
 
@@ -121,7 +121,7 @@ void pool_iniciar(void)
     vaga_t* v = &s_v[i];
     v->pilha = pilhas[i];
     v->bytes = tam[i];
-    v->estado.store(LIVRE);
+    v->state.store(LIVRE);
     v->acordar = xSemaphoreCreateBinaryStatic(&v->sem_buf);
     char nome[8];
     snprintf(nome, sizeof(nome), "pool%d", i);
@@ -141,12 +141,12 @@ static void vTaskDinamica(void* a)
   dinamica_t d = *(dinamica_t*)a;
   free(a);
   d.fn(d.arg);
-  tab5_dono_esquecer(xTaskGetCurrentTaskHandle());
+  tab5_owner_forget(xTaskGetCurrentTaskHandle());
   vTaskDelete(nullptr);
 }
 
 bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
-                uint32_t pilha, UBaseType_t prio, dono_tipo_t tipo, const char* dono)
+                uint32_t pilha, UBaseType_t prio, owner_type_t tipo, const char* dono)
 {
   if (id) { *id = (pool_id_t)POOL_ID_VAZIO; }
   if (!fn) { return false; }
@@ -159,15 +159,15 @@ bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
     vaga_t* v = &s_v[k % POOL_N];
     if (v->bytes < pilha) { continue; }
     int esperado = LIVRE;
-    if (v->estado.compare_exchange_strong(esperado, OCUPADA, std::memory_order_acq_rel)) { esc = v; }
+    if (v->state.compare_exchange_strong(esperado, OCUPADA, std::memory_order_acq_rel)) { esc = v; }
   }
 
   if (esc) {
-    snprintf(esc->nome, sizeof(esc->nome), "%s", nome ? nome : "?");
+    snprintf(esc->name, sizeof(esc->name), "%s", nome ? nome : "?");
     esc->fn  = fn;
     esc->arg = arg;
     esc->geracao = esc->geracao + 1;
-    if (dono) { tab5_dono_registrar(esc->h, tipo, dono); }
+    if (dono) { tab5_owner_register(esc->h, tipo, dono); }
     if (id) { id->idx = (int8_t)(esc - s_v); id->geracao = esc->geracao; id->handle = esc->h; }
     vTaskPrioritySet(esc->h, prio);
     xSemaphoreGive(esc->acordar);
@@ -185,7 +185,7 @@ bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
     free(d);
     return false;
   }
-  if (dono) { tab5_dono_registrar(h, tipo, dono); }
+  if (dono) { tab5_owner_register(h, tipo, dono); }
   if (id) { id->handle = h; }
   return true;
 }
@@ -195,7 +195,7 @@ void pool_acordar(const pool_id_t* id)
   if (!id) { return; }
   if (id->idx >= 0 && id->idx < POOL_N) {
     vaga_t* v = &s_v[id->idx];
-    if (v->geracao == id->geracao && v->estado.load(std::memory_order_acquire) == OCUPADA) {
+    if (v->geracao == id->geracao && v->state.load(std::memory_order_acquire) == OCUPADA) {
       xTaskAbortDelay(v->h);
     }
   } else if (id->handle) {
@@ -208,7 +208,7 @@ void pool_estado(pool_estado_t* out)
   memset(out, 0, sizeof(*out));
   out->vagas = POOL_N;
   for (int i = 0; i < POOL_N; ++i) {
-    if (s_v[i].estado.load() == OCUPADA) { ++out->ocupadas; }
+    if (s_v[i].state.load() == OCUPADA) { ++out->ocupadas; }
     out->bytes_fixos += s_v[i].bytes + (uint32_t)sizeof(StaticTask_t) + (uint32_t)sizeof(StaticSemaphore_t);
   }
   out->dinamicas = s_dinamicas.load();

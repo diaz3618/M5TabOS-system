@@ -131,7 +131,7 @@ static void trab_contar(void*)
 {
   int n = 0;
   char pasta[96];
-  if (tab5_sd_montado() && tab5_sd_pasta("Exemplo", pasta, sizeof(pasta))) {
+  if (tab5_sd_mounted() && tab5_sd_folder("Exemplo", pasta, sizeof(pasta))) {
     DIR* d = opendir(pasta);
     if (d) {
       while (readdir(d) && !sistema_trabalho_cancelado()) { ++n; }
@@ -155,7 +155,7 @@ static void b_trabalho(void)
 }
 
 // ---- CARTAO -----------------------------------------------------------------
-// tab5_sd_anexar nao espera: o sistema grava em lote, e guarda no diario se o
+// tab5_sd_enqueue_append nao espera: o sistema grava em lote, e guarda no diario se o
 // cartao estiver emprestado ao computador.
 static void v_cartao(char* o, size_t n)
 {
@@ -167,7 +167,7 @@ static void b_cartao(void)
 {
   char linha[48];
   snprintf(linha, sizeof(linha), "%lu,%d\n", (unsigned long)tab5_hora_epoch(), s_linhas_gravadas + 1);
-  if (tab5_sd_anexar("Exemplo", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
+  if (tab5_sd_enqueue_append("Exemplo", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
 }
 
 // ---- HORA -------------------------------------------------------------------
@@ -182,10 +182,10 @@ static void v_hora(char* o, size_t n)
 }
 
 // ---- ENERGIA ----------------------------------------------------------------
-// tab5_power_ultima(): a medida que a interface ja fez, sem tocar no I2C.
+// tab5_power_latest(): a medida que a interface ja fez, sem tocar no I2C.
 static void v_energia(char* o, size_t n)
 {
-  const tab5_medida_t m = tab5_power_ultima();
+  const tab5_measurement_t m = tab5_power_latest();
   if (m.pct >= 0) { snprintf(o, n, "%d%%  %.2f V  %+.0f mA", m.pct, (double)m.volts, (double)m.mA); }
   else            { snprintf(o, n, "%.2f V  %+.0f mA", (double)m.volts, (double)m.mA); }
 }
@@ -194,16 +194,16 @@ static void v_energia(char* o, size_t n)
 // Exige .perfil.imu = true (o sistema so liga a IMU de quem pede).
 static void v_imu(char* o, size_t n)
 {
-  tab5_imu_dados_t d;
-  if (!tab5_imu_ultima(&d) || !d.valida) { snprintf(o, n, "IMU sem leitura"); return; }
+  tab5_imu_data_t d;
+  if (!tab5_imu_latest(&d) || !d.valid) { snprintf(o, n, "IMU sem leitura"); return; }
   snprintf(o, n, "x %+.2f g  y %+.2f g  z %+.2f g", (double)d.ax, (double)d.ay, (double)d.az);
 }
 
 // ---- GPS --------------------------------------------------------------------
 static void v_gps(char* o, size_t n)
 {
-  if (!tab5_gps_no_ar()) { snprintf(o, n, "sem GPS no Grove"); return; }
-  const nmea_posicao_t p = tab5_gps_posicao();
+  if (!tab5_gps_on_air()) { snprintf(o, n, "sem GPS no Grove"); return; }
+  const nmea_position_t p = tab5_gps_position();
   if (p.qualidade == 0) { snprintf(o, n, "GPS sem fix (%u sat)", (unsigned)p.sats_usados); return; }
   snprintf(o, n, "%.5f, %.5f  (%u sat)", p.lat, p.lon, (unsigned)p.sats_usados);
 }
@@ -213,7 +213,7 @@ static void v_wifi(char* o, size_t n)
 {
   const char* ip = tab5_wifi_ip();
   if (ip && ip[0]) { snprintf(o, n, "%s  %s  %d dBm", tab5_wifi_ssid(), ip, (int)tab5_wifi_rssi()); }
-  else             { snprintf(o, n, "%s", tab5_wifi_descricao()); }
+  else             { snprintf(o, n, "%s", tab5_wifi_description()); }
 }
 
 // ---- ESP-NOW ----------------------------------------------------------------
@@ -253,7 +253,7 @@ static void b_notif(void)
 }
 
 // ---- SOM --------------------------------------------------------------------
-// Exige .perfil.alto_falante = true. Sempre pelo sistema_beep (o codec frio
+// Exige .perfil.speaker = true. Sempre pelo sistema_beep (o codec frio
 // engoliria um tone() direto).
 static void v_som(char* o, size_t n) { snprintf(o, n, "sistema_beep(880 Hz, 120 ms)"); }
 static void b_som(void) { sistema_beep(880.0f, 120); }
@@ -261,7 +261,7 @@ static void b_som(void) { sistema_beep(880.0f, 120); }
 // ---- TECLADO ----------------------------------------------------------------
 static void v_teclado(char* o, size_t n)
 {
-  if (!tab5_teclado_presente()) { snprintf(o, n, "encaixe o teclado no ExtPort1"); return; }
+  if (!tab5_keyboard_present()) { snprintf(o, n, "encaixe o teclado no ExtPort1"); return; }
   snprintf(o, n, s_tecla[0] ? "ultima tecla: %s" : "digite algo", s_tecla);
 }
 
@@ -296,7 +296,7 @@ static void laco_fundo(fundo_t* f)
 static bool fundo_sem_som(void) { return false; }
 
 static const fundo_def_t EXEMPLO_FUNDO = {
-  .nome  = "Exemplo",
+  .name  = "Exemplo",
   .corpo = laco_fundo,
   .pilha = 3072,
   .perfil = { },
@@ -332,16 +332,16 @@ static const cartao_t CARTOES[] = {
   { "TOQUE",       "ao_tocar(x, y) - na soltura",           v_toque,    nullptr,   nullptr },
   { "TAREFA",      "tarefa_app + fila",                     v_tarefa,   nullptr,   nullptr },
   { "TRABALHO",    "sistema_trabalho + AVISO_TRABALHO",     v_trabalho, "contar",  b_trabalho },
-  { "CARTAO",      "tab5_sd_anexar",                        v_cartao,   "gravar",  b_cartao },
+  { "CARTAO",      "tab5_sd_enqueue_append",                        v_cartao,   "gravar",  b_cartao },
   { "HORA",        "tab5_hora_epoch + tab5_hora_local",     v_hora,     nullptr,   nullptr },
-  { "ENERGIA",     "tab5_power_ultima",                     v_energia,  nullptr,   nullptr },
-  { "IMU",         "tab5_imu_ultima (perfil.imu)",          v_imu,      nullptr,   nullptr },
-  { "GPS",         "tab5_gps_posicao",                      v_gps,      nullptr,   nullptr },
+  { "ENERGIA",     "tab5_power_latest",                     v_energia,  nullptr,   nullptr },
+  { "IMU",         "tab5_imu_latest (perfil.imu)",          v_imu,      nullptr,   nullptr },
+  { "GPS",         "tab5_gps_position",                      v_gps,      nullptr,   nullptr },
   { "WIFI",        "tab5_wifi_ssid / _ip / _rssi",          v_wifi,     nullptr,   nullptr },
   { "ESP-NOW",     "tab5_espnow_enviar + AVISO_ESPNOW",     v_espnow,   "difundir", b_espnow },
   { "MESH",        "tab5_mesh_* + AVISO_MESH_*",            v_mesh,     nullptr,   nullptr },
   { "NOTIFICACAO", "notif_publicar / notif_limpar",         v_notif,    "avisar",  b_notif },
-  { "SOM",         "sistema_beep (perfil.alto_falante)",    v_som,      "bip",     b_som },
+  { "SOM",         "sistema_beep (perfil.speaker)",    v_som,      "bip",     b_som },
   { "TECLADO",     "ao_teclar(texto, codigo, mod)",         v_teclado,  nullptr,   nullptr },
   { "ACORDADO",    "sistema_manter_acordado",               v_acordado, "trocar",  b_acordado },
   { "FUNDO",       "background.h: sistema_fundo_iniciar",        v_fundo,    "ligar",   b_fundo },
@@ -533,11 +533,11 @@ static void icone_exemplo(lgfx::LovyanGFX& d, int x, int y, int lado)
 // 'extern' e OBRIGATORIO: em C++ um const de arquivo tem ligacao interna, e o
 // apps.cpp nao enxergaria o simbolo (o erro so aparece no link).
 extern const app_t APP_EXAMPLE = {
-  .nome  = "Exemplo",
+  .name  = "Exemplo",
   .cor   = TFT_CYAN,
   // So o que os cartoes usam. O resto fica desligado enquanto o app esta na
   // tela - e o que impede o aparelho de alimentar o que ninguem usa.
-  .perfil = { .imu = true, .alto_falante = true },
+  .perfil = { .imu = true, .speaker = true },
   .usa_sd = true,               // monta o cartao antes do ao_abrir (TRABALHO le a pasta)
   .orientacao = ORI_EM_PE,
   .piso_repouso_mhz = 0,

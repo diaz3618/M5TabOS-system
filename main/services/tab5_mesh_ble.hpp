@@ -24,7 +24,7 @@
 // Sobe a tarefa do enlace: procura o no (o endereco guardado em ajustes, ou o
 // primeiro Meshtastic que aparecer), conecta, pareia com o PIN e fica
 // entregando o que chega. Reconecta sozinho se cair. Quem chama ja ligou o
-// Bluetooth (tab5_ble_ligar, tarefa de interface).
+// Bluetooth (tab5_ble_turn_on, tarefa de interface).
 bool mesh_ble_iniciar(void);
 // Para e desconecta. Espera a tarefa sair (ate 6 s).
 bool mesh_ble_parar(void);

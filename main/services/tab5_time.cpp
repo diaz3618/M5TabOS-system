@@ -65,7 +65,7 @@ extern "C" void sntp_sync_time(struct timeval* tv)
 
 static void garantir_sntp(void)
 {
-  if (s_sntp_de_pe || tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { return; }
+  if (s_sntp_de_pe || tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return; }
   esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
   if (esp_netif_sntp_init(&cfg) == ESP_OK) {
     s_sntp_de_pe = true;
@@ -102,9 +102,9 @@ static time_t utc_para_epoch(const struct tm& t)
 
 static uint32_t hora_gps(void)
 {
-  if (!tab5_gps_no_ar()) { return 0; }   // RMC guardado de um receptor que calou
-  const nmea_tempo_t g = tab5_gps_tempo();
-  if (!g.valida || !g.fix) { return 0; }
+  if (!tab5_gps_on_air()) { return 0; }   // RMC guardado de um receptor que calou
+  const nmea_time_t g = tab5_gps_time();
+  if (!g.valid || !g.fix) { return 0; }
   struct tm t = { };
   t.tm_year = g.ano - 1900;
   t.tm_mon  = g.mes - 1;
@@ -145,7 +145,7 @@ static void descrever_ajuste(int64_t antes, int64_t delta, char* out, size_t n)
 static bool acertar(uint32_t epoch, nivel_t nivel)
 {
   const int64_t antes = (int64_t)time(nullptr);
-  if (!tab5_rtc_definir((time_t)epoch)) { return false; }
+  if (!tab5_rtc_set((time_t)epoch)) { return false; }
   const int64_t delta = (int64_t)epoch - antes;
 
   if (nivel != s_nivel || delta > SALTO_S || delta < -SALTO_S) {

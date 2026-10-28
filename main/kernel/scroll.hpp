@@ -47,7 +47,7 @@
 
 // EIXO e ANCORAGEM sao campos SEPARADOS, e nao um enum unico de quatro
 // valores - sao perguntas ortogonais. "Vertical ou horizontal" decide QUAL
-// funcao de deslocamento serve (tab5_tela_rolar copia linhas inteiras: e
+// funcao de deslocamento serve (tab5_screen_scroll copia linhas inteiras: e
 // vertical por construcao). "Inicio ou fim" decide o SINAL do arrasto e a
 // posicao da barrinha. A paginacao horizontal da home, um dia, vai precisar
 // do primeiro campo sem mexer no segundo - empacotar os dois obrigaria a
@@ -91,7 +91,7 @@ typedef struct {
 // (so a faixa nova precisa ser redesenhada).
 typedef struct {
   int    delta;      // deslocamento aplicado, em espaco de TELA (o que foi
-                      // pra tab5_tela_rolar - ja com o sinal certo pra
+                      // pra tab5_screen_scroll - ja com o sinal certo pra
                       // ancoragem desta lista)
   bool   deslocou;    // aproveitou os pixels que ja estavam certos
   area_t exposta;     // a faixa recem-exposta; so valida quando deslocou==true
@@ -137,7 +137,7 @@ bool rolagem_foi_arraste(rolagem_t* r);
 // suja se for o caso.
 bool rolagem_limite(rolagem_t* r, int total, int janela);
 
-// Desloca os pixels ja corretos dentro de 'janela' (tab5_tela_rolar) para
+// Desloca os pixels ja corretos dentro de 'janela' (tab5_screen_scroll) para
 // que a pagina visivel alcance 'atual'. Sincroniza 'no_visor' sozinha,
 // SEMPRE - moveu de verdade (deslocou==true) ou nao (o chamador vai limpar
 // e redesenhar tudo por conta propria, e dai 'no_visor' tem que acompanhar

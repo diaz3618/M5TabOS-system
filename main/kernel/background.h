@@ -68,10 +68,10 @@ typedef struct fundo_s fundo_t;
 typedef void (*fundo_corpo_t)(fundo_t* f);
 
 typedef struct {
-  const char*   nome;       // literal: nome da tarefa (<=15), da notificacao e nas listas
+  const char*   name;       // literal: nome da tarefa (<=15), da notificacao e nas listas
   fundo_corpo_t corpo;
   uint32_t      pilha;      // bytes; 0 = 4096
-  tab5_perfil_t perfil;     // o que precisa LIGADO enquanto roda (soma no perfil efetivo)
+  tab5_profile_t perfil;     // o que precisa LIGADO enquanto roda (soma no perfil efetivo)
   int           piso_repouso_mhz;   // 0 = o padrao do sistema
   // Opcionais. Rodam na tarefa de quem pediu (a interface, na pratica).
   bool (*ao_iniciar)(void); // prepara o estado; false = recusa ligar
@@ -85,7 +85,7 @@ bool sistema_fundo_parar(const fundo_def_t* d);     // ESPERA o loop sair (ate 3
 bool sistema_fundo_ativo(const fundo_def_t* d);
 
 typedef struct {
-  const char* nome;
+  const char* name;
   uint32_t    ha_s;                  // rodando ha quantos segundos
   char        resumo[NOTIF_RESUMO];  // o ultimo fundo_estado()
 } fundo_info_t;
@@ -99,7 +99,7 @@ bool fundo_rodando(const fundo_t* f);
 void fundo_estado(fundo_t* f, int quantidade, const char* resumo);
 
 // ---- para o kernel --------------------------------------------------------
-void fundo_somar_perfil(tab5_perfil_t& p);   // chamado por sistema_impor_preferencias()
+void fundo_somar_perfil(tab5_profile_t& p);   // chamado por sistema_impor_preferencias()
 int  fundo_piso_repouso(void);               // maior piso pedido (0 = nenhum)
 void fundo_manter(void);                     // no loop da interface: limpa quem terminou sozinho,
                                              // reaplica o perfil quando o conjunto mudou

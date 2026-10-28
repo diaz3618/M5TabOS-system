@@ -29,7 +29,7 @@
 
 static const char *TAG = "app.camera";
 
-static uint16_t* s_foto   = nullptr;   // a foto sendo capturada (TAB5_CAM_FOTO_L x _A, PSRAM) - do app ate virar trabalho
+static uint16_t* s_foto   = nullptr;   // a foto sendo capturada (TAB5_CAM_PHOTO_W x _A, PSRAM) - do app ate virar trabalho
 static char      s_foto_nome[32];
 static volatile bool s_gravou_ok = false;   // escrito pelo trabalho (estatica: existe mesmo com o app fechado)
 static int       s_largura, s_altura;
@@ -59,7 +59,7 @@ static uint32_t s_flash_ate_ms = 0;   // pisca a borda do botao por um instante 
 static uint32_t maior_foto_existente(void)
 {
   char pasta[128];
-  if (!tab5_sd_pasta("Camera", pasta, sizeof(pasta))) { return 0; }
+  if (!tab5_sd_folder("Camera", pasta, sizeof(pasta))) { return 0; }
 
   DIR* d = opendir(pasta);
   if (!d) { return 0; }   // pasta ainda nao existe - primeira foto de todas
@@ -102,16 +102,16 @@ static area_t retangulo_preview(void)
 // avisa o compositor (sistema_superficie_mudou). Nenhuma copia pela CPU.
 static bool ligar_camera(void)
 {
-  if (!tab5_camera_iniciar(s_largura, s_altura)) { return false; }
+  if (!tab5_camera_start(s_largura, s_altura)) { return false; }
   superficie_t sup;
   if (!sistema_superficie(retangulo_preview(), &sup)) {
     ESP_LOGE(TAG, "sem superficie de DMA para o preview");
-    tab5_camera_parar();
+    tab5_camera_stop();
     return false;
   }
-  const tab5_cam_destino_t d = { sup.buf, sup.bytes, sup.pic_l, sup.pic_a, sup.x, sup.y,
+  const tab5_cam_target_t d = { sup.buf, sup.bytes, sup.pic_l, sup.pic_a, sup.x, sup.y,
                                  sistema_pedir_redesenho };
-  tab5_camera_definir_destino(&d);
+  tab5_camera_set_target(&d);
   return true;
 }
 
@@ -136,14 +136,14 @@ static bool ao_abrir(void)
 
 static void ao_fechar(void)
 {
-  tab5_camera_parar();   // espera a tarefa da camera: nenhum PPA escrevendo (tela, s_foto) depois daqui
+  tab5_camera_stop();   // espera a tarefa da camera: nenhum PPA escrevendo (tela, s_foto) depois daqui
   // So existe se a captura nao chegou a virar trabalho; a que virou e do trabalho.
   if (s_foto) { heap_caps_free(s_foto); s_foto = nullptr; }
   ESP_LOGI(TAG, "fechado");
 }
 
 // ao_repouso()/ao_retomar() - crash (camera+repouso), ver o
-// aviso grande em kernel/app.h. Solucao: os MESMOS tab5_camera_parar()/
+// aviso grande em kernel/app.h. Solucao: os MESMOS tab5_camera_stop()/
 // iniciar() que ao_fechar()/ao_abrir() ja usam - a captura solta o
 // DW_GDMA dela por completo (sensor, PPA, tarefa de fundo, CAM_RST) e volta
 // do zero depois, sem inventar um terceiro estado "pausado" so para isto.
@@ -151,7 +151,7 @@ static void ao_fechar(void)
 // captura para e volta.
 static void ao_repouso(void)
 {
-  tab5_camera_parar();
+  tab5_camera_stop();
 }
 
 static void ao_retomar(void)
@@ -168,14 +168,14 @@ static void ao_retomar(void)
 // rodar com o app ja fechado (ou reaberto, com outro s_foto_nome).
 typedef struct {
   uint16_t* px;
-  char      nome[32];
+  char      name[32];
 } gravacao_t;
 
 // No worker do sistema: grava a foto (quadro inteiro) e libera tudo.
 static void trabalho_gravar(void* arg)
 {
   gravacao_t* g = (gravacao_t*)arg;
-  s_gravou_ok = tab5_bmp_salvar("Camera", g->nome, g->px, TAB5_CAM_FOTO_L, TAB5_CAM_FOTO_A);
+  s_gravou_ok = tab5_bmp_salvar("Camera", g->name, g->px, TAB5_CAM_PHOTO_W, TAB5_CAM_PHOTO_H);
   heap_caps_free(g->px);
   heap_caps_free(g);
 }
@@ -186,7 +186,7 @@ static bool gravar_foto(void)
   gravacao_t* g = (gravacao_t*)heap_caps_malloc(sizeof(gravacao_t), MALLOC_CAP_DEFAULT);
   if (!g) { return false; }
   g->px = s_foto;
-  snprintf(g->nome, sizeof(g->nome), "%s", s_foto_nome);
+  snprintf(g->name, sizeof(g->name), "%s", s_foto_nome);
   if (!sistema_trabalho_solto(trabalho_gravar, g)) { heap_caps_free(g); return false; }
   s_foto = nullptr;
   return true;
@@ -211,7 +211,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
 {
   // O frame ja esta na tela virtual (o PPA da camera o escreveu la); so
   // falta o compositor saber que a area mudou.
-  if (tab5_camera_quadro_escrito()) {
+  if (tab5_camera_frame_written()) {
     sistema_superficie_mudou(retangulo_preview());
   } else if (sistema_area_foi_limpa()) {
     // Ainda sem nenhum frame (sensor acabou de subir) - avisa em vez de
@@ -226,7 +226,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   // A FOTO CHEGOU AO BUFFER: a gravacao vai para o worker do sistema.
   if (s_estado == ESTADO_CAPTURANDO) {
     bool ok = false;
-    if (tab5_camera_foto_pronta(&ok)) {
+    if (tab5_camera_photo_ready(&ok)) {
       if (ok && gravar_foto()) {
         s_estado = ESTADO_GRAVANDO;
       } else {
@@ -271,9 +271,9 @@ static void ao_tocar(int x, int y)
   if (!s_fotos_ok) { return; }   // a numeracao ainda esta sendo lida do cartao (instantes)
 
   // Um buffer por foto: o anterior foi com o trabalho de gravacao.
-  if (!s_foto) { s_foto = tab5_camera_foto_alocar(); }
+  if (!s_foto) { s_foto = tab5_camera_alloc_photo(); }
   if (!s_foto) { ESP_LOGE(TAG, "sem PSRAM para a foto"); return; }
-  if (!tab5_camera_pedir_foto(s_foto)) { return; }
+  if (!tab5_camera_request_photo(s_foto)) { return; }
   snprintf(s_foto_nome, sizeof(s_foto_nome), "foto_%04lu", (unsigned long)(s_fotos + 1));
   ++s_fotos;
   s_estado = ESTADO_CAPTURANDO;
@@ -311,22 +311,22 @@ static void icone_camera(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 extern const app_t APP_CAMERA = {
-  .nome  = "Camera",
+  .name  = "Camera",
   .cor   = TFT_ORANGE,
   // SEM .camera=true AQUI - a camera virou servico (contagem
   // de referencia, ver o aviso grande em hal/tab5_camera.hpp) e liga o
-  // proprio CAM_RST sozinha dentro de tab5_camera_iniciar(), no mesmo
+  // proprio CAM_RST sozinha dentro de tab5_camera_start(), no mesmo
   // espirito que o Grove ja faz para GPS/Mesh. Declarar aqui tambem seria
   // so redundante (o kernel ainda aplicaria antes de ao_abrir(), mas quem
   // garante a energia de verdade agora e o proprio servico).
   //
-  // .alto_falante=true (junto do clique do obturador em
+  // .speaker=true (junto do clique do obturador em
   // ao_tocar()): ao contrario da camera, o alto-falante NAO tem como se
   // auto-declarar depois do boot (a reserva dos pinos I2S do ES8388 e
   // decisao de FASE 1, antes do M5.begin() - ver o aviso grande em
   // settings.h). Este app usa som de verdade agora, entao declara - mesmo
   // que o app Ajustes ja declare o mesmo hoje, e uma uniao (OR), nao concorrencia.
-  .perfil = { .alto_falante = true },
+  .perfil = { .speaker = true },
   .usa_sd = true,
   .exige_sd = true,         // sem cartao nao ha o que fazer (ver app.h)
   .piso_repouso_mhz = 0,
@@ -337,7 +337,7 @@ extern const app_t APP_CAMERA = {
   .desenhar  = desenhar,
   .ao_tocar  = ao_tocar,
   // O PREVIEW NAO DEPENDE DO RELOGIO: cada frame escrito pela
-  // camera pede um redesenho na hora (tab5_cam_destino_t.avisar). O periodo
+  // camera pede um redesenho na hora (tab5_cam_target_t.avisar). O periodo
   // so conduz o botao (CAPTURANDO/SALVANDO/flash) quando nao ha frame.
   .periodo_ms = 100,
   .avisos    = AVISO_TRABALHO,   // a gravacao da foto terminou

@@ -156,7 +156,7 @@ static void nome_arquivo_hoje(char* out, size_t tam)
 // Esvazia o que estiver no buffer para o arquivo de HOJE. Chamada so pela
 // tarefa "cartao" (log_na_carona), nunca por quem esta logando.
 //
-// Pela porta tab5_sd_acrescentar (hal/tab5_sd.hpp): com o cartao emprestado
+// Pela porta tab5_sd_append (hal/tab5_sd.hpp): com o cartao emprestado
 // ao computador, o lote vai para o diario na flash e chega ao arquivo na
 // volta - o log de uma sessao de pendrive nao se perde.
 static void descarregar(void)
@@ -168,8 +168,8 @@ static void descarregar(void)
   // DESCARTA: as linhas continuam no buffer, esperando o cartao voltar (ou
   // cedendo lugar as mais novas se ele enche antes, a mesma politica que
   // xStreamBufferSend ja aplica).
-  const bool montou = tab5_sd_montar();
-  if (!montou && !tab5_sd_emprestado()) { return; }
+  const bool montou = tab5_sd_mount();
+  if (!montou && !tab5_sd_lent()) { return; }
 
   char nome[24];
   nome_arquivo_hoje(nome, sizeof(nome));
@@ -188,7 +188,7 @@ static void descarregar(void)
     const int n = snprintf(marca, sizeof(marca), "=== boot %04d-%02d-%02dT%02d:%02d:%02dZ, uptime %llums ===\n",
                            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec,
                            (unsigned long long)(esp_timer_get_time() / 1000));
-    if (tab5_sd_acrescentar(TAB5_SD_LOGS, nome, marca, (size_t)n)) { s_boot_marcado = true; }
+    if (tab5_sd_append(TAB5_SD_LOGS, nome, marca, (size_t)n)) { s_boot_marcado = true; }
   }
 
   // Drena em blocos, sem alocar por linha, num bloco estatico do tamanho do
@@ -197,10 +197,10 @@ static void descarregar(void)
   size_t total = 0;
   size_t n;
   while ((n = xStreamBufferReceive(s_buf, bloco, sizeof(bloco), 0)) > 0) {
-    if (!tab5_sd_acrescentar(TAB5_SD_LOGS, nome, bloco, n)) { s_linhas_perdidas++; break; }
+    if (!tab5_sd_append(TAB5_SD_LOGS, nome, bloco, n)) { s_linhas_perdidas++; break; }
     total += n;
   }
-  if (montou) { tab5_sd_desmontar(); }
+  if (montou) { tab5_sd_unmount(); }
 
   if (total > 0) {
     snprintf(s_arquivo_atual, sizeof(s_arquivo_atual), "%s", nome);
@@ -260,7 +260,7 @@ void tab5_log_iniciar(void)
 
   // Sem tarefa propria: descarregar() roda na tarefa "cartao" (ver
   // log_na_carona). O bloco de dreno de 12KB e 'static' na PSRAM, fora da pilha.
-  tab5_sd_carona(log_na_carona);
+  tab5_sd_piggyback(log_na_carona);
 
   ESP_LOGI(TAG, "captura no ar: buffer %dKB, descarga a cada %lus, /sdcard/apps/Sistema/logs/log_AAAA-MM-DD.txt",
            LOG_BUF_TAM / 1024, (unsigned long)(LOG_FLUSH_MS / 1000));

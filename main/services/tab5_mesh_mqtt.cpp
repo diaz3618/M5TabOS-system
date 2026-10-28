@@ -28,7 +28,7 @@ static const char* TAG = "mesh_mqtt";
 
 typedef struct {
   uint8_t papel;         // 0 desligado, 1 primario, 2 secundario (Channel.Role)
-  char    nome[12];      // o nome do canal e no maximo 11 bytes no Meshtastic
+  char    name[12];      // o nome do canal e no maximo 11 bytes no Meshtastic
   uint8_t n_psk;
   uint8_t psk[32];
 } canal_t;
@@ -85,7 +85,7 @@ static void garantir_cfg(void)
   for (int i = 0; i < MAX_CANAIS; ++i) { if (s_cfg.canais[i].papel) { algum = true; } }
   if (!algum) {
     s_cfg.canais[0].papel = 1;
-    snprintf(s_cfg.canais[0].nome, sizeof(s_cfg.canais[0].nome), "LongFast");
+    snprintf(s_cfg.canais[0].name, sizeof(s_cfg.canais[0].name), "LongFast");
     s_cfg.canais[0].n_psk = 1;
     s_cfg.canais[0].psk[0] = 1;
   }
@@ -106,7 +106,7 @@ void mesh_mqtt_aprender_canal(int idx, int papel, const char* nome, const uint8_
   if (idx < 0 || idx >= MAX_CANAIS) { return; }
   canal_t novo = { };
   novo.papel = (uint8_t)papel;
-  snprintf(novo.nome, sizeof(novo.nome), "%s", nome ? nome : "");
+  snprintf(novo.name, sizeof(novo.name), "%s", nome ? nome : "");
   novo.n_psk = (uint8_t)(n_psk > sizeof(novo.psk) ? sizeof(novo.psk) : n_psk);
   if (psk && novo.n_psk) { memcpy(novo.psk, psk, novo.n_psk); }
   travar_cfg();
@@ -114,7 +114,7 @@ void mesh_mqtt_aprender_canal(int idx, int papel, const char* nome, const uint8_
   if (memcmp(&s_cfg.canais[idx], &novo, sizeof(novo)) != 0) {
     s_cfg.canais[idx] = novo;
     gravar_cfg();
-    ESP_LOGI(TAG, "canal %d aprendido do no: \"%s\" (chave de %u bytes)", idx, novo.nome, (unsigned)novo.n_psk);
+    ESP_LOGI(TAG, "canal %d aprendido do no: \"%s\" (chave de %u bytes)", idx, novo.name, (unsigned)novo.n_psk);
   }
   destravar_cfg();
 }
@@ -183,7 +183,7 @@ static size_t chave_do_canal(const canal_t& c, uint8_t chave[32])
 static uint8_t hash_do_canal(const canal_t& c)
 {
   uint8_t h = 0, chave[32];
-  for (const char* p = c.nome; *p; ++p) { h ^= (uint8_t)*p; }
+  for (const char* p = c.name; *p; ++p) { h ^= (uint8_t)*p; }
   const size_t n = chave_do_canal(c, chave);
   for (size_t i = 0; i < n; ++i) { h ^= chave[i]; }
   return h;
@@ -348,7 +348,7 @@ static int canal_por_nome(const char* nome, size_t n)
 {
   for (int i = 0; i < MAX_CANAIS; ++i) {
     const canal_t& c = s_cfg.canais[i];
-    if (c.papel && strlen(c.nome) == n && memcmp(c.nome, nome, n) == 0) { return i; }
+    if (c.papel && strlen(c.name) == n && memcmp(c.name, nome, n) == 0) { return i; }
   }
   return -1;
 }
@@ -361,22 +361,22 @@ static void processar_mapa(const uint8_t* d, size_t n)
   pb_leitor_t l = pb_leitor(d, n);
   pb_campo_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
-  while (pb_campo(&l, &c)) { if (c.num == 1 && c.tipo == 2) { mp = c.val; n_mp = c.n_val; } }
+  while (pb_campo(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
   if (!mp) { return; }
   uint32_t de = 0;
   const uint8_t* dec = nullptr; size_t n_dec = 0;
   l = pb_leitor(mp, n_mp);
   while (pb_campo(&l, &c)) {
-    if (c.num == 1 && c.tipo == 5) { de = (uint32_t)c.v; }
-    else if (c.num == 4 && c.tipo == 2) { dec = c.val; n_dec = c.n_val; }
+    if (c.num == 1 && c.type == 5) { de = (uint32_t)c.v; }
+    else if (c.num == 4 && c.type == 2) { dec = c.val; n_dec = c.n_val; }
   }
   if (!dec || !de || de == s_num) { return; }
   const uint8_t* rel = nullptr; size_t n_rel = 0;
   uint64_t porta = 0;
   l = pb_leitor(dec, n_dec);
   while (pb_campo(&l, &c)) {
-    if (c.num == 1 && c.tipo == 0) { porta = c.v; }
-    else if (c.num == 2 && c.tipo == 2) { rel = c.val; n_rel = c.n_val; }
+    if (c.num == 1 && c.type == 0) { porta = c.v; }
+    else if (c.num == 2 && c.type == 2) { rel = c.val; n_rel = c.n_val; }
   }
   if (porta != 73 || !rel) { return; }   // MAP_REPORT_APP
 
@@ -386,12 +386,12 @@ static void processar_mapa(const uint8_t* d, size_t n)
   uint32_t lat = 0, lon = 0;
   l = pb_leitor(rel, n_rel);
   while (pb_campo(&l, &c)) {
-    if      (c.num == 1  && c.tipo == 2) { longo = c.val; n_longo = c.n_val; }
-    else if (c.num == 2  && c.tipo == 2) { curto = c.val; n_curto = c.n_val; }
-    else if (c.num == 3  && c.tipo == 0) { papel = c.v; }
-    else if (c.num == 4  && c.tipo == 0) { modelo = c.v; }
-    else if (c.num == 9  && c.tipo == 5) { lat = (uint32_t)c.v; }
-    else if (c.num == 10 && c.tipo == 5) { lon = (uint32_t)c.v; }
+    if      (c.num == 1  && c.type == 2) { longo = c.val; n_longo = c.n_val; }
+    else if (c.num == 2  && c.type == 2) { curto = c.val; n_curto = c.n_val; }
+    else if (c.num == 3  && c.type == 0) { papel = c.v; }
+    else if (c.num == 4  && c.type == 0) { modelo = c.v; }
+    else if (c.num == 9  && c.type == 5) { lat = (uint32_t)c.v; }
+    else if (c.num == 10 && c.type == 5) { lon = (uint32_t)c.v; }
   }
   if (!n_longo && !n_curto) { return; }
 
@@ -471,7 +471,7 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   if (internet) {
     // Na rede de internet so o LongFast de fabrica: os canais aprendidos do no sao daqui.
     const size_t nn = (size_t)(fim_nome - e);
-    idx = (nn == strlen(CANAL_INTERNET.nome) && memcmp(e, CANAL_INTERNET.nome, nn) == 0) ? 0 : -1;
+    idx = (nn == strlen(CANAL_INTERNET.name) && memcmp(e, CANAL_INTERNET.name, nn) == 0) ? 0 : -1;
     canal = CANAL_INTERNET;
   } else {
     travar_cfg();
@@ -484,7 +484,7 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   pb_leitor_t l = pb_leitor(d, n);
   pb_campo_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
-  while (pb_campo(&l, &c)) { if (c.num == 1 && c.tipo == 2) { mp = c.val; n_mp = c.n_val; } }
+  while (pb_campo(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
   if (!mp) { return; }
 
   uint32_t de = 0, id = 0;
@@ -492,10 +492,10 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   const uint8_t* dec = nullptr; size_t n_dec = 0;
   l = pb_leitor(mp, n_mp);
   while (pb_campo(&l, &c)) {
-    if      (c.num == 1 && c.tipo == 5) { de = (uint32_t)c.v; }
-    else if (c.num == 6 && c.tipo == 5) { id = (uint32_t)c.v; }
-    else if (c.num == 5 && c.tipo == 2) { cif = c.val; n_cif = c.n_val; }
-    else if (c.num == 4 && c.tipo == 2) { dec = c.val; n_dec = c.n_val; }
+    if      (c.num == 1 && c.type == 5) { de = (uint32_t)c.v; }
+    else if (c.num == 6 && c.type == 5) { id = (uint32_t)c.v; }
+    else if (c.num == 5 && c.type == 2) { cif = c.val; n_cif = c.n_val; }
+    else if (c.num == 4 && c.type == 2) { dec = c.val; n_dec = c.n_val; }
   }
   if (de == s_num && s_num) { return; }   // o nosso proprio envio voltando pelo servidor
   // O MESMO PACOTE DE VARIOS GATEWAYS: cada no com MQTT que o ouviu publica a
@@ -552,15 +552,15 @@ static void assinar(void)
   travar_cfg();
   raiz_efetiva(raiz, sizeof(raiz));
   for (int i = 0; i < MAX_CANAIS; ++i) {
-    if (!s_cfg.canais[i].papel || !s_cfg.canais[i].nome[0]) { continue; }
-    snprintf(topico, sizeof(topico), "%s/2/e/%s/#", raiz, s_cfg.canais[i].nome);
+    if (!s_cfg.canais[i].papel || !s_cfg.canais[i].name[0]) { continue; }
+    snprintf(topico, sizeof(topico), "%s/2/e/%s/#", raiz, s_cfg.canais[i].name);
     esp_mqtt_client_subscribe(s_cli, topico, 0);
     ESP_LOGI(TAG, "assinando %s", topico);
     // Sub-raizes (msh/BR/SP/2/e/...): um nivel abaixo, onde os estados e
     // cidades publicam. Nao tem cifra diferente: e o mesmo canal.
-    snprintf(topico, sizeof(topico), "%s/+/2/e/%s/#", raiz, s_cfg.canais[i].nome);
+    snprintf(topico, sizeof(topico), "%s/+/2/e/%s/#", raiz, s_cfg.canais[i].name);
     esp_mqtt_client_subscribe(s_cli, topico, 0);
-    snprintf(topico, sizeof(topico), "%s/+/+/2/e/%s/#", raiz, s_cfg.canais[i].nome);   // meshdev/<pais>/<regiao>/2/e/...
+    snprintf(topico, sizeof(topico), "%s/+/+/2/e/%s/#", raiz, s_cfg.canais[i].name);   // meshdev/<pais>/<regiao>/2/e/...
     esp_mqtt_client_subscribe(s_cli, topico, 0);
   }
   // Relatorios de mapa: nomes e posicoes de nos que nunca mandaram NodeInfo.
@@ -582,8 +582,8 @@ static void assinar_proxy(const char* raiz, bool desfazer)
   char topico[96];
   travar_cfg();
   for (int i = 0; i < MAX_CANAIS; ++i) {
-    if (!s_cfg.canais[i].papel || !s_cfg.canais[i].nome[0] || !s_downlink[i]) { continue; }
-    snprintf(topico, sizeof(topico), "%s/2/e/%s/+", raiz, s_cfg.canais[i].nome);
+    if (!s_cfg.canais[i].papel || !s_cfg.canais[i].name[0] || !s_downlink[i]) { continue; }
+    snprintf(topico, sizeof(topico), "%s/2/e/%s/+", raiz, s_cfg.canais[i].name);
     if (desfazer) { esp_mqtt_client_unsubscribe(s_cli, topico); }
     else          { esp_mqtt_client_subscribe(s_cli, topico, 0); ESP_LOGI(TAG, "proxy assinando %s", topico); }
   }
@@ -809,7 +809,7 @@ static void responder_config(void)
     uint8_t cs[64];
     pb_escritor_t ws = pb_escritor(cs, sizeof(cs));
     if (c.n_psk) { pb_w_bytes(&ws, 2, c.psk, c.n_psk); }
-    pb_w_texto(&ws, 3, c.nome, sizeof(c.nome));
+    pb_w_texto(&ws, 3, c.name, sizeof(c.name));
     w = pb_escritor(a, sizeof(a));
     pb_w_num(&w, 1, (uint64_t)i);
     pb_w_sub(&w, 2, &ws);
@@ -837,7 +837,7 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
 typedef struct {
   bool           quer_config;   // want_config_id: o servico pedindo o "dump"
   uint32_t       para, id;
-  uint64_t       canal, saltos;
+  uint64_t       channel, saltos;
   const uint8_t* data;          // Data ja serializado (nullptr = sem pacote)
   size_t         n_data;
 } to_radio_t;
@@ -849,17 +849,17 @@ static void ler_to_radio(const uint8_t* b, size_t n, to_radio_t* t)
   pb_campo_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
   while (pb_campo(&l, &c)) {
-    if      (c.num == 1 && c.tipo == PB_LEN)    { mp = c.val; n_mp = c.n_val; }
-    else if (c.num == 3 && c.tipo == PB_VARINT) { t->quer_config = true; }
+    if      (c.num == 1 && c.type == PB_LEN)    { mp = c.val; n_mp = c.n_val; }
+    else if (c.num == 3 && c.type == PB_VARINT) { t->quer_config = true; }
   }
   if (!mp) { return; }
   l = pb_leitor(mp, n_mp);
   while (pb_campo(&l, &c)) {
-    if      (c.num == 2 && c.tipo == PB_FIXO32) { t->para = (uint32_t)c.v; }
-    else if (c.num == 3 && c.tipo == PB_VARINT) { t->canal = c.v; }
-    else if (c.num == 4 && c.tipo == PB_LEN)    { t->data = c.val; t->n_data = c.n_val; }
-    else if (c.num == 6 && c.tipo == PB_FIXO32) { t->id = (uint32_t)c.v; }
-    else if (c.num == 9 && c.tipo == PB_VARINT) { t->saltos = c.v; }
+    if      (c.num == 2 && c.type == PB_FIXO32) { t->para = (uint32_t)c.v; }
+    else if (c.num == 3 && c.type == PB_VARINT) { t->channel = c.v; }
+    else if (c.num == 4 && c.type == PB_LEN)    { t->data = c.val; t->n_data = c.n_val; }
+    else if (c.num == 6 && c.type == PB_FIXO32) { t->id = (uint32_t)c.v; }
+    else if (c.num == 9 && c.type == PB_VARINT) { t->saltos = c.v; }
   }
   if (t->id == 0) { t->id = esp_random() | 1u; }
 }
@@ -887,7 +887,7 @@ static bool enviar_travado(const uint8_t* toradio, size_t n)
   if (t.quer_config) { responder_config(); return true; }
   if (!t.data) { return true; }                  // batimento e afins: nada a fazer aqui
   if (!mesh_mqtt_conectado() || s_num == 0) { return false; }
-  if (t.canal >= MAX_CANAIS) { return false; }
+  if (t.channel >= MAX_CANAIS) { return false; }
   // MENSAGEM DIRETA NAO SAI POR AQUI. Sem a chave publica (PKI) so daria para
   // cifrar com a chave do CANAL, que todo assinante do topico tem: a conversa
   // particular apareceria para a malha inteira (e no bot do Telegram). Melhor
@@ -898,7 +898,7 @@ static bool enviar_travado(const uint8_t* toradio, size_t n)
   }
 
   travar_cfg();
-  const canal_t canal = s_cfg.canais[t.canal];
+  const canal_t canal = s_cfg.canais[t.channel];
   char raiz[48];
   raiz_efetiva(raiz, sizeof(raiz));
   destravar_cfg();
@@ -941,13 +941,13 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
   snprintf(gw, sizeof(gw), "!%08lx", (unsigned long)s_num);
   pb_escritor_t e = pb_escritor(env, sizeof(env));
   pb_w_sub(&e, 1, &w);
-  pb_w_texto(&e, 2, canal.nome, sizeof(canal.nome));
+  pb_w_texto(&e, 2, canal.name, sizeof(canal.name));
   pb_w_texto(&e, 3, gw, sizeof(gw));
   const size_t n_env = pb_tamanho(&e);
   if (!n_env) { return false; }
 
   char topico[112];
-  snprintf(topico, sizeof(topico), "%s/2/e/%s/%s", raiz, canal.nome, gw);
+  snprintf(topico, sizeof(topico), "%s/2/e/%s/%s", raiz, canal.name, gw);
   // enqueue, e nao publish: o publish escreve no socket NA HORA e pode
   // segurar quem chamou (a tarefa de interface) ate o prazo da rede. O
   // enqueue so poe na fila do cliente, que manda na tarefa dele.
@@ -1033,10 +1033,10 @@ static void assinar_internet(void)
   static const char* const NIVEL[] = { "", "/+", "/+/+", "/+/+/+" };
   char topico[96];
   for (size_t i = 0; i < sizeof(NIVEL) / sizeof(NIVEL[0]); ++i) {
-    snprintf(topico, sizeof(topico), "%s%s/2/e/%s/#", INTERNET_RAIZ, NIVEL[i], CANAL_INTERNET.nome);
+    snprintf(topico, sizeof(topico), "%s%s/2/e/%s/#", INTERNET_RAIZ, NIVEL[i], CANAL_INTERNET.name);
     esp_mqtt_client_subscribe(s_rede_internet_cli, topico, 0);
   }
-  ESP_LOGI(TAG, "internet: assinando %s/.../2/e/%s", INTERNET_RAIZ, CANAL_INTERNET.nome);
+  ESP_LOGI(TAG, "internet: assinando %s/.../2/e/%s", INTERNET_RAIZ, CANAL_INTERNET.name);
 }
 
 static void ao_evento_internet(void*, esp_event_base_t, int32_t id_ev, void* dados)

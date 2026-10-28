@@ -58,14 +58,14 @@ static bool ler(int i, conversa_msg_t* out, void*)
   out->minha  = m.minha;
   out->quando = m.quando;
   out->envio  = m.envio;   // espnow_envio_t e conversa_envio_t tem a mesma ordem
-  out->nome[0] = 0;
+  out->name[0] = 0;
   // Rotulo so quando o remetente muda - uma sequencia do mesmo aparelho nao
   // repete o nome em cada balao.
   if (!m.minha) {
     const bool mesmo = (i > 0) && tab5_espnow_msg(i - 1, &ant) && !ant.minha
                     && memcmp(ant.mac, m.mac, 6) == 0;
     if (!mesmo) {
-      snprintf(out->nome, sizeof(out->nome), "%02X%02X", m.mac[4], m.mac[5]);
+      snprintf(out->name, sizeof(out->name), "%02X%02X", m.mac[4], m.mac[5]);
       out->cor_nome = cor_do_mac(m.mac);
     }
   }
@@ -88,10 +88,10 @@ static bool enviar(const char* texto, void*) { return tab5_espnow_enviar(texto);
 static int estado_agora(void)
 {
   if (!tab5_espnow_c6_compativel()) {
-    return tab5_wifi_c6_enlace() ? 0 : 1;   // sem enlace ainda nao da para saber o firmware
+    return tab5_wifi_c6_link() ? 0 : 1;   // sem enlace ainda nao da para saber o firmware
   }
-  if (!tab5_wifi_c6_enlace()) { return 1; }
-  if (!tab5_wifi_radio_ativo()) { return 4; }
+  if (!tab5_wifi_c6_link()) { return 1; }
+  if (!tab5_wifi_radio_active()) { return 4; }
   return tab5_espnow_pronto() ? 3 : 2;
 }
 
@@ -153,7 +153,7 @@ static void desenhar_barra(lgfx::LovyanGFX& d, const area_t& a, int est)
   if (!m1 && !m2) { return; }
 
   const uint16_t FUNDO = d.color565(13, 17, 23);
-  tab5_tela_limpar(a.x, a.y, a.largura, BARRA_A, FUNDO);
+  tab5_screen_clear(a.x, a.y, a.largura, BARRA_A, FUNDO);
   const int cy = a.y + BARRA_A / 2;
   const uint16_t cor = (est == 3) ? TFT_GREENYELLOW : (est == 2) ? TFT_ORANGE : TFT_DARKGREY;
   d.fillCircle(a.x + 34, cy, 15, cor);
@@ -267,7 +267,7 @@ static void ao_tocar_nivel(int x, int y, bool p)       { conversa_tocar_nivel(&s
 static void ao_teclar(const char* t, uint8_t c, uint8_t m) { conversa_teclar(&s_c, t, c, m); }
 
 extern const app_t APP_ESPNOW = {
-  .nome  = "ESP-NOW",
+  .name  = "ESP-NOW",
   .cor   = TFT_CYAN,
   // O radio e do servico de WiFi (o ajuste do sistema mantem). O IMU e para
   // a tela seguir o aparelho.

@@ -158,7 +158,7 @@ static int      visivel_de(int interno);
 // sem ninguem ter aberto o Mesh, so porque o servico subiu de novo por outra
 // via. Aqui fica a contagem de cada conversa ate ela ser LIDA de verdade;
 // achar_ou_criar_conversa() devolve o numero quando a conversa renasce.
-typedef struct { bool usada; bool canal; uint8_t idx; uint32_t no; uint16_t n; } nao_lida_guardada_t;
+typedef struct { bool usada; bool channel; uint8_t idx; uint32_t no; uint16_t n; } nao_lida_guardada_t;
 static nao_lida_guardada_t s_guardadas[MESH_MAX_CONVERSAS];
 
 static nao_lida_guardada_t* guardada_de(bool canal, uint8_t idx, uint32_t no, bool criar)
@@ -166,8 +166,8 @@ static nao_lida_guardada_t* guardada_de(bool canal, uint8_t idx, uint32_t no, bo
   nao_lida_guardada_t* livre = nullptr;
   for (auto& g : s_guardadas) {
     if (!g.usada) { if (!livre) { livre = &g; } continue; }
-    if (canal && g.canal && g.idx == idx) { return &g; }
-    if (!canal && !g.canal && g.no == no) { return &g; }
+    if (canal && g.channel && g.idx == idx) { return &g; }
+    if (!canal && !g.channel && g.no == no) { return &g; }
   }
   if (!criar || !livre) { return nullptr; }
   *livre = { true, canal, idx, no, 0 };
@@ -180,7 +180,7 @@ static void guardar_nao_lidas(void)
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     const mesh_conversa_t& c = s_conv[i];
     if (!c.usada) { continue; }
-    nao_lida_guardada_t* g = guardada_de(c.canal, c.idx, c.no, c.nao_lidas > 0);
+    nao_lida_guardada_t* g = guardada_de(c.channel, c.idx, c.no, c.nao_lidas > 0);
     if (!g) { continue; }
     if (c.nao_lidas > 0) { g->n = (uint16_t)(c.nao_lidas > 0xFFFF ? 0xFFFF : c.nao_lidas); }
     else                 { g->usada = false; }
@@ -234,7 +234,7 @@ typedef struct {
   uint32_t id;
   uint32_t para;     // destino: decide o que um ACK quer dizer (ver marcar_envio)
   uint32_t em_ms;
-  uint8_t  estado;
+  uint8_t  state;
   uint8_t  erro;
 } envio_t;
 
@@ -258,7 +258,7 @@ static void anotar_envio(uint32_t id, uint32_t para)
   e->id     = id;
   e->para   = para;
   e->em_ms  = tab5_agora_ms();
-  e->estado = MESH_ENVIANDO;
+  e->state = MESH_ENVIANDO;
   e->erro   = 0;
   s_envios_ver++;
   sistema_avisar(AVISO_MESH_ENVIO);
@@ -292,7 +292,7 @@ static void gravar_desfecho(uint32_t id, uint8_t estado, uint8_t erro)
   if (id == 0) { return; }
   char linha[40];
   snprintf(linha, sizeof(linha), "E,%08lX,%u,%u\n", (unsigned long)id, (unsigned)estado, (unsigned)erro);
-  tab5_sd_anexar(MESH_PASTA, MESH_ARQ_ENVIOS, linha);   // gravador do sistema (hal/tab5_sd.hpp)
+  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, linha);   // gravador do sistema (hal/tab5_sd.hpp)
 }
 
 // ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ static void lembrar_carimbo(uint32_t id, uint32_t quando)
 }
 
 // Tarefa de interface, logo depois do acerto do relogio. So RAM e o gravador
-// do sistema (tab5_sd_anexar copia e volta): nada de cartao aqui.
+// do sistema (tab5_sd_enqueue_append copia e volta): nada de cartao aqui.
 static void ao_saltar_relogio(int32_t delta)
 {
   int n = 0;
@@ -339,7 +339,7 @@ static void ao_saltar_relogio(int32_t delta)
     }
     char linha[40];
     snprintf(linha, sizeof(linha), "H,%08lX,%lu\n", (unsigned long)c->id, (unsigned long)c->quando);
-    tab5_sd_anexar(MESH_PASTA, MESH_ARQ_ENVIOS, linha);
+    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, linha);
     ++n;
   }
   // O app rele o historico quando este contador muda: e o que tira da tela
@@ -367,7 +367,7 @@ static void ao_saltar_relogio(int32_t delta)
 
 typedef struct {
   uint32_t id;
-  uint8_t  estado;
+  uint8_t  state;
   uint8_t  erro;
   uint32_t quando;   // carimbo corrigido ("H"); 0 = o da linha da mensagem vale
 } desfecho_t;
@@ -381,7 +381,7 @@ typedef struct {
 // ultimas dezenas de mensagens de qualquer jeito.
 static int carregar_desfechos(desfecho_t* tab, int max)
 {
-  FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_ENVIOS, "r");
+  FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_ENVIOS, "r");
   if (!f) { return 0; }
 
   int n = 0, prox = 0;
@@ -398,13 +398,13 @@ static int carregar_desfechos(desfecho_t* tab, int max)
     if (alvo < 0) {
       if (n < max) { alvo = n++; }
       else         { alvo = prox; prox = (prox + 1) % max; }
-      tab[alvo].estado = MESH_ENVIO_NA;
+      tab[alvo].state = MESH_ENVIO_NA;
       tab[alvo].erro   = 0;
       tab[alvo].quando = 0;
     }
     tab[alvo].id = (uint32_t)lid;
     if (eh_hora) { tab[alvo].quando = (uint32_t)lq; continue; }
-    tab[alvo].estado = (uint8_t)est;
+    tab[alvo].state = (uint8_t)est;
     tab[alvo].erro   = (uint8_t)err;
   }
   fclose(f);
@@ -424,7 +424,7 @@ static uint8_t buscar_desfecho(const desfecho_t* tab, int n, uint32_t id, uint8_
   for (int i = 0; i < n; ++i) {
     if (tab[i].id != id) { continue; }
     if (erro) { *erro = tab[i].erro; }
-    return tab[i].estado;
+    return tab[i].state;
   }
   return MESH_ENVIO_NA;
 }
@@ -478,16 +478,16 @@ static void marcar_envio(uint32_t id, int erro, uint32_t de, bool so_mqtt = fals
     // ENTREGUE e terminal: nada posterior o desfaz. OUVIDO so sobe (para
     // ENTREGUE); um erro depois dele nao vira "falhou" - a malha OUVIU, o que
     // faltou foi a confirmacao do destino, e a marca de OUVIDO ja diz isso.
-    if (e->estado == MESH_ENTREGUE || (e->estado == MESH_OUVIDO && novo != MESH_ENTREGUE)) {
+    if (e->state == MESH_ENTREGUE || (e->state == MESH_OUVIDO && novo != MESH_ENTREGUE)) {
       if (erro != 0) {
         ++s_c_routing_extra;   // ver o comentario da declaracao - nao e so ruido
         ESP_LOGI(TAG, "mensagem %08lX: aviso '%s' chegou depois de %s - continua assim", (unsigned long)id,
-                 mesh_erro_nome((uint8_t)erro), e->estado == MESH_ENTREGUE ? "entregue" : "ouvido");
+                 mesh_erro_nome((uint8_t)erro), e->state == MESH_ENTREGUE ? "entregue" : "ouvido");
       }
       return;
     }
-    if (e->estado == novo && e->erro == (uint8_t)erro) { return; }
-    e->estado = novo;
+    if (e->state == novo && e->erro == (uint8_t)erro) { return; }
+    e->state = novo;
     e->erro   = (uint8_t)erro;
     s_envios_ver++;
     sistema_avisar(AVISO_MESH_ENVIO);
@@ -505,7 +505,7 @@ uint8_t tab5_mesh_estado_envio(uint32_t id, uint8_t* erro)
   for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
     if (s_envios[i].id != id) { continue; }
     if (erro) { *erro = s_envios[i].erro; }
-    return s_envios[i].estado;
+    return s_envios[i].state;
   }
   return MESH_ENVIO_NA;
 }
@@ -633,7 +633,7 @@ uint32_t tab5_mesh_silencio_ms(void)
   if (s_ultimo_quadro_ms == 0) {
     // NENHUM frame AINDA - mas pode ser so porque o servico acabou de
     // subir, nao porque o radio sumiu. MESMO BUG do GPS (ver o aviso grande
-    // em tab5_gps_silencio_ms(), achado em hardware):
+    // em tab5_gps_silence_ms(), achado em hardware):
     // UINT32_MAX incondicional faz a vigia do Grove (kernel/core.cpp) enxergar
     // "mudo ha 60s" no PRIMEIRO tique (ate 2s) depois de QUALQUER reinicio,
     // sem dar ao radio nem os 60s de MUDO_MS que o codigo pretendia dar. Na
@@ -1222,8 +1222,8 @@ static void lembrar_nome(uint32_t num, const char* curto, const char* longo)
   // exibicao (curto, longo, id). O ARQUIVO dela e nomeado pelo num, entao
   // renomear aqui nao desgruda o historico.
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
-    if (s_conv[i].usada && !s_conv[i].canal && s_conv[i].no == num) {
-      nome_exibicao(num, s_conv[i].nome, sizeof(s_conv[i].nome));
+    if (s_conv[i].usada && !s_conv[i].channel && s_conv[i].no == num) {
+      nome_exibicao(num, s_conv[i].name, sizeof(s_conv[i].name));
     }
   }
 }
@@ -1256,7 +1256,7 @@ static void descarregar_nomes(void)
     char linha[96];
     snprintf(linha, sizeof(linha), "%08lX,%s,%s\n", (unsigned long)s_conhecidos[i].num,
              s_conhecidos[i].curto, s_conhecidos[i].longo);
-    tab5_sd_anexar(MESH_PASTA, MESH_ARQ_NOS, linha);
+    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_NOS, linha);
     s_conhecidos[i].sujo = false;
   }
   ESP_LOGI(TAG, "%d nome(s) de no gravados", pendentes);
@@ -1270,9 +1270,9 @@ static void descarregar_nomes(void)
 // nao importa quantas virgulas vierem antes.
 static void carregar_nomes(void)
 {
-  if (!tab5_sd_montar()) { return; }
-  FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_NOS, "r");
-  if (!f) { s_nomes_lidos = true; tab5_sd_desmontar(); return; }   // ainda nao existe
+  if (!tab5_sd_mount()) { return; }
+  FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_NOS, "r");
+  if (!f) { s_nomes_lidos = true; tab5_sd_unmount(); return; }   // ainda nao existe
 
   // Quem ja estava na tabela antes da leitura veio do no ao vivo.
   EXT_RAM_BSS_ATTR static bool ao_vivo[MESH_MAX_CONHECIDOS];
@@ -1330,7 +1330,7 @@ static void carregar_nomes(void)
   // estava pendente.
   if (linhas > s_n_conhecidos + 32) {
     // O arquivo novo inteiro na PSRAM e UMA troca pela porta do sistema
-    // (tab5_sd_substituir) - nunca meio arquivo.
+    // (tab5_sd_replace) - nunca meio arquivo.
     const size_t por = 8 + 3 + MESH_NOME_CURTO + MESH_NOME_LONGO;
     const size_t cap = (size_t)s_n_conhecidos * por + 1;
     char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
@@ -1340,14 +1340,14 @@ static void carregar_nomes(void)
         k += (size_t)snprintf(txt + k, cap - k, "%08lX,%s,%s\n", (unsigned long)s_conhecidos[i].num,
                               s_conhecidos[i].curto, s_conhecidos[i].longo);
       }
-      if (k < cap && tab5_sd_substituir(MESH_PASTA, MESH_ARQ_NOS, txt, k)) {
+      if (k < cap && tab5_sd_replace(MESH_PASTA, MESH_ARQ_NOS, txt, k)) {
         for (int i = 0; i < s_n_conhecidos; ++i) { s_conhecidos[i].sujo = false; }
         ESP_LOGI(TAG, "cartao: nos.txt compactado de %d para %d linha(s)", linhas, s_n_conhecidos);
       }
       heap_caps_free(txt);
     }
   }
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   ESP_LOGI(TAG, "cartao: %d no(s) conhecido(s)", s_n_conhecidos);
 }
 
@@ -1381,7 +1381,7 @@ static void carregar_nomes(void)
 // mesma flag que ja existia para no - so precisava aprender a guardar QUAL
 // TIPO de chave e essa, ja que indice de canal (0..7) e numero de no (sempre
 // um valor grande, derivado de MAC) nao podem se confundir no MESMO campo.
-typedef struct { bool canal; uint32_t chave; } apagado_t;
+typedef struct { bool channel; uint32_t key; } apagado_t;
 #define MESH_ARQ_APAGADAS "apagadas.txt"
 
 #define MESH_MAX_APAGADOS 64   // conversas escondidas; nada a ver com a tabela de nos
@@ -1399,34 +1399,34 @@ static void carregar_apagados(void)
 {
   // Sem cartao NAO conta como carregado: a lista da RAM nao pode virar o
   // arquivo (desmarcar_apagada reescreve). Tenta de novo no proximo uso.
-  if (!tab5_sd_montar()) { return; }
+  if (!tab5_sd_mount()) { return; }
   s_apagados_carregado = true;   // com o cartao: uma leitura por sessao, mesmo se o arquivo faltar
   // O ARQUIVO E A VERDADE: o que foi marcado antes desta leitura ja esta nele
-  // (tab5_sd_abrir aplica o diario e o pendente antes de abrir).
+  // (tab5_sd_open aplica o diario e o pendente antes de abrir).
   s_n_apagados = 0;
-  FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_APAGADAS, "r");
-  if (!f) { tab5_sd_desmontar(); return; }
+  FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_APAGADAS, "r");
+  if (!f) { tab5_sd_unmount(); return; }
 
   char linha[16];
   while (fgets(linha, sizeof(linha), f) && s_n_apagados < MESH_MAX_APAGADOS) {
     if (linha[0] == 'K') {
       const uint32_t idx = (uint32_t)strtoul(linha + 1, nullptr, 10);
       if (idx < MESH_MAX_CANAIS || idx == MESH_CANAL_INTERNET) {
-        s_apagados[s_n_apagados].canal = true;
-        s_apagados[s_n_apagados].chave = idx;
+        s_apagados[s_n_apagados].channel = true;
+        s_apagados[s_n_apagados].key = idx;
         ++s_n_apagados;
       }
       continue;
     }
     const uint32_t num = (uint32_t)strtoul(linha, nullptr, 16);
     if (num != 0) {
-      s_apagados[s_n_apagados].canal = false;
-      s_apagados[s_n_apagados].chave = num;
+      s_apagados[s_n_apagados].channel = false;
+      s_apagados[s_n_apagados].key = num;
       ++s_n_apagados;
     }
   }
   fclose(f);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
   ESP_LOGI(TAG, "cartao: %d conversa(s) apagada(s) - ficam escondidas", s_n_apagados);
 }
 
@@ -1435,7 +1435,7 @@ static bool esta_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
   for (int i = 0; i < s_n_apagados; ++i) {
-    if (s_apagados[i].canal == canal && s_apagados[i].chave == chave) { return true; }
+    if (s_apagados[i].channel == canal && s_apagados[i].key == chave) { return true; }
   }
   return false;
 }
@@ -1448,15 +1448,15 @@ static void marcar_apagada(bool canal, uint32_t chave)
   if (!s_apagados_carregado) { carregar_apagados(); }
   if (esta_apagada(canal, chave)) { return; }
   if (s_n_apagados < MESH_MAX_APAGADOS) {
-    s_apagados[s_n_apagados].canal = canal;
-    s_apagados[s_n_apagados].chave = chave;
+    s_apagados[s_n_apagados].channel = canal;
+    s_apagados[s_n_apagados].key = chave;
     ++s_n_apagados;
   }
 
   char linha[16];
   if (canal) { snprintf(linha, sizeof(linha), "K%u\n", (unsigned)chave); }
   else       { snprintf(linha, sizeof(linha), "%08lX\n", (unsigned long)chave); }
-  tab5_sd_anexar(MESH_PASTA, MESH_ARQ_APAGADAS, linha);
+  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_APAGADAS, linha);
 }
 
 // Tira uma conversa da lista de apagados - chamado quando voces voltam a se
@@ -1469,7 +1469,7 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
   if (!s_apagados_carregado) { return; }   // sem a lista do cartao nao se reescreve o arquivo
   int achou = -1;
   for (int i = 0; i < s_n_apagados; ++i) {
-    if (s_apagados[i].canal == canal && s_apagados[i].chave == chave) { achou = i; break; }
+    if (s_apagados[i].channel == canal && s_apagados[i].key == chave) { achou = i; break; }
   }
   if (achou < 0) { return; }   // nao estava apagado - nada a fazer, nada a reescrever
 
@@ -1482,16 +1482,16 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
   char txt[MESH_MAX_APAGADOS * 12 + 1];
   size_t k = 0;
   for (int i = 0; i < s_n_apagados; ++i) {
-    if (s_apagados[i].canal) { k += (size_t)snprintf(txt + k, sizeof(txt) - k, "K%u\n", (unsigned)s_apagados[i].chave); }
-    else                     { k += (size_t)snprintf(txt + k, sizeof(txt) - k, "%08lX\n", (unsigned long)s_apagados[i].chave); }
+    if (s_apagados[i].channel) { k += (size_t)snprintf(txt + k, sizeof(txt) - k, "K%u\n", (unsigned)s_apagados[i].key); }
+    else                     { k += (size_t)snprintf(txt + k, sizeof(txt) - k, "%08lX\n", (unsigned long)s_apagados[i].key); }
   }
-  tab5_sd_substituir(MESH_PASTA, MESH_ARQ_APAGADAS, txt, k);
+  tab5_sd_replace(MESH_PASTA, MESH_ARQ_APAGADAS, txt, k);
 }
 
 static void arquivo_da_conversa(const mesh_conversa_t* c, char* out, size_t tam)
 {
-  if (c->canal && mesh_canal_internet(c->idx)) { snprintf(out, tam, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
-  else if (c->canal) { snprintf(out, tam, "canal-%u.txt", (unsigned)c->idx); }
+  if (c->channel && mesh_canal_internet(c->idx)) { snprintf(out, tam, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
+  else if (c->channel) { snprintf(out, tam, "canal-%u.txt", (unsigned)c->idx); }
   else          { snprintf(out, tam, "no-%08lX.txt", (unsigned long)c->no); }
 }
 
@@ -1499,8 +1499,8 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
 {
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (!s_conv[i].usada) { continue; }
-    if (canal && s_conv[i].canal && s_conv[i].idx == idx) { return i; }
-    if (!canal && !s_conv[i].canal && s_conv[i].no == no) { return i; }
+    if (canal && s_conv[i].channel && s_conv[i].idx == idx) { return i; }
+    if (!canal && !s_conv[i].channel && s_conv[i].no == no) { return i; }
   }
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (s_conv[i].usada) { continue; }
@@ -1508,7 +1508,7 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
     s_conv_seq[i] = 0;
     ++s_conv_ver;   // a ordem da coluna mudou
     s_conv[i].usada = true;
-    s_conv[i].canal = canal;
+    s_conv[i].channel = canal;
     s_conv[i].idx = idx;
     s_conv[i].no  = no;
     if (const nao_lida_guardada_t* g = guardada_de(canal, idx, no, false)) { s_conv[i].nao_lidas = g->n; }
@@ -1516,16 +1516,16 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
       // Nome REAL, se o radio ja nos contou (FromRadio campo 10). O rotulo
       // inventado abaixo e so o que resta enquanto a configuracao nao chegou.
       if (mesh_canal_internet(idx)) {
-        snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "LongFast Internet");
+        snprintf(s_conv[i].name, sizeof(s_conv[i].name), "LongFast Internet");
       } else if (idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) {
-        snprintf(s_conv[i].nome, sizeof(s_conv[i].nome), "%s", s_canal_nome[idx]);
+        snprintf(s_conv[i].name, sizeof(s_conv[i].name), "%s", s_canal_nome[idx]);
       } else {
-        snprintf(s_conv[i].nome, sizeof(s_conv[i].nome),
+        snprintf(s_conv[i].name, sizeof(s_conv[i].name),
                  idx == 0 ? "LongFast" : "Canal %u", (unsigned)idx);
       }
     } else {
       // Nome do no - curto, longo, e o id so em ultimo caso (nome_exibicao).
-      nome_exibicao(no, s_conv[i].nome, sizeof(s_conv[i].nome));
+      nome_exibicao(no, s_conv[i].name, sizeof(s_conv[i].name));
     }
     return i;
   }
@@ -1537,7 +1537,7 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
 // ---------------------------------------------------------------------------
 // O Mesh tinha tarefa e queue PROPRIAS de gravacao ("mesh_grava",
 // apertar enviar travava a tela montando o cartao). A ideia era
-// certa e virou do SISTEMA: tab5_sd_anexar (hal/tab5_sd.hpp) copia a linha e
+// certa e virou do SISTEMA: tab5_sd_enqueue_append (hal/tab5_sd.hpp) copia a linha e
 // volta na hora, e a tarefa "cartao" grava em lote. A mensagem vai como
 // URGENTE: gravada em milissegundos, nao no lote de 5 s.
 // Acrescenta ao arquivo da conversa. Formato de UMA linha, com o texto POR
@@ -1559,7 +1559,7 @@ static void gravar_msg(int ci, const mesh_msg_t* m)
            (unsigned long)m->quando, (unsigned long)m->de,
            m->snr, (long)m->rssi, (int)m->via_mqtt, (unsigned)m->saltos,
            (unsigned long)m->id, m->texto);
-  if (!tab5_sd_anexar(MESH_PASTA, arquivo, linha, nullptr, true)) {
+  if (!tab5_sd_enqueue_append(MESH_PASTA, arquivo, linha, nullptr, true)) {
     ESP_LOGW(TAG, "gravador cheio - mensagem NAO foi salva no cartao");
   }
 }
@@ -1631,16 +1631,16 @@ int tab5_mesh_carregar_do_cartao(void)
   // esta plugado. Na ordem inversa, toda conversa nasceria chamada pelo numero.
   if (!s_nomes_lidos) { carregar_nomes(); }
 
-  if (!tab5_sd_montar()) { return 0; }
+  if (!tab5_sd_mount()) { return 0; }
 
   char pasta[128];
-  if (!tab5_sd_pasta(MESH_PASTA, pasta, sizeof(pasta))) {
-    tab5_sd_desmontar();
+  if (!tab5_sd_folder(MESH_PASTA, pasta, sizeof(pasta))) {
+    tab5_sd_unmount();
     return 0;
   }
 
   DIR* dir = opendir(pasta);
-  if (!dir) { tab5_sd_desmontar(); return 0; }
+  if (!dir) { tab5_sd_unmount(); return 0; }
 
   int achadas = 0;
   struct dirent* e;
@@ -1682,7 +1682,7 @@ int tab5_mesh_carregar_do_cartao(void)
   }
   destravar();
   closedir(dir);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
 
   ESP_LOGI(TAG, "cartao: %d conversa(s) no arquivo", achadas);
   return achadas;
@@ -1744,10 +1744,10 @@ static bool vem_antes(int a, int b)
   const mesh_conversa_t& x = s_conv[a];
   const mesh_conversa_t& y = s_conv[b];
   // A internet embaixo de tudo, depois das diretas: e abaixo do traco na coluna.
-  const bool ex = x.canal && mesh_canal_internet(x.idx), ey = y.canal && mesh_canal_internet(y.idx);
+  const bool ex = x.channel && mesh_canal_internet(x.idx), ey = y.channel && mesh_canal_internet(y.idx);
   if (ex != ey) { return ey; }
-  if (x.canal != y.canal) { return x.canal; }
-  if (x.canal)            { return x.idx < y.idx; }
+  if (x.channel != y.channel) { return x.channel; }
+  if (x.channel)            { return x.idx < y.idx; }
   if (s_conv_seq[a] != s_conv_seq[b]) { return s_conv_seq[a] > s_conv_seq[b]; }
   return a < b;
 }
@@ -1786,7 +1786,7 @@ int tab5_mesh_conversa_indice(bool canal, uint8_t idx, uint32_t no)
   int v = -1;
   travar();
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
-    if (!s_conv[i].usada || s_conv[i].canal != canal) { continue; }
+    if (!s_conv[i].usada || s_conv[i].channel != canal) { continue; }
     if (canal ? (s_conv[i].idx == idx) : (s_conv[i].no == no)) { v = visivel_de(i); break; }
   }
   destravar();
@@ -1804,7 +1804,7 @@ int tab5_mesh_conversa_indice(bool canal, uint8_t idx, uint32_t no)
 //
 // Gravada em LOTE (s_canais_sujos), no fim do dump ou na volta de 15 s da
 // tarefa: o dump traz os 8 canais em sequencia e cada um seria uma escrita.
-typedef struct { uint8_t ativo; char nome[MESH_NOME_CONVERSA]; } canal_salvo_t;
+typedef struct { uint8_t ativo; char name[MESH_NOME_CONVERSA]; } canal_salvo_t;
 #define MESH_NVS_CANAIS "canais"
 
 static void recordar_canais(void)
@@ -1818,8 +1818,8 @@ static void recordar_canais(void)
   if (nvs_get_blob(h, MESH_NVS_CANAIS, tab, &n) == ESP_OK && n == sizeof(tab)) {
     for (int i = 0; i < MESH_MAX_CANAIS; ++i) {
       s_canal_ativo[i] = tab[i].ativo != 0;
-      tab[i].nome[sizeof(tab[i].nome) - 1] = 0;
-      snprintf(s_canal_nome[i], sizeof(s_canal_nome[i]), "%s", tab[i].ativo ? tab[i].nome : "");
+      tab[i].name[sizeof(tab[i].name) - 1] = 0;
+      snprintf(s_canal_nome[i], sizeof(s_canal_nome[i]), "%s", tab[i].ativo ? tab[i].name : "");
     }
     s_canais_conhecidos = true;
   }
@@ -1838,7 +1838,7 @@ static void salvar_canais(void)
   memset(tab, 0, sizeof(tab));
   for (int i = 0; i < MESH_MAX_CANAIS; ++i) {
     tab[i].ativo = s_canal_ativo[i] ? 1 : 0;
-    snprintf(tab[i].nome, sizeof(tab[i].nome), "%s", s_canal_nome[i]);
+    snprintf(tab[i].name, sizeof(tab[i].name), "%s", s_canal_nome[i]);
   }
   destravar();
   nvs_handle_t h;
@@ -1864,7 +1864,7 @@ static void nome_do_canal(int idx, char* out, size_t tam)
 static void esconder_conversa_canal(int idx)
 {
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
-    if (s_conv[i].usada && s_conv[i].canal && s_conv[i].idx == idx) {
+    if (s_conv[i].usada && s_conv[i].channel && s_conv[i].idx == idx) {
       memset(&s_conv[i], 0, sizeof(s_conv[i]));
       s_conv_seq[i] = 0;
       ++s_conv_ver;
@@ -1908,8 +1908,8 @@ static void aplicar_canal(int idx, int papel, const char* nome_radio, const uint
   // Renomeia a que ja exista. O arquivo e pelo INDICE (canal-0.txt), entao
   // renomear nao desgruda o historico.
   for (int k = 0; k < MESH_MAX_CONVERSAS; ++k) {
-    if (s_conv[k].usada && s_conv[k].canal && s_conv[k].idx == idx) {
-      snprintf(s_conv[k].nome, sizeof(s_conv[k].nome), "%s", nome);
+    if (s_conv[k].usada && s_conv[k].channel && s_conv[k].idx == idx) {
+      snprintf(s_conv[k].name, sizeof(s_conv[k].name), "%s", nome);
     }
   }
 }
@@ -1966,7 +1966,7 @@ bool tab5_mesh_canal(int i, uint8_t* idx_saida, char* nome, size_t tam, bool* vi
     if (visivel) {
       *visivel = false;
       for (int k = 0; k < MESH_MAX_CONVERSAS; ++k) {
-        if (s_conv[k].usada && s_conv[k].canal && s_conv[k].idx == idx) { *visivel = true; break; }
+        if (s_conv[k].usada && s_conv[k].channel && s_conv[k].idx == idx) { *visivel = true; break; }
       }
     }
     ok = true;
@@ -2004,9 +2004,9 @@ bool tab5_mesh_esquecer_conversa(int idx)
   if (i >= 0) {
     // As nao lidas dela saem do total sozinhas: publicar_notif() reconta.
     // Guardado antes do memset apagar os proprios campos.
-    canal_apagado = s_conv[i].canal;
+    canal_apagado = s_conv[i].channel;
     chave_apagada = canal_apagado ? s_conv[i].idx : s_conv[i].no;
-    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].canal, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
+    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
     memset(&s_conv[i], 0, sizeof(s_conv[i]));   // usada volta a false
     s_conv_seq[i] = 0;
     ++s_conv_ver;
@@ -2044,7 +2044,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
     // longo de quem e a conversa direta, se ele disser algo que o nome da
     // primeira linha ainda nao disse.
     saida->sub[0] = 0;
-    if (saida->canal) {
+    if (saida->channel) {
       if (mesh_canal_internet(saida->idx)) { snprintf(saida->sub, sizeof(saida->sub), "rede internet"); }
       else { snprintf(saida->sub, sizeof(saida->sub), saida->idx == 0 ? "canal primário" : "canal %u", (unsigned)saida->idx); }
     } else {
@@ -2053,7 +2053,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
         if (s_nos[k].usado && s_nos[k].num == saida->no) { if (s_nos[k].longo[0]) { longo = s_nos[k].longo; } break; }
       }
       nome_legivel(longo ? longo : longo_conhecido(saida->no), saida->sub, sizeof(saida->sub));
-      if (!strcmp(saida->sub, saida->nome)) { saida->sub[0] = 0; }
+      if (!strcmp(saida->sub, saida->name)) { saida->sub[0] = 0; }
     }
     ok = true;
   }
@@ -2082,9 +2082,9 @@ static void publicar_notif(void)
     if (!s_conv[i].usada) { continue; }
     // OS DA INTERNET NAO APITAM. O LongFast publico fala o dia inteiro: a bolinha
     // da conversa conta, a barra de status e o bipe ficam com o que e daqui.
-    if (s_conv[i].canal && mesh_canal_internet(s_conv[i].idx)) { continue; }
+    if (s_conv[i].channel && mesh_canal_internet(s_conv[i].idx)) { continue; }
     s_nao_lidas += s_conv[i].nao_lidas;
-    if (!s_conv[i].canal) { s_nao_lidas_dir += s_conv[i].nao_lidas; }
+    if (!s_conv[i].channel) { s_nao_lidas_dir += s_conv[i].nao_lidas; }
   }
   if (s_notif < 0) { return; }
   char resumo[NOTIF_RESUMO];
@@ -2103,9 +2103,9 @@ static void publicar_notif(void)
     const char* nome_unico = nullptr;
     int canais_com_novidade = 0;
     for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
-      if (s_conv[i].usada && s_conv[i].canal && !mesh_canal_internet(s_conv[i].idx) && s_conv[i].nao_lidas > 0) {
+      if (s_conv[i].usada && s_conv[i].channel && !mesh_canal_internet(s_conv[i].idx) && s_conv[i].nao_lidas > 0) {
         ++canais_com_novidade;
-        nome_unico = s_conv[i].nome;
+        nome_unico = s_conv[i].name;
       }
     }
     if (canais_com_novidade == 1 && nome_unico && nome_unico[0]) {
@@ -2132,7 +2132,7 @@ void tab5_mesh_marcar_conversa_lida(int idx)
   if (i >= 0) {
     s_conv[i].nao_lidas = 0;
     // Lida de verdade: a guardada some junto, para nao voltar no proximo reinicio.
-    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].canal, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
+    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
   }
   publicar_notif();
   destravar();
@@ -2145,14 +2145,14 @@ int tab5_mesh_historico(int conversa, mesh_msg_t* saida, int max)
 {
   mesh_conversa_t c;
   if (!tab5_mesh_conversa(conversa, &c)) { return 0; }
-  return tab5_mesh_historico_de(c.canal, c.idx, c.no, saida, max);
+  return tab5_mesh_historico_de(c.channel, c.idx, c.no, saida, max);
 }
 
 int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* saida, int max)
 {
   mesh_conversa_t c = { };
-  c.canal = canal; c.idx = idx; c.no = no;
-  if (!tab5_sd_montar()) { return 0; }
+  c.channel = canal; c.idx = idx; c.no = no;
+  if (!tab5_sd_mount()) { return 0; }
 
   char nome[32];
   arquivo_da_conversa(&c, nome, sizeof(nome));
@@ -2160,8 +2160,8 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
   // Volta a usar o servico: quem sabe distinguir "ainda nao existe" de "deu
   // errado" e o tab5_sd, nao cada app. Conversa sem historico devolve 0
   // mensagens sem alarme no log.
-  FILE* f = tab5_sd_abrir(MESH_PASTA, nome, "r");
-  if (!f) { tab5_sd_desmontar(); return 0; }
+  FILE* f = tab5_sd_open(MESH_PASTA, nome, "r");
+  if (!f) { tab5_sd_unmount(); return 0; }
 
   // Desfechos carregados UMA VEZ, antes do loop. Ver o comentario da tabela.
   static desfecho_t desf[MESH_DESFECHOS];
@@ -2228,7 +2228,7 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
     if (n < max) { ++n; } else { primeiro = (primeiro + 1) % max; }
   }
   fclose(f);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
 
   // Desenrola a janela para a ordem cronologica.
   if (primeiro != 0 && n == max) {
@@ -2407,7 +2407,7 @@ static void salvar_nodedb(void)
     const nodedb_cab_t cab = { { 'M', 'N', 'D', 'B' }, 1, (uint16_t)sizeof(mesh_no_t), (uint32_t)n };
     memcpy(bloco, &cab, sizeof(cab));
     memcpy(bloco + sizeof(cab), s_nodedb_copia, sizeof(mesh_no_t) * (size_t)n);
-    if (tab5_sd_substituir(MESH_PASTA, MESH_ARQ_NODEDB, bloco, tam)) {
+    if (tab5_sd_replace(MESH_PASTA, MESH_ARQ_NODEDB, bloco, tam)) {
       s_nodedb_ver_salva = ver;
       ESP_LOGI(TAG, "cartao: %d no(s) na NodeDB do Tab5", n);
     }
@@ -2422,12 +2422,12 @@ static void salvar_nodedb(void)
 static void carregar_nodedb(void)
 {
   s_nodedb_lida = false;
-  if (!tab5_sd_montar()) { return; }
+  if (!tab5_sd_mount()) { return; }
   s_nodedb_lida = true;   // com o cartao: ou le, ou o arquivo nao existe (o primeiro salvar cria)
-  FILE* f = tab5_sd_abrir(MESH_PASTA, MESH_ARQ_NODEDB, "rb");
-  if (!f) { tab5_sd_desmontar(); return; }
+  FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_NODEDB, "rb");
+  if (!f) { tab5_sd_unmount(); return; }
   mesh_no_t* s_nodedb_copia = nodedb_copia();
-  if (!s_nodedb_copia) { fclose(f); tab5_sd_desmontar(); return; }
+  if (!s_nodedb_copia) { fclose(f); tab5_sd_unmount(); return; }
   nodedb_cab_t cab;
   int lidos = 0;
   if (fread(&cab, sizeof(cab), 1, f) == 1 && !memcmp(cab.magia, "MNDB", 4)
@@ -2438,7 +2438,7 @@ static void carregar_nodedb(void)
     ESP_LOGW(TAG, "cartao: nodedb.bin de outra versao - ignorado");
   }
   fclose(f);
-  tab5_sd_desmontar();
+  tab5_sd_unmount();
 
   int n = 0;
   travar();
@@ -2711,7 +2711,7 @@ static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* t
   memset(&s_msgs[0], 0, sizeof(s_msgs[0]));
   s_msgs[0].de = de;
   s_msgs[0].para = para;
-  s_msgs[0].canal = canal;
+  s_msgs[0].channel = canal;
   // 0xFFFFFFFF e o endereco de difusao do Meshtastic. Qualquer outro valor
   // igual ao nosso numero significa mensagem enderecada A VOCE.
   s_msgs[0].direta = (para != 0xFFFFFFFFu) && (para == s_meu_num);
@@ -3115,7 +3115,7 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
       // ("tem como saber se os 5V do Grove estao chegando?"). Nao medimos o
       // Grove especificamente (so existe o INA226 do barramento da BATERIA,
       // 2S Li-Po ~7.4V - ver tab5_power.hpp), e nao dá pra medir agora
-      // mesmo (tab5_power_ultima() so, nunca _medir() daqui: esta e a
+      // mesmo (tab5_power_latest() so, nunca _medir() daqui: esta e a
       // tarefa do Mesh, nao a de interface, e o barramento I2C interno nao
       // tem mutex - ver o aviso grande em tab5_power.hpp). O que "ultima"
       // devolve e uma leitura em cache de ATE 1s atras, atualizada pela
@@ -3123,7 +3123,7 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
       // tensao, mas se o barramento estiver visivelmente baixo bem na hora
       // do reinicio, e um indicio real de energia, nao so uma suspeita.
       mesh_diario_foto(s_saude.uptime_s);   // contexto do Tab5 neste instante
-      const tab5_medida_t m = tab5_power_ultima();
+      const tab5_measurement_t m = tab5_power_latest();
       ESP_LOGW(TAG, "o radio reiniciou - vou pedir a configuracao de novo "
                     "(barramento no instante: %.2fV %.0fmA, ate 1s atras)",
                (double)m.volts, (double)m.mA);
@@ -3485,7 +3485,7 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
 
   mesh_pb_envelope_t env = { };
   env.para    = para;
-  env.canal   = internet ? 0 : canal;
+  env.channel   = internet ? 0 : canal;
   env.porta   = PORT_TEXTO;
   env.carga   = (const uint8_t*)texto;
   env.n_carga = n_txt;
@@ -3582,7 +3582,7 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
 // true = resolvido ate a proxima volta (mandou, ou nao ha o que mandar).
 static bool enviar_posicao(void)
 {
-  if (!s_servico_ativo || !tab5_gps_servico_ativo()) { return false; }
+  if (!s_servico_ativo || !tab5_gps_service_active()) { return false; }
   const bool com_no = radio_aceita_admin();
   const bool pela_net = !com_no && (s_via == AJUSTES_MESH_INTERNET || s_via == AJUSTES_MESH_BLUETOOTH)
                      && mesh_mqtt_conectado() && !mesh_mqtt_em_proxy();
@@ -3591,8 +3591,8 @@ static bool enviar_posicao(void)
   const int32_t prec = mesh_admin_precisao_primario();
   if (pela_net && prec == 0) { return true; }
 
-  const nmea_posicao_t g = tab5_gps_posicao();
-  if (!g.valida || g.qualidade == 0) { return false; }
+  const nmea_position_t g = tab5_gps_position();
+  if (!g.valid || g.qualidade == 0) { return false; }
   int32_t lat = (int32_t)(g.lat * 1e7), lon = (int32_t)(g.lon * 1e7);
   if (pela_net && prec > 0 && prec < 32) {
     // O mesmo corte do firmware (PositionModule): os bits que sobram vao
@@ -3742,7 +3742,7 @@ static void vTaskMesh(void*)
     static uint32_t proxima_descarga = 15000;
     if (t > proxima_descarga) {
       proxima_descarga = t + 15000;
-      descarregar_nomes();   // so entrega ao gravador (tab5_sd_anexar): nao bloqueia
+      descarregar_nomes();   // so entrega ao gravador (tab5_sd_enqueue_append): nao bloqueia
     }
     // Canais (NVS) e NodeDB (cartao) NAO sao gravados aqui: ver mesh_na_carona.
 
@@ -3751,9 +3751,9 @@ static void vTaskMesh(void*)
     // significa que o enlace morreu no meio - e "nao sei" e o que a tela deve
     // dizer, nao "falhou".
     for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
-      if (s_envios[i].estado == MESH_ENVIANDO
+      if (s_envios[i].state == MESH_ENVIANDO
        && (t - s_envios[i].em_ms) > MESH_ACK_MS) {
-        s_envios[i].estado = MESH_SEM_RESPOSTA;
+        s_envios[i].state = MESH_SEM_RESPOSTA;
         s_envios_ver++;
         sistema_avisar(AVISO_MESH_ENVIO);
         gravar_desfecho(s_envios[i].id, MESH_SEM_RESPOSTA, 0);
@@ -3791,7 +3791,7 @@ static void vTaskMesh(void*)
     // pacotes por volta, lidos como da rede INTERNET (s_rede_rx) - nao contam como
     // quadro do no (s_ultimo_quadro_ms e a vida do RADIO).
     {
-      const bool quer_internet = ajustes_mesh_rede_internet() && tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
+      const bool quer_internet = ajustes_mesh_rede_internet() && tab5_wifi_state() == TAB5_WIFI_CONNECTED;
       if (quer_internet && !mesh_mqtt_internet_ativo()) {
         informar_no_ao_mqtt();
         mesh_mqtt_internet_iniciar();
@@ -3834,10 +3834,10 @@ static void vTaskMesh(void*)
       //     derrubava o MQTT logo depois de subir.
       //   - a via e o no (cabo ou Bluetooth): a internet so cobre a falta
       //     dele, se o ajuste "internet quando sem o no" estiver ligado.
-      const bool wifi = tab5_wifi_estado() == TAB5_WIFI_CONECTADO;
+      const bool wifi = tab5_wifi_state() == TAB5_WIFI_CONNECTED;
       const bool no_ok = (s_via == AJUSTES_MESH_SERIAL)
                       || (s_via == AJUSTES_MESH_BLUETOOTH && mesh_ble_conectado())
-                      || tab5_grove_tipo() == GROVE_MESHTASTIC;
+                      || tab5_grove_type() == GROVE_MESHTASTIC;
       const bool quer_net = wifi && ((s_via == AJUSTES_MESH_INTERNET)
                                   || (ajustes_mesh_internet() && !no_ok));
       // O proxy pede o no CONVERSANDO (nao so a via escolhida) e com o dump
@@ -4020,7 +4020,7 @@ bool tab5_mesh_parar(void)
     mesh_ble_parar();
   } else if (s_via == AJUSTES_MESH_SERIAL) {
     uart_driver_delete(MESH_UART);
-    tab5_grove_soltar(GROVE_DONO_MESH);
+    tab5_grove_release(GROVE_OWNER_MESH);
   }
 
   // O AVISO SO SAI SE NAO HA NADA PARA LER. Antes ele era apagado a cada
@@ -4100,7 +4100,7 @@ const char* tab5_mesh_rede_internet_estado(void)
 {
   static char t[72];
   if (!ajustes_mesh_rede_internet())                          { return "desligada"; }
-  if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO)    { return "esperando o Wi-Fi"; }
+  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)    { return "esperando o Wi-Fi"; }
   if (!s_servico_ativo)                             { return "serviço Mesh parado"; }
   if (!mesh_mqtt_internet_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
   snprintf(t, sizeof(t), "conectada · %lu pacotes", (unsigned long)mesh_mqtt_internet_recebidos());
@@ -4110,14 +4110,14 @@ const char* tab5_mesh_rede_internet_estado(void)
 const char* tab5_mesh_internet_estado(void)
 {
   if (ajustes_mesh_via() == AJUSTES_MESH_INTERNET) {
-    if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { return "Internet escolhida: esperando o Wi-Fi conectar"; }
+    if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "Internet escolhida: esperando o Wi-Fi conectar"; }
     if (!mesh_mqtt_ativo())                        { return "Internet escolhida: vai conectar em instantes"; }
     return mesh_mqtt_descricao();
   }
   if (!ajustes_mesh_internet())                   { return "Desligada"; }
-  if (tab5_grove_tipo() == GROVE_MESHTASTIC
+  if (tab5_grove_type() == GROVE_MESHTASTIC
    || (s_servico_ativo && s_via == AJUSTES_MESH_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
-  if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO)  { return "Esperando o Wi-Fi conectar"; }
+  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)  { return "Esperando o Wi-Fi conectar"; }
   if (!mesh_mqtt_ativo())                         { return "Ligada, vai conectar em instantes"; }
   return mesh_mqtt_descricao();
 }
@@ -4126,7 +4126,7 @@ const char* tab5_mesh_proxy_estado(void)
 {
   // Curto: vai ao lado de "ligado" numa linha da pagina "No".
   static char d[48];
-  if (tab5_wifi_estado() != TAB5_WIFI_CONECTADO) { return "sem Wi-Fi no Tab5"; }
+  if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "sem Wi-Fi no Tab5"; }
   if (!mesh_mqtt_no_tem_proxy())                 { return "o nó ainda não confirmou"; }
   if (!mesh_mqtt_em_proxy())                     { return "vai conectar"; }
   if (!mesh_mqtt_conectado())                    { return "conectando ao servidor"; }
@@ -4160,7 +4160,7 @@ static void iniciar_via(uint8_t via)
   }
 
   tab5_mutex_criar(&s_trava);   // uma vez por boot - ver tab5_mesh_parar
-  tab5_sd_carona(mesh_na_carona);   // idempotente: a carona e registrada uma vez
+  tab5_sd_piggyback(mesh_na_carona);   // idempotente: a carona e registrada uma vez
   tab5_mutex_criar(&s_tx);
   if (!s_fila_envio) { s_fila_envio = xQueueCreateWithCaps(MESH_FILA_ENVIO, sizeof(envio_fila_t), MALLOC_CAP_SPIRAM); }
   if (s_fila_envio) { xQueueReset(s_fila_envio); }
@@ -4236,7 +4236,7 @@ static void iniciar_via(uint8_t via)
   cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   cfg.source_clk = UART_SCLK_DEFAULT;
 
-  if (!tab5_grove_tomar(GROVE_DONO_MESH)) {
+  if (!tab5_grove_acquire(GROVE_OWNER_MESH)) {
     ESP_LOGE(TAG, "Grove ocupado - servico nao vai subir");
     return;
   }
@@ -4261,14 +4261,14 @@ static void iniciar_via(uint8_t via)
   s_servico_ativo  = true;
   // 6 KB: com 4 KB o monitor registrou no minimo 264 bytes livres em uso real.
   if (!parada_preparar(&s_parada)
-   || !pool_criar(nullptr, vTaskMesh, nullptr, "mesh", 6144, 3, DONO_SERVICO, "Mesh")) {
+   || !pool_criar(nullptr, vTaskMesh, nullptr, "mesh", 6144, 3, OWNER_SERVICE, "Mesh")) {
     // DEVOLVE O QUE O INICIAR TOMOU. Antes so a bandeira voltava: a UART e o
     // Grove ficavam com o Mesh para sempre, e nenhuma sondagem achava mais
     // nada no cabo ate reiniciar.
     parada_desistir(&s_parada);
     s_servico_ativo = false;
     if (s_via == AJUSTES_MESH_BLUETOOTH) { mesh_ble_parar(); }
-    else if (s_via == AJUSTES_MESH_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_soltar(GROVE_DONO_MESH); }
+    else if (s_via == AJUSTES_MESH_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_release(GROVE_OWNER_MESH); }
     ESP_LOGE(TAG, "sem memoria para a tarefa do Mesh");
     return;
   }

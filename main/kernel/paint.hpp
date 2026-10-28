@@ -42,7 +42,7 @@
 #include <stddef.h>
 
 typedef struct {
-  bool completo;    // esta passada repinta tudo
+  bool complete;    // esta passada repinta tudo
   bool pedido;      // o app pediu repintura total
   bool ja_desenhou; // false ate a primeira passada (que e sempre completa)
 } pintura_t;
@@ -56,7 +56,7 @@ void pintura_iniciar(pintura_t* p);
 // sistema_pedir_redesenho_completo(), que e quem agenda o desenho.
 void pintura_pedir(pintura_t* p);
 
-static inline bool pintura_completa(const pintura_t* p) { return p->completo; }
+static inline bool pintura_completa(const pintura_t* p) { return p->complete; }
 
 // SO PARA DECIDIR DESENHO. Nao use estes comparadores para decidir E/S (reler
 // cartao, abrir arquivo, falar com hardware): eles devolvem true em toda passada

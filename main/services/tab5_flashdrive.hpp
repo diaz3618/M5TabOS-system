@@ -13,7 +13,7 @@
 //
 // DURANTE O PENDRIVE NAO HA CONSOLE nem gravacao pelo cabo: o computador ve
 // um disco, nao a porta serial. O log continua sendo gravado no cartao assim
-// que ele voltar (tab5_sd_anexar segura o que chegar).
+// que ele voltar (tab5_sd_enqueue_append segura o que chegar).
 //
 // -------------------------------------------------------------------------
 // O CARTAO

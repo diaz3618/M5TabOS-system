@@ -708,7 +708,7 @@ static void ao_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
 
     portENTER_CRITICAL(&s_fj_mux);
     fj_tab_t *tb = &s_fj[s_fj_ativa];
-    tb->quadros++;
+    tb->frames++;
     for (int k = 0; k < FJ_VAGAS; ++k, h = (h + 1) & (FJ_VAGAS - 1)) {
         fj_ent_t *e = &tb->e[h];
         if (!e->usado) {
@@ -719,7 +719,7 @@ static void ao_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
             e->soma = rssi;
             e->n = 1;
             e->tipos = t;
-            e->canal = canal;
+            e->channel = canal;
             tb->usados++;
             break;
         }
@@ -728,7 +728,7 @@ static void ao_farejar(void *buf, wifi_promiscuous_pkt_type_t tipo)
             if (rssi > e->max) { e->max = rssi; }
             if (e->n < 255) { e->soma += rssi; e->n++; }
             e->tipos |= t;
-            e->canal = canal;
+            e->channel = canal;
             break;
         }
     }
@@ -761,19 +761,19 @@ static void fechar_lote(void)
             r[n].rssi_med = (int8_t)(e->soma / (int)e->n);
             r[n].n = e->n;
             r[n].tipos = e->tipos;
-            r[n].canal = e->canal;
+            r[n].channel = e->channel;
             if (++n == C6_FAREJO_LOTE_MAX) {
-                cab->canal = canal; cab->n = (uint8_t)n;
+                cab->channel = canal; cab->n = (uint8_t)n;
                 cab->perdidos = tb->perdidos;
-                cab->quadros = tb->quadros > 0xFFFF ? 0xFFFF : (uint16_t)tb->quadros;
+                cab->frames = tb->frames > 0xFFFF ? 0xFFFF : (uint16_t)tb->frames;
                 eh_cp_feat_peer_data_send(C6_MSG_FAREJO, msg, sizeof(*cab) + n * sizeof(*r));
                 n = 0;
             }
         }
         if (n) {
-            cab->canal = canal; cab->n = (uint8_t)n;
+            cab->channel = canal; cab->n = (uint8_t)n;
             cab->perdidos = tb->perdidos;
-            cab->quadros = tb->quadros > 0xFFFF ? 0xFFFF : (uint16_t)tb->quadros;
+            cab->frames = tb->frames > 0xFFFF ? 0xFFFF : (uint16_t)tb->frames;
             eh_cp_feat_peer_data_send(C6_MSG_FAREJO, msg, sizeof(*cab) + n * sizeof(*r));
         }
     }
@@ -942,12 +942,12 @@ static void responder_info(void)
     i.proto = C6_PROTO_VERSAO;
     i.caps = caps_reais();
     i.chip_rev = chip_rev_info();
-    i.canal = canal;
+    i.channel = canal;
     i.farejando = s_farejando ? 1 : 0;
     i.heap_livre = esp_get_free_heap_size();
     i.heap_min = esp_get_minimum_free_heap_size();
     i.no_ar_s = (uint32_t)(esp_timer_get_time() / 1000000);
-    i.quadros = s_fj_quadros_total;
+    i.frames = s_fj_quadros_total;
     i.csi_err = s_csi_err;
     i.z154_err = s_z154_err;
     i.csi_cb = s_csi_cb;
@@ -1007,7 +1007,7 @@ static void ao_csi(void *ctx, wifi_csi_info_t *info)
     c6_csi_cab_t cab;
     memcpy(cab.mac, info->mac, 6);
     cab.rssi = rssi;
-    cab.canal = (uint8_t)info->rx_ctrl.channel;
+    cab.channel = (uint8_t)info->rx_ctrl.channel;
     cab.sec_canal = (uint8_t)info->rx_ctrl.second;
     int len = info->len;
     /* O que o P4 precisa para interpretar os bytes: o formato do quadro (cada
@@ -1131,7 +1131,7 @@ static void ftm_disparar(const c6_ftm_cfg_t *c)
         s_ftm_evt = true;
     }
     wifi_ftm_initiator_cfg_t cfg = {
-        .channel = c->canal, .frm_count = c->frm_count, .burst_period = c->burst_period,
+        .channel = c->channel, .frm_count = c->frm_count, .burst_period = c->burst_period,
     };
     memcpy(cfg.resp_mac, c->peer, 6);
     const esp_err_t r = esp_wifi_ftm_initiate_session(&cfg);
@@ -1175,7 +1175,7 @@ void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *in
             if (len > C6_154_MAX) { len = C6_154_MAX; }
             const uint32_t id = C6_MSG_154;
             c6_154_cab_t cab;
-            cab.canal = info->channel;
+            cab.channel = info->channel;
             cab.rssi = info->rssi;
             cab.lqi = info->lqi;
             cab.len = len;
@@ -1232,7 +1232,7 @@ static void z154_ligar(const c6_154_cfg_t *c)
 {
     s_z154_intervalo_ms = c->min_intervalo_ms;
     s_z154_validade = esp_timer_get_time() + (int64_t)C6_RADIO_VALIDADE_MS * 1000;
-    uint8_t canal = (c->canal >= 11 && c->canal <= 26) ? c->canal : 15;
+    uint8_t canal = (c->channel >= 11 && c->channel <= 26) ? c->channel : 15;
     const bool novo = !s_z154_lig;
     if (!s_z154_habilitado) {
         esp_coex_wifi_i154_enable();

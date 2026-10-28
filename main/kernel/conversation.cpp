@@ -44,7 +44,7 @@ struct conversa_balao_s {
   bool     minha, inicio_dia;
   uint8_t  n_linhas, envio;
   uint32_t quando;
-  char     nome[16];
+  char     name[16];
   char     meta[24];
   char     linhas[CONVERSA_MAX_LINHAS][CONVERSA_LINHA_BYTES];
 };
@@ -210,7 +210,7 @@ static uint32_t assinatura(const conversa_msg_t* m, int larg)
 {
   uint32_t h = 2166136261u;   // FNV-1a
   auto mais = [&](const char* s) { for (; *s; ++s) { h = (h ^ (uint8_t)*s) * 16777619u; } h = (h ^ 0xFF) * 16777619u; };
-  mais(m->texto); mais(m->nome); mais(m->meta);
+  mais(m->texto); mais(m->name); mais(m->meta);
   h = (h ^ (uint32_t)m->minha) * 16777619u;
   h = (h ^ (uint32_t)larg) * 16777619u;
   return h | 1u;   // 0 = nunca medido
@@ -269,7 +269,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     if (i < n_antes) { lista_item_mudou(&c->lista, i); }
     b->assin = as;
     b->minha = m.minha;
-    snprintf(b->nome, sizeof(b->nome), "%s", m.nome);
+    snprintf(b->name, sizeof(b->name), "%s", m.name);
     snprintf(b->meta, sizeof(b->meta), "%s", m.meta);
 
     // Teto de largura: 38% a minha (ao lado da marca), 60% a recebida.
@@ -286,9 +286,9 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
       const int lw = (int)d.textWidth(b->linhas[k]) + 24;
       if (lw > bl) { bl = lw; }
     }
-    if (b->nome[0]) {
+    if (b->name[0]) {
       tab5_texto(d, TAM_NOME);
-      const int lw = (int)d.textWidth(b->nome) + 24;
+      const int lw = (int)d.textWidth(b->name) + 24;
       if (lw > bl) { bl = lw; }
     }
     if (b->meta[0]) {
@@ -298,7 +298,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     }
     if (bl > teto) { bl = teto; }
 
-    b->nome_a = b->nome[0] ? (int16_t)(alt_nome + respiro) : 0;
+    b->nome_a = b->name[0] ? (int16_t)(alt_nome + respiro) : 0;
     b->meta_a = b->meta[0] ? (int16_t)(alt_meta + respiro) : 0;
     b->bl = (int16_t)bl;
     b->ba = (int16_t)(24 + b->n_linhas * LINHA_STEP + b->nome_a + b->meta_a);
@@ -349,10 +349,10 @@ static void balao_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, v
     d.setClipRect(rx0, ry0, rx1 - rx0, ry1 - ry0);
     d.setTextDatum(top_left);
     int cur = y + 14;
-    if (b->nome[0]) {
+    if (b->name[0]) {
       tab5_texto(d, TAM_NOME);
       d.setTextColor(b->cor_nome ? b->cor_nome : (uint16_t)TFT_SKYBLUE, cor);
-      d.drawString(b->nome, bx + 12, cur);
+      d.drawString(b->name, bx + 12, cur);
       cur += b->nome_a;
     }
     tab5_texto(d, TAM_MSG);
@@ -579,7 +579,7 @@ static int quebrar_offsets(lgfx::LovyanGFX& d, const char* s, int largura_px, in
 static void botao_enviar(lgfx::LovyanGFX& d, int x, int y, int l, int a, uint16_t cor,
                          bool aceso, uint16_t fundo)
 {
-  tab5_tela_limpar(x, y, l, a, fundo);
+  tab5_screen_clear(x, y, l, a, fundo);
   const int raio = (l < a ? l : a) / 2;
   const int cx = x + l / 2, cy = y + a / 2;
   d.fillCircle(cx, cy, raio, aceso ? cor : d.color565(60, 64, 72));
@@ -601,7 +601,7 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
   // O teclado fisico pode ser encaixado com este ja aberto. Deixar os dois
   // conserva uma janela pequena sem necessidade e, pior, mantem a faixa de
   // navegacao presa ao teclado virtual. O rascunho e o cursor continuam.
-  if (tab5_teclado_presente() && tecvirt_aberto(&c->kb)) {
+  if (tab5_keyboard_present() && tecvirt_aberto(&c->kb)) {
     tecvirt_fechar(&c->kb);
   }
   c->ret = r;
@@ -610,7 +610,7 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
 
   const int base = r.y + r.altura - ESCRITA_A - (tecvirt_aberto(&c->kb) ? tecvirt_altura(area_tec(c)) : 0);
   const uint16_t FUNDO = fundo(d);
-  if (completo) { tab5_tela_limpar(r.x, r.y, r.largura, base - r.y, FUNDO); }
+  if (completo) { tab5_screen_clear(r.x, r.y, r.largura, base - r.y, FUNDO); }
 
   if (c->medir || r.largura != c->larg) {
     if (medir(c, d, r.largura)) { lista_itens_mudaram(&c->lista, c->n); }
@@ -631,7 +631,7 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
                     : c->rascunho[0] ? c->rascunho
                     // A dica diz a verdade do caso: com teclado encaixado o toque
                     // nao abre nada (nao rouba meia tela).
-                    : (tab5_teclado_presente() ? "digite no teclado; ENTER envia" : "toque para escrever");
+                    : (tab5_keyboard_present() ? "digite no teclado; ENTER envia" : "toque para escrever");
   const int campo_l = r.largura - 24 - ENV_L;
   const bool eh_rascunho = pode_escrever && c->rascunho[0];
   c->disp = &d;
@@ -677,8 +677,8 @@ void conversa_desenhar(conversa_t* c, lgfx::LovyanGFX& d, const area_t& r,
     // rascunho passa de vazio a cheio (ou o contrario) - nao a cada letra.
     const bool tudo = m1 || m2 || completo;
     const bool env  = tudo || m8;
-    if (tudo) { tab5_tela_limpar(r.x, base, r.largura, ESCRITA_A, FUNDO); }
-    else      { tab5_tela_limpar(r.x, base, r.largura - ENV_L, ESCRITA_A, FUNDO); }
+    if (tudo) { tab5_screen_clear(r.x, base, r.largura, ESCRITA_A, FUNDO); }
+    else      { tab5_screen_clear(r.x, base, r.largura - ENV_L, ESCRITA_A, FUNDO); }
     d.fillRoundRect(r.x + 12, base + 6, campo_l, ESCRITA_A - 12, 10, pode_escrever ? TFT_DARKGREY : FUNDO);
     if (!pode_escrever) { d.drawRoundRect(r.x + 12, base + 6, campo_l, ESCRITA_A - 12, 10, TFT_DARKGREY); }
     tab5_texto(d, TAM_ESCRITA);
@@ -828,7 +828,7 @@ void conversa_tocar(conversa_t* c, int x, int y)
       fechar_teclado(c);
     } else if (tecvirt_aberto(&c->kb)) {
       cursor_no_toque(c, xs, ys);
-    } else if (!tab5_teclado_presente()) {
+    } else if (!tab5_keyboard_present()) {
       tecvirt_abrir(&c->kb);            // trava o INICIO; o dedo que abriu nao digita
       cursor_no_toque(c, xs, ys);       // o mesmo toque que abre ja posiciona o cursor
       contexto(c);                      // rascunho vazio: ja abre com a maiuscula armada
@@ -904,37 +904,37 @@ static void linha_vizinha(conversa_t* c, bool baixo)
 void conversa_teclar(conversa_t* c, const char* texto, uint8_t codigo, uint8_t mod)
 {
   if (!c->pode_escrever) { return; }
-  const bool ctrl = (mod & TAB5_TECLA_CTRL) != 0;
+  const bool ctrl = (mod & TAB5_KEY_CTRL) != 0;
   switch (codigo) {
-    case TAB5_TECLA_ENTER:  enviar_rascunho(c); fechar_teclado(c); return;
-    case TAB5_TECLA_APAGAR: apagar_antes(c);  sistema_pedir_redesenho(); return;
-    case TAB5_TECLA_DEL:    apagar_depois(c); sistema_pedir_redesenho(); return;
+    case TAB5_KEY_ENTER:  enviar_rascunho(c); fechar_teclado(c); return;
+    case TAB5_KEY_BACKSPACE: apagar_antes(c);  sistema_pedir_redesenho(); return;
+    case TAB5_KEY_DELETE:    apagar_depois(c); sistema_pedir_redesenho(); return;
     // Esc limpa o rascunho inteiro (o cursor volta ao comeco).
-    case TAB5_TECLA_ESC:    c->rascunho[0] = 0; c->cursor = 0; sistema_pedir_redesenho(); return;
-    case TAB5_TECLA_ESQUERDA:
+    case TAB5_KEY_ESC:    c->rascunho[0] = 0; c->cursor = 0; sistema_pedir_redesenho(); return;
+    case TAB5_KEY_LEFT:
       cursor_ajustar(c);
       if (ctrl) { palavra(c, false); } else { c->cursor = utf8_anterior(c->rascunho, c->cursor); }
       sistema_pedir_redesenho();
       return;
-    case TAB5_TECLA_DIREITA:
+    case TAB5_KEY_RIGHT:
       cursor_ajustar(c);
       if (ctrl) { palavra(c, true); } else { c->cursor = utf8_seguinte(c->rascunho, c->cursor); }
       sistema_pedir_redesenho();
       return;
     // Ctrl + cima/baixo: comeco/fim do texto de uma vez.
-    case TAB5_TECLA_CIMA:
+    case TAB5_KEY_UP:
       if (ctrl) { c->cursor = 0; } else { linha_vizinha(c, false); }
       sistema_pedir_redesenho();
       return;
-    case TAB5_TECLA_BAIXO:
+    case TAB5_KEY_DOWN:
       if (ctrl) { c->cursor = (int)strlen(c->rascunho); } else { linha_vizinha(c, true); }
       sistema_pedir_redesenho();
       return;
-    case TAB5_TECLA_TAB:    return;   // nada a fazer numa mensagem
+    case TAB5_KEY_TAB:    return;   // nada a fazer numa mensagem
     default: break;
   }
   // Com Ctrl ou Alt e atalho, nao texto: um "Ctrl+c" nao pode virar um "c".
-  if (mod & (TAB5_TECLA_CTRL | TAB5_TECLA_ALT)) { return; }
+  if (mod & (TAB5_KEY_CTRL | TAB5_KEY_ALT)) { return; }
   // Controle nao vira caractere. Uma sequencia acentuada vem com mais de um
   // byte e entra inteira (ou nao entra) - inserir() nunca corta no meio dela.
   char limpo[16];

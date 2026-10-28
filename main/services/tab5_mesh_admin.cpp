@@ -196,7 +196,7 @@ uint32_t mesh_cfg_versao(void) { return s_versao; }
 void mesh_cfg_ler(mesh_cfg_t* o)
 {
   memset(o, 0, sizeof(*o));
-  o->estado = (uint8_t)estado();
+  o->state = (uint8_t)estado();
   o->regiao = -1;
   o->nos_no_radio = -1;
   uint64_t v;
@@ -310,7 +310,7 @@ static bool montar_canal(pb_escritor_t* w, int32_t precisao)
   pb_campo_t f;
   bool tem_settings = false;
   while (pb_campo(&l, &f)) {
-    if (!(f.num == 2 && f.tipo == PB_LEN)) { pb_w_cru(w, f.ini, f.n_total); continue; }
+    if (!(f.num == 2 && f.type == PB_LEN)) { pb_w_cru(w, f.ini, f.n_total); continue; }
     tem_settings = true;
     uint8_t sb[160];
     pb_escritor_t ws = pb_escritor(sb, sizeof(sb));
@@ -320,7 +320,7 @@ static bool montar_canal(pb_escritor_t* w, int32_t precisao)
     pb_escritor_t wm = pb_escritor(mb, sizeof(mb));
     pb_w_num(&wm, 1, (uint64_t)precisao);                       // position_precision
     while (pb_campo(&ls, &g)) {
-      if (g.num == 7 && g.tipo == PB_LEN) {                     // module_settings: o resto dela
+      if (g.num == 7 && g.type == PB_LEN) {                     // module_settings: o resto dela
         pb_leitor_t lm = pb_leitor(g.val, g.n_val);
         pb_campo_t h;
         while (pb_campo(&lm, &h)) { if (h.num != 1) { pb_w_cru(&wm, h.ini, h.n_total); } }
@@ -501,8 +501,8 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
 bool mesh_cfg_posicao_fixa_do_gps(void)
 {
   if (estado() != MESH_CFG_PRONTO) { return false; }
-  const nmea_posicao_t g = tab5_gps_posicao();
-  if (!g.valida || g.qualidade == 0) { ESP_LOGW(TAG, "posicao fixa: GPS do Tab5 sem fix"); return false; }
+  const nmea_position_t g = tab5_gps_position();
+  if (!g.valid || g.qualidade == 0) { ESP_LOGW(TAG, "posicao fixa: GPS do Tab5 sem fix"); return false; }
   // A mesma Position que o servico manda para a malha (mesh_pb_posicao).
   uint8_t pos[32];
   pb_escritor_t wp = pb_escritor(pos, sizeof(pos));

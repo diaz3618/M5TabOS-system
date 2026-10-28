@@ -28,7 +28,7 @@
 #include "tab5_frame.hpp"
 
 // Marca um retangulo como desenhado neste quadro.
-void comp_invalidar(const tab5_ret_t& r);
+void comp_invalidar(const tab5_rect_t& r);
 
 // Pede a tela inteira no proximo quadro. Pode ser chamada de QUALQUER tarefa
 // (o console usa): so arma um pedido que a interface atende ao apresentar.
@@ -41,25 +41,25 @@ void* comp_abrir(void);
 // Antes de escrever OU LER 'r' na pagina de tras: traz da frente o que o
 // quadro anterior mudou ali e a de tras ainda nao tem (sincronia preguicosa).
 // O rastreador chama isto sozinho; ninguem mais precisa.
-void comp_preparar(const tab5_ret_t& r);
+void comp_preparar(const tab5_rect_t& r);
 
 // O mesmo, para quem vai escrever 'r' INTEIRO e opaco (fillRect, copia de
 // DMA): o que estava pendente dentro de 'r' e descartado sem copiar - ia ser
 // sobrescrito. So o que fica fora de 'r' continua pendente.
-void comp_cobrir(const tab5_ret_t& r);
+void comp_cobrir(const tab5_rect_t& r);
 
 // O retangulo 'src' ja foi desenhado NESTE quadro? (A rolagem so copia da
 // pagina da frente o que a frente tem igual a de tras.)
-bool comp_desenhado_neste_quadro(const tab5_ret_t& src);
+bool comp_desenhado_neste_quadro(const tab5_rect_t& src);
 
 // Leva o retangulo 'r' da pagina da FRENTE, a partir de (ox, oy), para o
 // mesmo tamanho em 'r' na de tras, por DMA. Abre o quadro. false = nao deu
 // (quem chamou faz pela CPU).
-bool comp_copiar_da_frente(const tab5_ret_t& r, int ox, int oy);
+bool comp_copiar_da_frente(const tab5_rect_t& r, int ox, int oy);
 
 // Leva o retangulo 'r' de uma imagem 720x1280 RGB565 (a superficie de DMA
 // de um app - camera) para a pagina de tras, por DMA, e o marca.
-bool comp_copiar_imagem(const void* imagem, const tab5_ret_t& r);
+bool comp_copiar_imagem(const void* imagem, const tab5_rect_t& r);
 
 // Apresenta o quadro, se houver algo desenhado (false = nada a fazer, ou sem
 // painel - nesse caso o quadro e descartado).
@@ -99,7 +99,7 @@ void comp_ultimo_quadro(int64_t* quando_us, uint32_t* px);
 #define COMP_FAIXAS 4
 
 typedef struct {
-  uint32_t quadros;               // quadros apresentados
+  uint32_t frames;                 // quadros apresentados
   uint32_t cheios;                // quadros que mudaram >= 90% da tela
   uint32_t estouros;              // vezes que a lista de areas encheu
   uint64_t px_quadro;             // pixels desenhados (areas apresentadas)

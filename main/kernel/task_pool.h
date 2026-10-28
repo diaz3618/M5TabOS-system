@@ -45,12 +45,12 @@ typedef struct {
 void pool_iniciar(void);
 
 // Executa 'fn(arg)' numa vaga com pilha de pelo menos 'pilha' bytes, na
-// prioridade 'prio'. 'dono' (opcional: DONO_SISTEMA + nullptr = nenhum) e
+// prioridade 'prio'. 'dono' (opcional: OWNER_SYSTEM + nullptr = nenhum) e
 // registrado ANTES de a funcao comecar. 'id' pode ser nullptr (dispara e
 // esquece). Devolve false so se nem a tarefa comum coube.
 bool pool_criar(pool_id_t* id, pool_corpo_t fn, void* arg, const char* nome,
                 uint32_t pilha, UBaseType_t prio,
-                dono_tipo_t tipo = DONO_SISTEMA, const char* dono = nullptr);
+                owner_type_t tipo = OWNER_SYSTEM, const char* dono = nullptr);
 
 // Tira a tarefa de qualquer espera com prazo (xTaskAbortDelay), SE ainda for a
 // mesma execucao. Seguro de chamar depois que ela terminou.
@@ -67,7 +67,7 @@ void pool_estado(pool_estado_t* out);
 
 // Menor pilha livre (bytes) vista por NOME de execucao, inclusive das que ja
 // terminaram - o que as vagas repintam ao fim de cada uma. Devolve quantas.
-typedef struct { char nome[16]; uint32_t livre_min; } pool_pilha_t;
+typedef struct { char name[16]; uint32_t livre_min; } pool_pilha_t;
 int pool_pilhas(pool_pilha_t* out, int max);
 void pool_pilhas_zerar(void);
 

@@ -118,7 +118,7 @@ static int  s_conv = -1;              // conversa aberta (indice na coluna); -1 
 // nova, canal desabilitado no no). Guardando so o indice, a tela passava a
 // mostrar e a ENVIAR para a conversa vizinha. Quando a versao da ordem muda
 // (tab5_mesh_conversas_versao), o indice e reencontrado por esta chave.
-typedef struct { bool ok; bool canal; uint8_t idx; uint32_t no; } chave_t;
+typedef struct { bool ok; bool channel; uint8_t idx; uint32_t no; } chave_t;
 static chave_t  s_ab = { };            // a conversa aberta (ok = false: nenhuma)
 static uint32_t s_conv_ver = 0;        // a versao da ordem que s_conv segue
 
@@ -126,14 +126,14 @@ static bool chave_igual(const chave_t& a, const chave_t& b)
 {
   if (a.ok != b.ok) { return false; }
   if (!a.ok)        { return true; }
-  return a.canal == b.canal && (a.canal ? a.idx == b.idx : a.no == b.no);
+  return a.channel == b.channel && (a.channel ? a.idx == b.idx : a.no == b.no);
 }
 
 static chave_t chave_de(int c)
 {
   mesh_conversa_t m;
   if (c < 0 || !tab5_mesh_conversa(c, &m)) { return chave_t{ }; }
-  return chave_t{ true, m.canal, m.idx, m.no };
+  return chave_t{ true, m.channel, m.idx, m.no };
 }
 
 // A CONVERSA - baloes, barra de escrita, teclado e rolagem sao o componente do
@@ -222,7 +222,7 @@ static void trabalho_carregar(void*)
 {
   if (s_carga_cartao) { tab5_mesh_carregar_do_cartao(); }
   const chave_t k = s_carga_chave;
-  s_carga_n = k.ok ? tab5_mesh_historico_de(k.canal, k.idx, k.no, s_carga, HIST_MAX) : 0;
+  s_carga_n = k.ok ? tab5_mesh_historico_de(k.channel, k.idx, k.no, s_carga, HIST_MAX) : 0;
   s_carga_pronta = true;
 }
 
@@ -467,7 +467,7 @@ static void desenhar_trilho(lgfx::LovyanGFX& d, const area_t& a)
   // MOLDURA, nao conteudo, e tinham que recuar como a barra recua. Trocado
   // pela paleta do proprio Mesh (fundo_msg) - para o trilho, a lista de conversas e o
   // painel de mensagens lerem como UMA SO tela, nao duas paletas coladas.
-  tab5_tela_limpar(a.x, a.y, TRILHO_L, a.altura, fundo_msg(d));
+  tab5_screen_clear(a.x, a.y, TRILHO_L, a.altura, fundo_msg(d));
   // RETANGULO INTEIRO, e nao so a linha da direita. Com uma borda so, a coluna
   // parecia sangrar para fora da area em cima e embaixo; fechada, ela vira uma
   // peca.
@@ -539,7 +539,7 @@ static int achar_conv_div(void)
   const int n = tab5_mesh_num_conversas();
   for (int i = 0; i < n; ++i) {
     mesh_conversa_t c;
-    if (tab5_mesh_conversa(i, &c) && c.canal && mesh_canal_internet(c.idx)) { return i; }
+    if (tab5_mesh_conversa(i, &c) && c.channel && mesh_canal_internet(c.idx)) { return i; }
   }
   return -1;
 }
@@ -547,7 +547,7 @@ static int achar_conv_div(void)
 // O que cada item mostra agora (nome e nao-lidas), para a coluna perceber
 // sozinha o que mudou - antes, o contador de uma conversa que nao era a aberta
 // so aparecia na proxima passada completa.
-typedef struct { char nome[MESH_NOME_CONVERSA]; char sub[MESH_NOME_LONGO]; int nao_lidas; } conv_visto_t;
+typedef struct { char name[MESH_NOME_CONVERSA]; char sub[MESH_NOME_LONGO]; int nao_lidas; } conv_visto_t;
 static conv_visto_t s_conv_visto[MESH_MAX_CONVERSAS];
 
 static void conv_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, void*)
@@ -555,7 +555,7 @@ static void conv_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, 
   mesh_conversa_t c;
   if (!tab5_mesh_conversa(i, &c)) { return; }
   if (i < MESH_MAX_CONVERSAS) {
-    snprintf(s_conv_visto[i].nome, sizeof(s_conv_visto[i].nome), "%s", c.nome);
+    snprintf(s_conv_visto[i].name, sizeof(s_conv_visto[i].name), "%s", c.name);
     snprintf(s_conv_visto[i].sub, sizeof(s_conv_visto[i].sub), "%s", c.sub);
     s_conv_visto[i].nao_lidas = c.nao_lidas;
   }
@@ -588,8 +588,8 @@ static void conv_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, 
   // falta de referencia clara no que foi mandado (a captura de tela nao
   // mostra esta tela). Os avatares coloridos por remetente (cor_do_no), que
   // SAO equivalentes ao que a captura mostra, ja seguem a paleta nova.
-  caixa_glifo(d, x + 10, y, ITEM_A, ITEM_A, c.canal ? GL_DIFUSAO : GL_DIRETO,
-              sel ? TFT_SKYBLUE : (c.canal ? TFT_NAVY : TFT_DARKGREEN),
+  caixa_glifo(d, x + 10, y, ITEM_A, ITEM_A, c.channel ? GL_DIFUSAO : GL_DIRETO,
+              sel ? TFT_SKYBLUE : (c.channel ? TFT_NAVY : TFT_DARKGREEN),
               sel ? TFT_BLACK : TFT_WHITE);
 
   // NOME COM LARGURA QUE CABE, medido de verdade: o texto comeca em
@@ -611,7 +611,7 @@ static void conv_desenhar(lgfx::LovyanGFX& d, int i, int x, int y, int largura, 
   d.setTextDatum(top_left);
   d.setTextColor(sel ? TFT_SKYBLUE : TFT_WHITE, FUNDO);
   char nome[24];
-  snprintf(nome, sizeof(nome), "%s", c.nome);
+  snprintf(nome, sizeof(nome), "%s", c.name);
   tab5_cortar_ao_caber(d, nome, nome_max_l);   // por caractere: o nome pode ter acento
   d.drawString(nome, nome_x, y + 12);
 
@@ -677,7 +677,7 @@ static void desenhar_conversas(lgfx::LovyanGFX& d, const area_t& a)
     for (int i = 0; i < n && i < MESH_MAX_CONVERSAS; ++i) {
       mesh_conversa_t c;
       if (!tab5_mesh_conversa(i, &c)) { continue; }
-      if (c.nao_lidas != s_conv_visto[i].nao_lidas || strcmp(c.nome, s_conv_visto[i].nome) != 0
+      if (c.nao_lidas != s_conv_visto[i].nao_lidas || strcmp(c.name, s_conv_visto[i].name) != 0
        || strcmp(c.sub, s_conv_visto[i].sub) != 0) {
         lista_item_mudou(&s_l_conv, i);
       }
@@ -1280,8 +1280,8 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
     if (no.tem_pos) {
       const float lat = no.lat_i / 1e7f, lon = no.lon_i / 1e7f;
       float rlat, rlon; bool ref = false;
-      const nmea_posicao_t fix = tab5_gps_posicao();
-      if (fix.valida && fix.qualidade > 0) { rlat = (float)fix.lat; rlon = (float)fix.lon; ref = true; }
+      const nmea_position_t fix = tab5_gps_position();
+      if (fix.valid && fix.qualidade > 0) { rlat = (float)fix.lat; rlon = (float)fix.lon; ref = true; }
       else { ref = ajustes_casa(&rlat, &rlon); }
       if (ref && !meu) {
         float km; const char* dir;
@@ -1304,7 +1304,7 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
   }
   if (!pintura_mudou_s(&s_p, s_det_assin, sizeof(s_det_assin), assin)) { return; }
 
-  tab5_tela_limpar(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK);
+  tab5_screen_clear(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK);
   d.setTextDatum(top_left);
   tab5_texto(d, 4.2f);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1385,7 +1385,7 @@ static void desenhar_nos(lgfx::LovyanGFX& d, const area_t& a, int x0)
   }
 
   if (TUDO) {
-    tab5_tela_limpar(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK);
+    tab5_screen_clear(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK);
     s_chips_altura = desenhar_canais(d, a, x0);
   }
 
@@ -1447,7 +1447,7 @@ static void desenhar_nos(lgfx::LovyanGFX& d, const area_t& a, int x0)
 
 static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
 {
-  if (TUDO) { tab5_tela_limpar(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK); }
+  if (TUDO) { tab5_screen_clear(x0, a.y, a.x + a.largura - x0, a.altura, TFT_BLACK); }
   mesh_saude_t s; tab5_mesh_saude(&s);
   char buf[160];
 
@@ -1553,7 +1553,7 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
     const int x = x0 + 24 + (i / por_col) * col_l;
     const int y = a.y + 24 + (i % por_col) * passo;
     if (!pintura_mudou_s(&s_p, s_val_ant[i], sizeof(s_val_ant[i]), campos[i].val)) { continue; }
-    if (!TUDO) { tab5_tela_limpar(x, y, col_l - 8, passo - 2, TFT_BLACK); }
+    if (!TUDO) { tab5_screen_clear(x, y, col_l - 8, passo - 2, TFT_BLACK); }
     tab5_texto(d, 3.12f);
     d.setTextDatum(top_left);
     d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -1577,7 +1577,7 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
   }
   static char s_rodape_ant[sizeof(buf)];
   if (pintura_mudou_s(&s_p, s_rodape_ant, sizeof(s_rodape_ant), buf)) {
-    if (!TUDO) { tab5_tela_limpar(x0, a.y + a.altura - 34, a.x + a.largura - x0, 34, TFT_BLACK); }
+    if (!TUDO) { tab5_screen_clear(x0, a.y + a.altura - 34, a.x + a.largura - x0, 34, TFT_BLACK); }
     texto_que_cabe(d, buf, a.x + a.largura - 16 - (x0 + 24), 3.12f, 2.4f);
     d.setTextDatum(top_left);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
@@ -1708,7 +1708,7 @@ static bool  s_tem_ref = false;
 
 static void atualizar_eh_canal(void)
 {
-  s_eh_canal = s_ab.ok && s_ab.canal;
+  s_eh_canal = s_ab.ok && s_ab.channel;
 }
 
 static int conv_contar(void*) { return (s_hist && s_ab.ok && chave_igual(s_hist_chave, s_ab)) ? s_n_hist : 0; }
@@ -1721,9 +1721,9 @@ static bool conv_ler(int i, conversa_msg_t* o, void*)
   // O componente le em ordem, de 0 em diante: a referencia de distancia vale
   // para a passada inteira (uma leitura do GPS, nao duzentas).
   if (i == 0) {
-    const nmea_posicao_t fix = tab5_gps_posicao();
+    const nmea_position_t fix = tab5_gps_position();
     s_tem_ref = false;
-    if (fix.valida && fix.qualidade > 0) { s_ref_lat = (float)fix.lat; s_ref_lon = (float)fix.lon; s_tem_ref = true; }
+    if (fix.valid && fix.qualidade > 0) { s_ref_lat = (float)fix.lat; s_ref_lon = (float)fix.lon; s_tem_ref = true; }
     else if (ajustes_casa(&s_ref_lat, &s_ref_lon)) { s_tem_ref = true; }
   }
 
@@ -1748,7 +1748,7 @@ static bool conv_ler(int i, conversa_msg_t* o, void*)
   // Rotulo so no CANAL (varias pessoas no mesmo lugar), e so na primeira de
   // uma sequencia do mesmo remetente.
   if (s_eh_canal && !o->minha && (i == 0 || s_hist[i - 1].de != m->de)) {
-    nome_do_no(m->de, o->nome, sizeof(o->nome));
+    nome_do_no(m->de, o->name, sizeof(o->name));
     o->cor_nome = cor_do_no(m->de);
   }
 
@@ -1788,7 +1788,7 @@ static bool conv_enviar(const char* texto, void*)
   // PELA CHAVE: e para quem esta na tela, mesmo que a coluna tenha se
   // reordenado entre o desenho e o toque em ENVIAR.
   if (s_conv < 0 || !s_ab.ok || !tab5_mesh_servico_ativo()) { return false; }
-  const bool ok = tab5_mesh_enviar(s_ab.canal ? 0xFFFFFFFFu : s_ab.no, s_ab.canal ? s_ab.idx : 0, texto);
+  const bool ok = tab5_mesh_enviar(s_ab.channel ? 0xFFFFFFFFu : s_ab.no, s_ab.channel ? s_ab.idx : 0, texto);
   s_hist_pronto = false;          // rele incluindo a que acabou de sair
   return ok;
 }
@@ -1800,24 +1800,24 @@ static void desenhar_faixa_frente(lgfx::LovyanGFX& d, const area_t& a, const mes
 {
   static char s_ant[MESH_NOME_CONVERSA + MESH_NOME_LONGO + 4];
   char sig[sizeof(s_ant)];
-  snprintf(sig, sizeof(sig), "%s|%s", c.nome, c.sub);
+  snprintf(sig, sizeof(sig), "%s|%s", c.name, c.sub);
   if (!pintura_mudou_s(&s_p, s_ant, sizeof(s_ant), sig)) { return; }
 
   const uint16_t FUNDO = fundo_msg(d);
-  tab5_tela_limpar(a.x, a.y, a.largura, FRENTE_TOPO_A, FUNDO);
+  tab5_screen_clear(a.x, a.y, a.largura, FRENTE_TOPO_A, FUNDO);
   tab5_botao(d, a.x + 16, a.y + FRENTE_VOLTAR_Y, FRENTE_VOLTAR_L, FRENTE_VOLTAR_A,
              "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
   const int gl = FRENTE_TOPO_A - 24;
   const int gx = a.x + 16 + FRENTE_VOLTAR_L + 20;
-  caixa_glifo(d, gx, a.y + 12, gl, gl, c.canal ? GL_DIFUSAO : GL_DIRETO,
-              c.canal ? TFT_NAVY : TFT_DARKGREEN, TFT_WHITE);
+  caixa_glifo(d, gx, a.y + 12, gl, gl, c.channel ? GL_DIFUSAO : GL_DIRETO,
+              c.channel ? TFT_NAVY : TFT_DARKGREEN, TFT_WHITE);
 
   // Nome e, embaixo, o longo (ou "canal N") - cortados por caractere ate
   // caber, como na coluna.
   const int tx = gx + gl + 16;
   const int max_l = a.x + a.largura - 16 - tx;
   char nome[MESH_NOME_CONVERSA], sub[MESH_NOME_LONGO];
-  snprintf(nome, sizeof(nome), "%s", c.nome);
+  snprintf(nome, sizeof(nome), "%s", c.name);
   snprintf(sub, sizeof(sub), "%s", c.sub);
   d.setTextDatum(top_left);
   tab5_texto(d, 3.84f);
@@ -1841,7 +1841,7 @@ static void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
     lista_esconder(&s_c.lista);   // sem conversa, nada de baloes para rolar
     if (TUDO) {
       const uint16_t FUNDO = fundo_msg(d);
-      tab5_tela_limpar(x0, a.y, larg, a.altura, FUNDO);
+      tab5_screen_clear(x0, a.y, larg, a.altura, FUNDO);
       tab5_texto(d, 3.4f);
       d.setTextDatum(middle_center);
       d.setTextColor(TFT_LIGHTGREY, FUNDO);
@@ -1865,7 +1865,7 @@ static void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
   // faixa (em pe); o teclado, a largura inteira da area nos dois casos.
   const area_t r = { x0, a.y + topo, larg, a.altura - topo };
   conversa_area_teclado(&s_c, a);
-  if (c.canal && mesh_canal_internet(c.idx)) {
+  if (c.channel && mesh_canal_internet(c.idx)) {
     static char motivo[96];
     snprintf(motivo, sizeof(motivo), "rede internet %s - só consulta", tab5_mesh_rede_internet_estado());
     conversa_desenhar(&s_c, d, r, TUDO, tab5_mesh_servico_ativo() && mesh_mqtt_internet_conectado(), motivo);
@@ -1908,7 +1908,7 @@ static const int RC_EDITAVEIS = RC_I_FIRMWARE;   // daqui para baixo, so leitura
 static bool rc_do_tab5(int i) { return i == RC_SOM || i == RC_LOC_TAB5; }
 
 enum { G_NOME = 0, G_LOCAL, G_RADIO, G_CONEXOES, G_AVISOS, G_MANUT, G_TOTAL };
-typedef struct { const char* nome; int8_t icone; int8_t n; int8_t rc[6]; } grupo_cfg_t;
+typedef struct { const char* name; int8_t icone; int8_t n; int8_t rc[6]; } grupo_cfg_t;
 static const grupo_cfg_t GRUPOS[G_TOTAL] = {
   { "Nome e papel",        RC_LONGO,     4, { RC_LONGO, RC_CURTO, RC_PAPEL, RC_NODEINFO_S } },
   { "Localização",         RC_POS_S,     6, { RC_LOC_PRECISAO, RC_LOC_TAB5, RC_POS_S, RC_POS_INTELIGENTE,
@@ -1961,7 +1961,7 @@ static uint32_t           s_reiniciar_ms = 0;   // 1o toque em REINICIAR: confir
 static char               s_cfg_msg[64];        // resposta curta da ultima acao
 
 
-typedef struct { int32_t v; const char* nome; } opcao_t;
+typedef struct { int32_t v; const char* name; } opcao_t;
 #define N_OPC(x) ((int)(sizeof(x) / sizeof((x)[0])))
 
 // Papeis oferecidos. REPEATER e ROUTER_CLIENT ficam de fora: obsoletos no
@@ -1997,7 +1997,7 @@ static const opcao_t OPC_TELE_S[] = {
 
 static const char* opc_nome(const opcao_t* o, int n, int32_t v, char* buf, size_t tam, const char* fmt)
 {
-  for (int i = 0; i < n; ++i) { if (o[i].v == v) { return o[i].nome; } }
+  for (int i = 0; i < n; ++i) { if (o[i].v == v) { return o[i].name; } }
   snprintf(buf, tam, fmt, (long)v);   // valor que nao esta na lista (posto pelo cliente web)
   return buf;
 }
@@ -2012,7 +2012,7 @@ static int32_t opc_proximo(const opcao_t* o, int n, int32_t v)
 // bit a menos dobra a celula; 10 bits ~ 23 km.
 static const char* precisao_nome(int32_t p, char* buf, size_t tam)
 {
-  for (int i = 0; i < N_OPC(OPC_PRECISAO); ++i) { if (OPC_PRECISAO[i].v == p) { return OPC_PRECISAO[i].nome; } }
+  for (int i = 0; i < N_OPC(OPC_PRECISAO); ++i) { if (OPC_PRECISAO[i].v == p) { return OPC_PRECISAO[i].name; } }
   if (p < 0)            { return "-"; }
   if (p >= 32 || p < 1) { return p ? "exata" : "não compartilhar"; }
   const uint32_t m = p >= 10 ? (23300u >> (p - 10)) : (23300u << (10 - p));
@@ -2150,8 +2150,8 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       break;
     case RC_POS_FIXA: {
       snprintf(rot, tr, "posição fixa do nó");
-      const nmea_posicao_t g = tab5_gps_posicao();
-      const bool fix = g.valida && g.qualidade > 0;
+      const nmea_position_t g = tab5_gps_position();
+      const bool fix = g.valid && g.qualidade > 0;
       if (s_cfg.pos_fixa) { snprintf(val, tv, "fixa - tocar para soltar"); }
       else if (fix)       { snprintf(val, tv, "tocar para fixar no GPS do Tab5"); }
       else                { snprintf(val, tv, "GPS do Tab5 sem sinal"); }
@@ -2429,7 +2429,7 @@ static void linha_grupo(int g, char* rot, size_t tr, char* val, size_t tv, bool*
     linha_cfg(GRUPOS[g].rc[k], r2, sizeof(r2), v2, sizeof(v2), &p2);
     *pend |= p2;
   }
-  snprintf(rot, tr, "%s", GRUPOS[g].nome);
+  snprintf(rot, tr, "%s", GRUPOS[g].name);
   const bool pronto = s_cfg.conhecido[MESH_CFG_PAPEL];
   switch (g) {
     case G_NOME: {
@@ -2531,7 +2531,7 @@ static void cfg_desenhar(lgfx::LovyanGFX& d, int item, int x, int y, int largura
   const bool editavel = (i < RC_EDITAVEIS);
   // Linha do radio sem no do outro lado: o icone fica apagado - ver,
   // sim; mudar, nao (so as do proprio Tab5).
-  const bool ativa = editavel && (rc_do_tab5(i) || s_cfg.estado == MESH_CFG_PRONTO);
+  const bool ativa = editavel && (rc_do_tab5(i) || s_cfg.state == MESH_CFG_PRONTO);
   // Icone da linha: colorido quando da para mexer, apagado sem o no do outro lado.
   icone_cfg(d, i, x + 26, y + CFG_LIN / 2,
             editavel ? (ativa ? *tinta_cfg(d, i) : d.color565(60, 64, 72)) : d.color565(90, 98, 112));
@@ -2592,7 +2592,7 @@ static void desenhar_diario(lgfx::LovyanGFX& d, const area_t& a, int x0, int lar
   s_assin_ant = assin;
   s_rei_n = mesh_diario_ler(s_rei, MESH_DIARIO_MAX);
 
-  tab5_tela_limpar(x0, a.y, larg, a.altura, TFT_BLACK);
+  tab5_screen_clear(x0, a.y, larg, a.altura, TFT_BLACK);
   tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
   tab5_texto(d, 3.6f);
   d.setTextDatum(middle_left);
@@ -2689,13 +2689,13 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
 {
   lista_esconder(&s_l_cfg);
   const uint32_t assin = mesh_wifi_no_versao() * 31u + fnv_str(s_redes_msg) + fnv_str(s_cfg.wifi_ssid) * 7u
-                       + fnv_str(s_mud.wifi_ssid) * 13u + (uint32_t)s_cfg.estado * 131u + (s_cfg.wifi_ligado ? 977u : 0)
+                       + fnv_str(s_mud.wifi_ssid) * 13u + (uint32_t)s_cfg.state * 131u + (s_cfg.wifi_ligado ? 977u : 0)
                        + (s_mud.wifi_muda ? 1999u : 0) + (s_mud.wifi_liga ? 4001u : 0) + (ha_pendente() ? 8009u : 0);
   static uint32_t s_assin_ant = 0xFFFFFFFFu;
   if (!TUDO && assin == s_assin_ant) { return; }
   s_assin_ant = assin;
 
-  tab5_tela_limpar(x0, a.y, larg, a.altura, TFT_BLACK);
+  tab5_screen_clear(x0, a.y, larg, a.altura, TFT_BLACK);
   tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
   tab5_texto(d, 3.6f);
   d.setTextDatum(middle_left);
@@ -2704,7 +2704,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
 
   // Linha do interruptor.
   const bool liga = wf_liga_visivel();
-  const bool pode = s_cfg.estado == MESH_CFG_PRONTO && s_cfg.wifi_conhecido;
+  const bool pode = s_cfg.state == MESH_CFG_PRONTO && s_cfg.wifi_conhecido;
   icone_cfg(d, RC_WIFI, x0 + 50, a.y + WF_TOG_Y + WF_TOG_H / 2, pode ? d.color565(60, 170, 255) : d.color565(60, 64, 72));
   tab5_texto(d, 3.6f);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -2756,7 +2756,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
       d.drawString(t, x0 + 32, y + RD_LIN / 2);
       tab5_texto(d, 2.8f);
       d.setTextColor(escolhida ? TFT_YELLOW : no_no ? TFT_GREENYELLOW : TFT_DARKGREY, TFT_BLACK);
-      d.drawString(escolhida ? "• escolhida" : no_no ? "● no nó agora" : (r.aberta ? "aberta" : "com senha"), x0 + larg - 380, y + RD_LIN / 2);
+      d.drawString(escolhida ? "• escolhida" : no_no ? "● no nó agora" : (r.open ? "aberta" : "com senha"), x0 + larg - 380, y + RD_LIN / 2);
       const int cx = x0 + larg - 70, cy = y + RD_LIN / 2;   // "x" para esquecer
       d.drawLine(cx - 12, cy - 12, cx + 12, cy + 12, TFT_RED);
       d.drawLine(cx - 12, cy + 12, cx + 12, cy - 12, TFT_RED);
@@ -2776,7 +2776,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   d.setTextDatum(middle_left);
   tab5_texto(d, 2.4f);
   const int ym = a.y + a.altura - (botoes ? RD_BTN_A + 14 + 14 : 0) - 24;
-  if (s_cfg.estado == MESH_CFG_GRAVANDO) { d.setTextColor(TFT_YELLOW, TFT_BLACK); d.drawString("gravando - o nó está reiniciando...", x0 + 24, ym); }
+  if (s_cfg.state == MESH_CFG_GRAVANDO) { d.setTextColor(TFT_YELLOW, TFT_BLACK); d.drawString("gravando - o nó está reiniciando...", x0 + 24, ym); }
   else if (s_redes_msg[0]) {
     char m[sizeof(s_redes_msg)];
     snprintf(m, sizeof(m), "%s", s_redes_msg);
@@ -2786,7 +2786,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   }
   const int by = a.y + a.altura - RD_BTN_A - 14;
   const int bl = (larg - 24 * 3) / 2;
-  const bool pronto = s_cfg.estado == MESH_CFG_PRONTO;
+  const bool pronto = s_cfg.state == MESH_CFG_PRONTO;
   if (botoes == 1) {
     tab5_botao(d, x0 + 24, by, bl, RD_BTN_A, "GRAVAR NO NÓ", pronto ? TFT_GREENYELLOW : d.color565(50, 55, 65), pronto ? TFT_BLACK : TFT_DARKGREY);
     tab5_botao(d, x0 + 48 + bl, by, bl, RD_BTN_A, "DESCARTAR", d.color565(50, 55, 65), TFT_WHITE);
@@ -2814,7 +2814,7 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
     char ed[sizeof(s_edit_txt) + 2];
     snprintf(ed, sizeof(ed), "%s_", s_edit_txt);
     if (TUDO) {
-      tab5_tela_limpar(x0, a.y, larg, a.altura - tecvirt_altura(a), TFT_BLACK);
+      tab5_screen_clear(x0, a.y, larg, a.altura - tecvirt_altura(a), TFT_BLACK);
       tab5_texto(d, 2.8f);
       d.setTextDatum(top_left);
       d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
@@ -2829,7 +2829,7 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
       d.drawString(tit2, x0 + 24, a.y + 24);
     }
     if (pintura_mudou_s(&s_p, s_ed_ant, sizeof(s_ed_ant), ed)) {
-      if (!TUDO) { tab5_tela_limpar(x0 + 24, a.y + 70, larg - 48, 60, TFT_BLACK); }
+      if (!TUDO) { tab5_screen_clear(x0 + 24, a.y + 70, larg - 48, 60, TFT_BLACK); }
       tab5_texto(d, 4.2f);
       d.setTextDatum(top_left);
       d.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -2842,18 +2842,18 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
   // Cabecalho: o estado da conversa com o no.
   char est[96];
   uint16_t cor_est = TFT_DARKGREY;
-  if (s_cfg.estado == MESH_CFG_GRAVANDO)    { snprintf(est, sizeof(est), "gravando - o nó está reiniciando..."); cor_est = TFT_YELLOW; }
-  else if (s_cfg.estado == MESH_CFG_PRONTO) { snprintf(est, sizeof(est), "%s", s_cfg_msg[0] ? s_cfg_msg : "conectado ao nó"); cor_est = TFT_GREENYELLOW; }
+  if (s_cfg.state == MESH_CFG_GRAVANDO)    { snprintf(est, sizeof(est), "gravando - o nó está reiniciando..."); cor_est = TFT_YELLOW; }
+  else if (s_cfg.state == MESH_CFG_PRONTO) { snprintf(est, sizeof(est), "%s", s_cfg_msg[0] ? s_cfg_msg : "conectado ao nó"); cor_est = TFT_GREENYELLOW; }
   else { snprintf(est, sizeof(est), "sem o nó (cabo ou Bluetooth) - só leitura"); }
   static char s_est_ant[96];
   // Dentro de um grupo: VOLTAR e o nome dele no lugar do titulo.
-  const char* titulo = s_grupo < 0 ? "Configurar o nó" : GRUPOS[s_grupo].nome;
+  const char* titulo = s_grupo < 0 ? "Configurar o nó" : GRUPOS[s_grupo].name;
   const int tx = s_grupo < 0 ? x0 + 24 : x0 + 250;
   tab5_texto(d, 3.6f);
   const int ex_min = tx + (int)d.textWidth(titulo) + 32;
   const int ex = ex_min > x0 + 380 ? ex_min : x0 + 380;
   if (TUDO) {
-    tab5_tela_limpar(x0, a.y, larg, CFG_TOPO, TFT_BLACK);
+    tab5_screen_clear(x0, a.y, larg, CFG_TOPO, TFT_BLACK);
     if (s_grupo >= 0) { tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE); }
     tab5_texto(d, 3.6f);
     d.setTextDatum(middle_left);
@@ -2861,7 +2861,7 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
     d.drawString(titulo, tx, a.y + CFG_TOPO / 2);
   }
   if (pintura_mudou_s(&s_p, s_est_ant, sizeof(s_est_ant), est)) {
-    if (!TUDO) { tab5_tela_limpar(ex, a.y, a.x + a.largura - ex, CFG_TOPO, TFT_BLACK); }
+    if (!TUDO) { tab5_screen_clear(ex, a.y, a.x + a.largura - ex, CFG_TOPO, TFT_BLACK); }
     tab5_texto(d, 2.8f);
     cortar_ao_caber(d, est, a.x + a.largura - 16 - ex);
     d.setTextDatum(middle_left);
@@ -2890,8 +2890,8 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
   }
   // A engrenagem acende e apaga com o estado: muda tudo de uma vez.
   static int s_estado_ant = -1;
-  if (s_estado_ant != s_cfg.estado) {
-    s_estado_ant = s_cfg.estado;
+  if (s_estado_ant != s_cfg.state) {
+    s_estado_ant = s_cfg.state;
     lista_itens_mudaram(&s_l_cfg, n_itens);
     memset(s_cfg_pintada, 0, sizeof(s_cfg_pintada));
   }
@@ -2899,15 +2899,15 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
 
   // Rodape: GRAVAR (com pendente e no pronto) e DESCARTAR.
   const bool pend = ha_pendente();
-  const int estado_rod = (pend ? 1 : 0) | (s_cfg.estado == MESH_CFG_PRONTO ? 2 : 0);
+  const int estado_rod = (pend ? 1 : 0) | (s_cfg.state == MESH_CFG_PRONTO ? 2 : 0);
   static int s_rod_ant = -1;
   if (TUDO || estado_rod != s_rod_ant) {
     s_rod_ant = estado_rod;
     // Sem pendente a faixa e da lista (ja desenhada acima): nada a limpar.
     if (pend) {
       const int by = a.y + a.altura - CFG_RODAPE + 12;
-      tab5_tela_limpar(x0, a.y + a.altura - CFG_RODAPE, larg, CFG_RODAPE, TFT_BLACK);
-      const bool pode = (s_cfg.estado == MESH_CFG_PRONTO);
+      tab5_screen_clear(x0, a.y + a.altura - CFG_RODAPE, larg, CFG_RODAPE, TFT_BLACK);
+      const bool pode = (s_cfg.state == MESH_CFG_PRONTO);
       const int bl = cfg_btn_l(a);
       tab5_botao(d, x0 + 24, by, bl, CFG_BTN_A, "GRAVAR NO NÓ",
                  pode ? TFT_GREENYELLOW : d.color565(50, 55, 65), pode ? TFT_BLACK : TFT_DARKGREY);
@@ -2979,7 +2979,7 @@ static void cfg_tecla(int ac)
 // GRAVAR NO NO: valida o Wi-Fi pendente, manda a transacao e guarda a rede.
 static void cfg_gravar(void)
 {
-  if (s_cfg.estado != MESH_CFG_PRONTO) { return; }
+  if (s_cfg.state != MESH_CFG_PRONTO) { return; }
   // Interruptor mexido sem rede nova: reenvia a rede atual COM a senha que
   // guardamos, para a senha do no nao se perder na regravacao da secao.
   if (s_mud.wifi_muda && !s_mud.wifi_ssid[0] && s_cfg.wifi_ssid[0]) {
@@ -2988,7 +2988,7 @@ static void cfg_gravar(void)
       if (mesh_wifi_no_rede(k, &r) && strcmp(r.ssid, s_cfg.wifi_ssid) == 0) {
         snprintf(s_mud.wifi_ssid, sizeof(s_mud.wifi_ssid), "%s", r.ssid);
         snprintf(s_mud.wifi_psk, sizeof(s_mud.wifi_psk), "%s", r.senha);
-        s_mud.wifi_aberta = r.aberta;
+        s_mud.wifi_aberta = r.open;
         memset(&r, 0, sizeof(r));
         break;
       }
@@ -3034,7 +3034,7 @@ static void tocar_config(int x, int y)
       pintura_pedir(&s_p);
       sistema_pedir_redesenho_completo();
     } else if (y >= WF_TOG_Y && y < WF_TOG_Y + WF_TOG_H) {               // interruptor
-      if (s_cfg.estado != MESH_CFG_PRONTO || !s_cfg.wifi_conhecido) { return; }
+      if (s_cfg.state != MESH_CFG_PRONTO || !s_cfg.wifi_conhecido) { return; }
       const bool novo = !wf_liga_visivel();
       s_mud.wifi_liga = novo;
       s_mud.wifi_muda = (novo != s_cfg.wifi_ligado);
@@ -3070,10 +3070,10 @@ static void tocar_config(int x, int y)
         if (x >= TRILHO_L + larg - 130) {                  // o "x": esquecer
           mesh_wifi_no_esquecer(i);
           snprintf(s_redes_msg, sizeof(s_redes_msg), "\"%s\" esquecida", r.ssid);
-        } else if (s_cfg.estado == MESH_CFG_PRONTO) {      // escolher: fica pendente, GRAVAR aparece
+        } else if (s_cfg.state == MESH_CFG_PRONTO) {      // escolher: fica pendente, GRAVAR aparece
           snprintf(s_mud.wifi_ssid, sizeof(s_mud.wifi_ssid), "%s", r.ssid);
           snprintf(s_mud.wifi_psk, sizeof(s_mud.wifi_psk), "%s", r.senha);
-          s_mud.wifi_aberta = r.aberta;
+          s_mud.wifi_aberta = r.open;
           s_mud.wifi_muda = true;
           s_mud.wifi_liga = true;
           snprintf(s_redes_msg, sizeof(s_redes_msg), "\"%s\" escolhida - toque GRAVAR NO NÓ (o nó reinicia)", r.ssid);
@@ -3166,7 +3166,7 @@ static void tocar_config(int x, int y)
     sistema_pedir_redesenho();
     return;
   }
-  if (s_cfg.estado != MESH_CFG_PRONTO) { return; }
+  if (s_cfg.state != MESH_CFG_PRONTO) { return; }
   if (i == RC_LOC_PRECISAO) {
     if (s_cfg.precisao < 0) { cfg_aviso("o canal principal do nó ainda não chegou"); return; }
     const int32_t atual = s_mud.precisao_muda ? s_mud.precisao : s_cfg.precisao;
@@ -3271,7 +3271,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   // O teclado fisico tambem edita estes campos. Se ele foi encaixado com o
   // virtual aberto, libera a metade de baixo e a navegacao sem abandonar a
   // edicao nem apagar o texto ja digitado.
-  if (tab5_teclado_presente() && s_editando && tecvirt_aberto(&s_kb_cfg)) {
+  if (tab5_keyboard_present() && s_editando && tecvirt_aberto(&s_kb_cfg)) {
     tecvirt_fechar(&s_kb_cfg);
   }
 
@@ -3289,7 +3289,7 @@ static void desenhar(lgfx::LovyanGFX& d, const area_t& a)
   if (cv != s_conv_ver) {
     s_conv_ver = cv;
     if (s_ab.ok) {
-      const int novo = tab5_mesh_conversa_indice(s_ab.canal, s_ab.idx, s_ab.no);
+      const int novo = tab5_mesh_conversa_indice(s_ab.channel, s_ab.idx, s_ab.no);
       if (novo != s_conv) {
         if ((novo < 0) != (s_conv < 0)) { conversa_trocar(&s_c); s_hist_pronto = false; }
         s_conv = novo;
@@ -3399,14 +3399,14 @@ static void ao_teclar(const char* texto, uint8_t codigo, uint8_t mod)
 {
   // Teclado fisico tambem edita o nome do no.
   if (s_pag == PAG_NO && s_editando) {
-    if      (codigo == TAB5_TECLA_ENTER)  { cfg_fechar_edicao(true); }
-    else if (codigo == TAB5_TECLA_ESC)    { cfg_fechar_edicao(false); }
-    else if (codigo == TAB5_TECLA_APAGAR) { cfg_tecla(TECVIRT_APAGAR); }
+    if      (codigo == TAB5_KEY_ENTER)  { cfg_fechar_edicao(true); }
+    else if (codigo == TAB5_KEY_ESC)    { cfg_fechar_edicao(false); }
+    else if (codigo == TAB5_KEY_BACKSPACE) { cfg_tecla(TECVIRT_APAGAR); }
     else if (texto && texto[0]) {
       // Nome e senha do no sao ASCII: a letra composta pela tecla morta
       // volta a ser as duas teclas apertadas.
       char cru[8];
-      tab5_teclado_ascii(texto, cru, sizeof(cru));
+      tab5_keyboard_ascii(texto, cru, sizeof(cru));
       for (const char* c = cru; *c && s_editando; ++c) { cfg_tecla((unsigned char)*c); }
     }
     return;
@@ -3676,7 +3676,7 @@ static uint32_t periodo_agora(void)
 }
 
 extern const app_t APP_MESH = {
-  .nome  = "Mesh",
+  .name  = "Mesh",
   .cor   = TFT_GREENYELLOW,
   // O Grove ja e mantido pelo ajuste do sistema. O IMU e para a tela seguir
   // o aparelho.
