@@ -379,7 +379,7 @@ static void cmd_cartao(void)
     ceder(k++);
     if (e->d_name[0] == '.') { continue; }
 
-    char sub[160];
+    char sub[288];   // TAB5_SD_APPS + '/' + ate 255 de d_name + nulo
     snprintf(sub, sizeof(sub), "%s/%s", TAB5_SD_APPS, e->d_name);
 
     // Conta e soma sem recursao: as pastas de app sao planas por convencao
@@ -391,14 +391,14 @@ static void cmd_cartao(void)
     // Guarda os nomes para imprimir DEPOIS do cabecalho da pasta - o total tem
     // que aparecer em cima, e so da para saber o total depois de percorrer.
     #define CARTAO_MOSTRA 10
-    char nomes[CARTAO_MOSTRA][40];
+    char nomes[CARTAO_MOSTRA][256];   // ate 255 de d_name + nulo
     uint64_t tams[CARTAO_MOSTRA];
     int n = 0; uint64_t bytes = 0;
 
     struct dirent* f2;
     while ((f2 = readdir(sd)) != nullptr) {
       if (f2->d_name[0] == '.') { continue; }
-      char cam[320];
+      char cam[560];   // sub + '/' + ate 255 de d_name + nulo
       snprintf(cam, sizeof(cam), "%s/%s", sub, f2->d_name);
       struct stat st;
       if (stat(cam, &st) != 0 || !S_ISREG(st.st_mode)) { continue; }

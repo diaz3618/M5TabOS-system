@@ -111,6 +111,23 @@ idf_component_register(SRCS ${app_sources}
                        INCLUDE_DIRS "." "kernel" "hal" "services" "../compartilhado"
                        LDFRAGMENTS "linker.lf")
 
+# AVISOS COMO ERRO: o GCC desta instalacao do IDF (mais novo que o usado nos
+# commits anteriores) promove format-truncation, stringop-truncation, comment
+# e maybe-uninitialized a erro por padrao, mesmo com CONFIG_COMPILER_DISABLE_
+# DEFAULT_ERRORS=y (esse Kconfig nao cobre estes quatro). Sao avisos legitimos
+# (buffer menor que o maximo teorico de um nome de arquivo; um "\" no fim de
+# um comentario // que, no diagrama do teclado em tab5_teclado.cpp, e so a
+# tecla \ mesmo; o 'v' de pb_varint(&l,&v), usado as centenas de vezes no
+# parser do Mesh, que o GCC nao prova inicializado em todo caminho) mas nao
+# sao bugs novos - so nao paravam o build antes. Opção 3 do proprio texto de
+# ajuda do Kconfig ("nao considerar avisos especificos como erro"), so para
+# main (os componentes de terceiros continuam com o padrao deles).
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -Wno-error=format-truncation
+    -Wno-error=stringop-truncation
+    -Wno-error=comment
+    -Wno-error=maybe-uninitialized)
+
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     add_custom_target(m5tabos_carimbo
                       COMMAND ${CMAKE_COMMAND} -DOUT=${m5_carimbo_c}
