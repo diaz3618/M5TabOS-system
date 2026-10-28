@@ -1,7 +1,7 @@
 #include "tab5_mesh_mqtt.hpp"
 #include "tab5_mutex.hpp"
 #include "mesh_pb.hpp"   // o codec do servico Mesh (leitura e escrita)
-#include "tab5_time.hpp"  // tab5_hora_epoch
+#include "tab5_time.hpp"  // tab5_time_epoch
 
 #include "mqtt_client.h"
 #include "esp_crt_bundle.h"
@@ -316,7 +316,7 @@ static bool entregar_pacote(QueueHandle_t fila, uint32_t de, uint32_t para,
   pb_w_sub(&w, 4, data);
   pb_w_fixo32(&w, 6, esp_random() | 1u);
   if (da_internet) {
-    if (const uint32_t agora = tab5_hora_epoch()) { pb_w_fixo32(&w, 7, agora); }
+    if (const uint32_t agora = tab5_time_epoch()) { pb_w_fixo32(&w, 7, agora); }
     pb_w_num(&w, 14, 1);
   }
   pb_escritor_t f = pb_escritor(s_q.d, sizeof(s_q.d));
@@ -527,7 +527,7 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   }
   pb_w_num(&w, 3, (uint64_t)idx);
   pb_w_bytes(&w, 4, dec, n_dec);
-  if (const uint32_t agora = tab5_hora_epoch()) { pb_w_fixo32(&w, 7, agora); }
+  if (const uint32_t agora = tab5_time_epoch()) { pb_w_fixo32(&w, 7, agora); }
   pb_w_num(&w, 14, 1);                 // via_mqtt (o 13 e o obsoleto 'delayed')
   if (entregar_from_radio(fila, 2, &w) && internet) { ++s_rede_internet_recebidos; }   // FromRadio.packet
 }

@@ -1,5 +1,5 @@
 #include "tab5_imu.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "tab5_mutex.hpp"
 #include <M5Unified.h>
 #include "tab5_power.hpp"
@@ -37,7 +37,7 @@ static bool subir_de_novo(void)
   static int      s_tentativas = 0;
   static uint32_t s_proxima_ms = 0;
   if (!tab5_power_imu_requested() || s_tentativas >= IMU_TENTATIVAS) { return false; }
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   if ((int32_t)(agora - s_proxima_ms) < 0) { return false; }
   s_proxima_ms = agora + IMU_ESPERA_MS;
   ++s_tentativas;

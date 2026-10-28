@@ -166,19 +166,19 @@ static void v_cartao(char* o, size_t n)
 static void b_cartao(void)
 {
   char linha[48];
-  snprintf(linha, sizeof(linha), "%lu,%d\n", (unsigned long)tab5_hora_epoch(), s_linhas_gravadas + 1);
+  snprintf(linha, sizeof(linha), "%lu,%d\n", (unsigned long)tab5_time_epoch(), s_linhas_gravadas + 1);
   if (tab5_sd_enqueue_append("Example", "diario.csv", linha, "epoch,n\n")) { ++s_linhas_gravadas; }
 }
 
 // ---- HORA -------------------------------------------------------------------
 static void v_hora(char* o, size_t n)
 {
-  const uint32_t e = tab5_hora_epoch();
+  const uint32_t e = tab5_time_epoch();
   if (!e) { snprintf(o, n, "relogio ainda sem acerto"); return; }
   struct tm t;
-  tab5_hora_local(e, &t);
+  tab5_local_time(e, &t);
   snprintf(o, n, "%02d/%02d/%04d %02d:%02d:%02d (%s)", t.tm_mday, t.tm_mon + 1,
-           t.tm_year + 1900, t.tm_hour, t.tm_min, t.tm_sec, tab5_hora_fonte());
+           t.tm_year + 1900, t.tm_hour, t.tm_min, t.tm_sec, tab5_time_source());
 }
 
 // ---- ENERGIA ----------------------------------------------------------------
@@ -333,7 +333,7 @@ static const cartao_t CARTOES[] = {
   { "TAREFA",      "tarefa_app + fila",                     v_tarefa,   nullptr,   nullptr },
   { "TRABALHO",    "sistema_trabalho + AVISO_TRABALHO",     v_trabalho, "contar",  b_trabalho },
   { "CARTAO",      "tab5_sd_enqueue_append",                        v_cartao,   "gravar",  b_cartao },
-  { "HORA",        "tab5_hora_epoch + tab5_hora_local",     v_hora,     nullptr,   nullptr },
+  { "HORA",        "tab5_time_epoch + tab5_local_time",     v_hora,     nullptr,   nullptr },
   { "ENERGIA",     "tab5_power_latest",                     v_energia,  nullptr,   nullptr },
   { "IMU",         "tab5_imu_latest (perfil.imu)",          v_imu,      nullptr,   nullptr },
   { "GPS",         "tab5_gps_position",                      v_gps,      nullptr,   nullptr },

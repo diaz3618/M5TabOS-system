@@ -76,7 +76,7 @@ void registro_estado(int* na_ram, uint32_t* gravadas, uint32_t* falhas)
 // intocado.
 static void nome_do_dia(uint32_t epoch, char* out, size_t tam)
 {
-  tab5_hora_nome_do_dia(epoch, "energia-", ".csv", out, tam);
+  tab5_day_filename(epoch, "energia-", ".csv", out, tam);
 }
 
 // Pelo gravador do sistema (hal/tab5_sd.hpp): cada amostra vira uma linha
@@ -91,7 +91,7 @@ static void descarregar(void)
     char nome[32];
     nome_do_dia(a->epoch, nome, sizeof(nome));
     char hora[8] = "--:--";
-    if (a->epoch) { struct tm lt; tab5_hora_local(a->epoch, &lt); snprintf(hora, sizeof(hora), "%02d:%02d", lt.tm_hour, lt.tm_min); }
+    if (a->epoch) { struct tm lt; tab5_local_time(a->epoch, &lt); snprintf(hora, sizeof(hora), "%02d:%02d", lt.tm_hour, lt.tm_min); }
     char linha[160];
     snprintf(linha, sizeof(linha), "ENE3,%lu,%s,%.3f,%.1f,%.1f,%d,%d,%d,%.1f,%s\n",
              (unsigned long)a->epoch, hora, a->volts, a->mA, a->mW,
@@ -129,7 +129,7 @@ static void registro_na_carona(void)
 
     amostra_t* a = &s_buf[s_n++];
     a->t       = pdTICKS_TO_MS(xTaskGetTickCount()) / 1000;
-    a->epoch = tab5_hora_epoch();
+    a->epoch = tab5_time_epoch();
     a->volts   = m.volts;
     a->mA      = m.mA;
     a->mW      = m.mW;

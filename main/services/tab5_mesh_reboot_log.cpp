@@ -11,7 +11,7 @@
 #include "tab5_sd.hpp"
 #include "tab5_power.hpp"
 #include "tab5_mesh.hpp"
-#include "tab5_time.hpp"   // tab5_hora_epoch
+#include "tab5_time.hpp"   // tab5_time_epoch
 
 static const char* TAG = "mesh_diario";
 
@@ -40,14 +40,14 @@ static foto_t s_foto;
 void mesh_diario_nota_envio(uint8_t tipo)
 {
   if (tipo == MESH_ENV_HEARTBEAT || tipo == MESH_ENV_NENHUM) { return; }   // a cada 30 s: so ruido
-  s_envio_ms = tab5_agora_ms() | 1u;
+  s_envio_ms = tab5_now_ms() | 1u;
   s_envio_tipo = tipo;
 }
 
 static int32_t ha_s(uint32_t ms_do_evento)
 {
   if (ms_do_evento == 0) { return -1; }
-  return (int32_t)((tab5_agora_ms() - ms_do_evento) / 1000u);
+  return (int32_t)((tab5_now_ms() - ms_do_evento) / 1000u);
 }
 
 static void linha_de(const mesh_reinicio_t* r, char* o, size_t n)
@@ -110,7 +110,7 @@ void mesh_diario_carregar(void)
 
 void mesh_diario_foto(uint32_t up_no_s)
 {
-  s_foto.tem = true; s_foto.ms = tab5_agora_ms() | 1u; s_foto.up_no_s = up_no_s;
+  s_foto.tem = true; s_foto.ms = tab5_now_ms() | 1u; s_foto.up_no_s = up_no_s;
   // O contexto do Tab5 e lido na hora do REGISTRO, mas o tempo dos eventos e
   // relativo a ela: a foto so marca quando o aviso chegou.
 }
@@ -123,11 +123,11 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
 
   mesh_reinicio_t r;
   memset(&r, 0, sizeof(r));
-  r.epoch = tab5_hora_epoch();
-  r.up_tab5_s = tab5_agora_ms() / 1000u;
+  r.epoch = tab5_time_epoch();
+  r.up_tab5_s = tab5_now_ms() / 1000u;
   r.contador = contador;
 
-  const bool foto_fresca = s_foto.tem && (tab5_agora_ms() - s_foto.ms) < FOTO_VALE_MS;
+  const bool foto_fresca = s_foto.tem && (tab5_now_ms() - s_foto.ms) < FOTO_VALE_MS;
   // Uptime de ANTES de cair: o da foto (tirada ao chegar o aviso, antes da
   // telemetria nova) ou, sem foto, o que o servico ainda guarda.
   r.up_no_s = foto_fresca ? s_foto.up_no_s : up_no_s;
@@ -147,7 +147,7 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
   // O aviso chegou "foto" depois do reinicio: os tempos acima contam desde o
   // REGISTRO; tira o intervalo ja corrido para ficarem relativos ao reinicio.
   if (foto_fresca) {
-    const int32_t atraso = (int32_t)((tab5_agora_ms() - s_foto.ms) / 1000u);
+    const int32_t atraso = (int32_t)((tab5_now_ms() - s_foto.ms) / 1000u);
     if (r.envio_s >= 0) { r.envio_s = r.envio_s > atraso ? r.envio_s - atraso : 0; }
     if (r.grove_s >= 0) { r.grove_s = r.grove_s > atraso ? r.grove_s - atraso : 0; }
     if (r.perfil_s >= 0) { r.perfil_s = r.perfil_s > atraso ? r.perfil_s - atraso : 0; }

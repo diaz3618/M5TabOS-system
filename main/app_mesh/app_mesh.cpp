@@ -203,15 +203,15 @@ static pintura_t s_p;
 // completa?", e escrever pintura_completa(&s_p) em cada um ficaria ilegivel.
 #define TUDO  pintura_completa(&s_p)
 
-// Quantas mensagens o servico tinha quando lemos o cartao pela ultima vez.
+// How many messages the service had the last time we read the card.
 //
-// Existe para NAO reler o historico a cada repintura. Ler significa montar o
-// cartao, percorrer o arquivo e desmontar - caro, e desnecessario quando so o
-// desenho mudou. Recarregamos apenas quando a conversa muda ou quando chega
-// mensagem nova.
-// int32_t, e nao uint32_t: -1 tem que caber como "nunca li ainda" e ser
-// diferente de qualquer tab5_mesh_total_msgs() de verdade (que comeca em 0)
-// - ver o aviso grande junto do uso, mais abaixo.
+// Exists so we do NOT re-read the history on every repaint. Reading means
+// mounting the card, scanning the file, and unmounting - expensive, and
+// unnecessary when only the drawing changed. We only reload when the
+// conversation changes or a new message arrives.
+// int64_t, not uint32_t: -1 has to fit as "never read yet" and be
+// different from any real tab5_mesh_total_msgs() (which starts at 0)
+// - see the big warning next to its use, further below.
 static int64_t s_msgs_quando_li = -1;
 
 // Versao dos estados de envio que a tela ja desenhou.
@@ -505,13 +505,14 @@ static void desenhar_trilho(lgfx::LovyanGFX& d, const area_t& a)
       d.drawCircle(px, py, 7, TFT_BLACK);      // contorno: destaca no fundo claro
     }
   }
-  // Estado do enlace no pe do trilho: verde vivo, vermelho mudo. E a resposta
-  // para "esta conectado?" sem sair da pagina em que voce esta.
+  // Link state at the foot of the rail: bright green, dull red. It's the
+  // answer to "is it connected?" without leaving whatever page you're on.
   const bool ok = tab5_mesh_no_ar();
 
-  // MARCA EMBAIXO, PONTO EM CIMA. Juntos respondem "que rede e esta" e "ela
-  // esta viva" sem ocupar linha de texto nenhuma - mas a marca e a identidade
-  // do app e fecha melhor o pe do trilho; o ponto e estado, e estado sobe.
+  // MARK BELOW, DOT ABOVE. Together they answer "which network is this" and
+  // "is it alive" without taking up a single line of text - but the mark is
+  // the app's identity and closes off the rail's foot better; the dot is
+  // state, and state belongs up top.
   const int ml    = TRILHO_L - 36;
   const int marca_y = a.y + a.altura - 18 - ml;   // mesma margem de pe de antes
   const int led_cy  = marca_y - 22 - 12;          // mesmo respiro de 22px
@@ -899,19 +900,19 @@ static void montar_linha(char* linha, size_t tam, const mesh_no_t& no)
   char curto_limpo[MESH_NOME_CURTO];
   espacos(linha, tam);
 
-  // LONGO: mesma logica do curto logo abaixo - prefere a entrada AO VIVO
-  // (NodeInfo desta sessao); sem ela, cai para o cache persistente
-  // (tab5_mesh_nome_longo_cache(), nos.txt). Esta coluna so
-  // olhava no.longo - a mesma classe de bug que o curto teve
-  // (ver o aviso dele logo abaixo), so que nunca corrigida aqui: a maioria
-  // dos nos nasce de telemetria/posicao/texto, nao de NodeInfo (a UNICA fonte
-  // do nome longo), entao a tabela mostrava "(sem nome)" quase sempre.
+  // LONG: same logic as the short one just below - prefers the LIVE entry
+  // (this session's NodeInfo); without it, falls back to the persistent
+  // cache (tab5_mesh_nome_longo_cache(), nos.txt). This column used to
+  // only look at no.longo - the same class of bug the short one had
+  // (see its warning just below), except never fixed here: most nodes are
+  // born from telemetry/position/text, not from NodeInfo (the ONLY source
+  // of the long name), so the table showed "(no name)" almost always.
   const char* longo_fonte = no.longo;
   char longo_cache[MESH_NOME_LONGO];
   if (!no.longo[0] && tab5_mesh_nome_longo_cache(no.num, longo_cache, sizeof(longo_cache))) {
     longo_fonte = longo_cache;
   }
-  sanitizar_ascii(longo_fonte[0] ? longo_fonte : "(sem nome)", nome_limpo, sizeof(nome_limpo));
+  sanitizar_ascii(longo_fonte[0] ? longo_fonte : "(no name)", nome_limpo, sizeof(nome_limpo));
 
   // CURTO: prefere o que ESTE no informou ao vivo (NodeInfo desta sessao).
   // Sem isso, cai para o cache persistente (nos.txt) - o mesmo cache que a
@@ -1137,7 +1138,7 @@ static int desenhar_canais(lgfx::LovyanGFX& d, const area_t& a, int x0)
   if (s_rede_vista == MESH_REDE_INTERNET) {
     x += 14;
     const bool lig = ajustes_mesh_rede_internet();
-    const int l = chip(d, x, y, lig ? "DESLIGAR" : "LIGAR", lig ? TFT_MAROON : TFT_DARKGREEN, TFT_WHITE);
+    const int l = chip(d, x, y, lig ? "TURN OFF" : "TURN ON", lig ? TFT_MAROON : TFT_DARKGREEN, TFT_WHITE);
     s_chip_internet_liga = chip_t{ x - a.x, y - a.y, l, CHIP_A, 0 };
     x += l + 14;
     const int fase = internet_fase();
@@ -1351,7 +1352,7 @@ static void desenhar_no_detalhe(lgfx::LovyanGFX& d, const area_t& a, int x0)
 
   const int by = a.y + a.altura - DET_BTN_Y_DA_BASE;
   const int bl = det_btn_l(a);
-  tab5_botao(d, x0 + 24, by, bl, DET_BTN_A, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
+  tab5_botao(d, x0 + 24, by, bl, DET_BTN_A, "BACK", d.color565(50, 55, 65), TFT_WHITE);
   // No da INTERNET nao tem CONVERSAR: a direta sairia pelo nosso radio (ou pela
   // internet, que nao leva direta) e nunca chegaria la. Fala-se com ele no
   // LongFast Internet.
@@ -1451,13 +1452,14 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
   mesh_saude_t s; tab5_mesh_saude(&s);
   char buf[160];
 
-  // "-" QUANDO NAO VEIO. Os numeros de saude so existem com o LocalStats /
-  // DeviceMetrics do NOSSO no; no modo internet (sem no) ou antes da primeira
-  // telemetria eles sao zero - e "0.0 %" de uso do canal e um valor plausivel,
-  // que mentia "malha vazia" quando a verdade era "nao sei".
+  // "-" WHEN IT DIDN'T COME IN. The health numbers only exist with OUR
+  // node's LocalStats / DeviceMetrics; in internet mode (no node) or before
+  // the first telemetry they're zero - and "0.0 %" channel usage is a
+  // plausible value that used to lie "empty mesh" when the truth was
+  // "don't know".
   //
-  // NOS ONLINE sem o LocalStats: contados aqui, com a mesma regra do
-  // Meshtastic (ouvido nas ultimas 2 h) - marcados como tal.
+  // ONLINE NODES without LocalStats: counted here, with the same rule as
+  // Meshtastic (heard in the last 2 h) - marked as such.
   struct { const char* rot; char val[48]; uint16_t cor; } campos[10];
   if (s.tem_local) {
     snprintf(campos[0].val, sizeof(campos[0].val), "%u / %u", (unsigned)s.nos_online, (unsigned)s.nos_total);
@@ -1476,7 +1478,7 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
   const bool tem_uso = s.tem_local || s.tem_metricas;
   if (tem_uso) { snprintf(campos[1].val, sizeof(campos[1].val), "%.1f %%", (double)s.uso_canal); }
   else         { snprintf(campos[1].val, sizeof(campos[1].val), "-"); }
-  campos[1].rot = "uso do canal"; campos[1].cor = TFT_SKYBLUE;
+  campos[1].rot = "channel usage"; campos[1].cor = TFT_SKYBLUE;
   if (tem_uso) { snprintf(campos[2].val, sizeof(campos[2].val), "%.2f %%", (double)s.airtime_tx); }
   else         { snprintf(campos[2].val, sizeof(campos[2].val), "-"); }
   campos[2].rot = "airtime tx"; campos[2].cor = TFT_SKYBLUE;
@@ -1487,16 +1489,16 @@ static void desenhar_malha(lgfx::LovyanGFX& d, const area_t& a, int x0)
     snprintf(campos[3].val, sizeof(campos[3].val), "-");
   }
   campos[3].rot = "node uptime"; campos[3].cor = TFT_WHITE;
-  // ENLACE COM A VIA: "no ar" sozinho nao dizia por onde.
+  // LINK WITH TRANSPORT: "on air" alone didn't say over what.
   const uint8_t via = tab5_mesh_via();
-  const char* nome_via = !tab5_mesh_servico_ativo() ? "parado"
+  const char* nome_via = !tab5_mesh_servico_ativo() ? "stopped"
                        : via == AJUSTES_MESH_BLUETOOTH ? "Bluetooth"
                        : via == AJUSTES_MESH_INTERNET  ? "Internet" : "Grove";
-  snprintf(campos[4].val, sizeof(campos[4].val), "%s · %s", nome_via, tab5_mesh_no_ar() ? "no ar" : "sem quadro");
-  campos[4].rot = "enlace"; campos[4].cor = tab5_mesh_no_ar() ? TFT_GREENYELLOW : TFT_RED;
+  snprintf(campos[4].val, sizeof(campos[4].val), "%s · %s", nome_via, tab5_mesh_no_ar() ? "on air" : "no frame");
+  campos[4].rot = "link"; campos[4].cor = tab5_mesh_no_ar() ? TFT_GREENYELLOW : TFT_RED;
 
-  // SEGUNDA COLUNA: o que o radio ouviu e o entorno imediato. Os contadores de
-  // pacote so existem com o LocalStats ("-" sem ele, como acima).
+  // SECOND COLUMN: what the radio heard and its immediate surroundings. The
+  // packet counters only exist with LocalStats ("-" without it, as above).
   if (s.tem_local) {
     snprintf(campos[5].val, sizeof(campos[5].val), "%lu / %lu", (unsigned long)s.pkt_rx, (unsigned long)s.pkt_tx);
     snprintf(campos[6].val, sizeof(campos[6].val), "%lu · %lu", (unsigned long)s.pkt_ruins, (unsigned long)s.pkt_repetidos);
@@ -1806,14 +1808,14 @@ static void desenhar_faixa_frente(lgfx::LovyanGFX& d, const area_t& a, const mes
   const uint16_t FUNDO = fundo_msg(d);
   tab5_screen_clear(a.x, a.y, a.largura, FRENTE_TOPO_A, FUNDO);
   tab5_botao(d, a.x + 16, a.y + FRENTE_VOLTAR_Y, FRENTE_VOLTAR_L, FRENTE_VOLTAR_A,
-             "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
+             "BACK", d.color565(50, 55, 65), TFT_WHITE);
   const int gl = FRENTE_TOPO_A - 24;
   const int gx = a.x + 16 + FRENTE_VOLTAR_L + 20;
   caixa_glifo(d, gx, a.y + 12, gl, gl, c.channel ? GL_DIFUSAO : GL_DIRETO,
               c.channel ? TFT_NAVY : TFT_DARKGREEN, TFT_WHITE);
 
-  // Nome e, embaixo, o longo (ou "canal N") - cortados por caractere ate
-  // caber, como na coluna.
+  // Name and, below, the long one (or "channel N") - clipped character by
+  // character to fit, same as in the column.
   const int tx = gx + gl + 16;
   const int max_l = a.x + a.largura - 16 - tx;
   char nome[MESH_NOME_CONVERSA], sub[MESH_NOME_LONGO];
@@ -1845,7 +1847,7 @@ static void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
       tab5_texto(d, 3.4f);
       d.setTextDatum(middle_center);
       d.setTextColor(TFT_LIGHTGREY, FUNDO);
-      d.drawString("escolha uma conversa", x0 + larg / 2, a.y + a.altura / 2);
+      d.drawString("choose a conversation", x0 + larg / 2, a.y + a.altura / 2);
       d.setTextDatum(top_left);
     }
     return;
@@ -1877,19 +1879,21 @@ static void desenhar_msgs(lgfx::LovyanGFX& d, const area_t& a, int x0)
 
 
 // ---------------------------------------------------------------------------
-// PAGINA "NO" - configurar o no Meshtastic daqui (services/tab5_mesh_admin)
+// "NODE" PAGE - configure the Meshtastic node from here (services/tab5_mesh_admin)
 // ---------------------------------------------------------------------------
-// Cada linha leva um icone do que ela faz (icone_cfg). Tocar NAO grava: muda o
-// valor PENDENTE (amarelo, com um ponto). "GRAVAR NO NO" manda tudo numa
-// transacao so - o no grava e reinicia UMA vez, por mais opcoes que mudem.
-// Gravar a cada toque reiniciaria o no a cada degrau de um ciclo (3, 4, 5...).
+// Each row carries an icon for what it does (icone_cfg). Tapping does NOT
+// save: it changes the PENDING value (yellow, with a dot). "SAVE TO THE
+// NODE" sends everything in a single transaction - the node saves and
+// restarts ONCE, no matter how many options changed. Saving on every tap
+// would restart the node at every step of a cycle (3, 4, 5...).
 //
-// Depois de gravar, a tela mostra o que o NO confirmou no dump seguinte, nunca
-// o que pedimos: se ele recusar algo, o valor antigo continua aparecendo.
+// After saving, the screen shows whatever the NODE confirmed in the next
+// dump, never what we asked for: if it rejects something, the old value
+// keeps showing.
 //
-// Acoes imediatas (sem reinicio): som das notificacoes e GPS do Tab5 para o no
-// (os dois do Tab5), posicao fixa pelo GPS do Tab5, acertar a hora do no.
-// Reiniciar pede confirmacao.
+// Immediate actions (no restart): notification sound and the Tab5's GPS
+// feeding the node (both are the Tab5's own), fixed position from the
+// Tab5's GPS, setting the node's clock. Restarting asks for confirmation.
 //
 // EM GRUPOS. A pagina abre na lista dos GRUPOS (Nome e papel, Localizacao,
 // Radio, Conexoes, Avisos, Manutencao), cada um com um resumo do que tem
@@ -1980,7 +1984,7 @@ static const opcao_t OPC_PRECISAO[] = {
   { 0, "do not share" }, { 32, "exact" }, { 18, "approximate (~90 m)" },
   { 16, "approximate (~360 m)" }, { 14, "approximate (~1.5 km)" }, { 12, "city only (~6 km)" },
 };
-// De quantos em quantos minutos o GPS do Tab5 vai para o no (settings.h).
+// How many minutes between the Tab5's GPS being pushed to the node (settings.h).
 static const opcao_t OPC_TAB5[] = {
   { 0, "do not use" }, { 5, "every 5 min" }, { 15, "every 15 min" }, { 30, "every 30 min" }, { 60, "every 1 h" },
 };
@@ -2089,7 +2093,7 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
   switch (i) {
     case RC_SOM:
       snprintf(rot, tr, "notification sound");
-      snprintf(val, tv, "%s", tab5_mesh_beep_ligado() ? "ligado" : "mudo");
+      snprintf(val, tv, "%s", tab5_mesh_beep_ligado() ? "on" : "muted");
       break;
     case RC_LONGO: case RC_CURTO: {
       const bool longo = (i == RC_LONGO);
@@ -2139,22 +2143,22 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       break;
     case RC_POS_INTELIGENTE:
       snprintf(rot, tr, "also send when moving");
-      if (conhecido) { snprintf(val, tv, "%s", v ? "ligado" : "desligado"); }
+      if (conhecido) { snprintf(val, tv, "%s", v ? "on" : "off"); }
       break;
     case RC_GPS_NO:
       snprintf(rot, tr, "the node's own GPS");
       if (conhecido) {
         if (v == 2)      { snprintf(val, tv, "the board has no GPS"); }
-        else             { snprintf(val, tv, "%s", v == 1 ? "ligado" : "desligado"); }
+        else             { snprintf(val, tv, "%s", v == 1 ? "on" : "off"); }
       }
       break;
     case RC_POS_FIXA: {
       snprintf(rot, tr, "node's fixed position");
       const nmea_position_t g = tab5_gps_position();
       const bool fix = g.valid && g.qualidade > 0;
-      if (s_cfg.pos_fixa) { snprintf(val, tv, "fixa - tocar para soltar"); }
-      else if (fix)       { snprintf(val, tv, "tocar para fixar no GPS do Tab5"); }
-      else                { snprintf(val, tv, "GPS do Tab5 sem sinal"); }
+      if (s_cfg.pos_fixa) { snprintf(val, tv, "fixed - tap to release"); }
+      else if (fix)       { snprintf(val, tv, "tap to fix to the Tab5's GPS"); }
+      else                { snprintf(val, tv, "the Tab5's GPS has no signal"); }
       break;
     }
     case RC_NODEINFO_S:
@@ -2162,34 +2166,35 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       if (conhecido) { snprintf(val, tv, "%s", opc_nome(OPC_NODEINFO_S, N_OPC(OPC_NODEINFO_S), v, tmp, sizeof(tmp), "%ld s")); }
       break;
     case RC_TELE_S:
-      snprintf(rot, tr, "telemetria a cada");
+      snprintf(rot, tr, "telemetry every");
       if (conhecido) { snprintf(val, tv, "%s", opc_nome(OPC_TELE_S, N_OPC(OPC_TELE_S), v, tmp, sizeof(tmp), "%ld s")); }
       break;
     case RC_MQTT:
       snprintf(rot, tr, "node's MQTT");
-      if (conhecido) { snprintf(val, tv, "%s", v ? "ligado" : "desligado"); }
+      if (conhecido) { snprintf(val, tv, "%s", v ? "on" : "off"); }
       break;
     case RC_PROXY:
-      // INTERNET DO TAB5 PARA O NO (MQTT Client Proxy). O campo e do no
-      // (proxy_to_client_enabled); com ele ligado e confirmado, o servico do
-      // Tab5 leva ao servidor o que o no publica. Ao lado, como esta a ponte.
-      snprintf(rot, tr, "internet do Tab5 (proxy)");
+      // TAB5'S INTERNET FOR THE NODE (MQTT Client Proxy). The field belongs
+      // to the node (proxy_to_client_enabled); once it's on and confirmed,
+      // the Tab5's service carries what the node publishes to the server.
+      // Next to it, the bridge's current state.
+      snprintf(rot, tr, "Tab5's internet (proxy)");
       if (conhecido) {
         if (v && !*pend) { snprintf(val, tv, "on  ·  %s", tab5_mesh_proxy_estado()); }
-        else             { snprintf(val, tv, "%s", v ? "ligado" : "desligado"); }
+        else             { snprintf(val, tv, "%s", v ? "on" : "off"); }
       }
       break;
     case RC_BT:
       snprintf(rot, tr, "node's Bluetooth");
       if (conhecido) {
-        snprintf(val, tv, "%s%s", v ? "ligado" : "desligado",
-                 tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH ? " (em uso pelo Tab5)" : "");
+        snprintf(val, tv, "%s%s", v ? "on" : "off",
+                 tab5_mesh_via() == AJUSTES_MESH_BLUETOOTH ? " (in use by the Tab5)" : "");
       }
       break;
     case RC_WIFI: {
       snprintf(rot, tr, "node's Wi-Fi");
-      if (s_mud.wifi_ssid[0]) { *pend = true; snprintf(val, tv, "ligar em %s", s_mud.wifi_ssid); }
-      else if (s_mud.wifi_muda) { *pend = true; snprintf(val, tv, "%s", s_mud.wifi_liga ? "ligar" : "desligar"); }
+      if (s_mud.wifi_ssid[0]) { *pend = true; snprintf(val, tv, "turn on at %s", s_mud.wifi_ssid); }
+      else if (s_mud.wifi_muda) { *pend = true; snprintf(val, tv, "%s", s_mud.wifi_liga ? "turn on" : "turn off"); }
       else if (!s_cfg.wifi_conhecido) { snprintf(val, tv, "-"); }
       else if (!s_cfg.wifi_ligado) { snprintf(val, tv, "off"); }
       else { snprintf(val, tv, "on%s%s", s_cfg.wifi_ssid[0] ? "  ·  " : "", s_cfg.wifi_ssid); }
@@ -2201,7 +2206,7 @@ static void linha_cfg(int i, char* rot, size_t tr, char* val, size_t tv, bool* p
       break;
     case RC_REINICIAR:
       snprintf(rot, tr, "restart the node");
-      snprintf(val, tv, (s_reiniciar_ms && (tab5_agora_ms() - s_reiniciar_ms) < 4000) ? "toque de novo para confirmar" : "tocar para reiniciar");
+      snprintf(val, tv, (s_reiniciar_ms && (tab5_now_ms() - s_reiniciar_ms) < 4000) ? "toque de novo para confirmar" : "tocar para reiniciar");
       break;
     case RC_I_FIRMWARE: {
       snprintf(rot, tr, "firmware / placa");
@@ -2460,7 +2465,7 @@ static void linha_grupo(int g, char* rot, size_t tr, char* val, size_t tv, bool*
       if (!pronto) { snprintf(val, tv, "-"); break; }
       char w[48];
       if (s_cfg.wifi_conhecido && s_cfg.wifi_ligado) { snprintf(w, sizeof(w), "Wi-Fi %s", s_cfg.wifi_ssid[0] ? s_cfg.wifi_ssid : "on"); }
-      else                                           { snprintf(w, sizeof(w), "no Wi-Fi"); }
+      else                                           { snprintf(w, sizeof(w), "Wi-Fi off"); }
       snprintf(val, tv, "Bluetooth %s  ·  %s  ·  MQTT %s", valor_atual(MESH_CFG_BT) ? "yes" : "no", w,
                !valor_atual(MESH_CFG_MQTT) ? "no" : valor_atual(MESH_CFG_MQTT_PROXY) ? "via the Tab5" : "yes");
       break;
@@ -2585,7 +2590,7 @@ static void rei_duracao(char* o, size_t n, uint32_t s)
 static void desenhar_diario(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg)
 {
   lista_esconder(&s_l_cfg);
-  const bool conf = s_limpar_ms && (tab5_agora_ms() - s_limpar_ms) < 4000;
+  const bool conf = s_limpar_ms && (tab5_now_ms() - s_limpar_ms) < 4000;
   const uint32_t assin = mesh_diario_versao() * 2u + (conf ? 1u : 0u);
   static uint32_t s_assin_ant = 0xFFFFFFFFu;
   if (!TUDO && assin == s_assin_ant) { return; }
@@ -2593,7 +2598,7 @@ static void desenhar_diario(lgfx::LovyanGFX& d, const area_t& a, int x0, int lar
   s_rei_n = mesh_diario_ler(s_rei, MESH_DIARIO_MAX);
 
   tab5_screen_clear(x0, a.y, larg, a.altura, TFT_BLACK);
-  tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
+  tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "BACK", d.color565(50, 55, 65), TFT_WHITE);
   tab5_texto(d, 3.6f);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -2656,11 +2661,11 @@ static void desenhar_diario(lgfx::LovyanGFX& d, const area_t& a, int x0, int lar
   d.setTextDatum(top_left);
 }
 
-// ---- Wi-Fi do no: tudo numa tela ---------------------------------------------
-// Interruptor liga/desliga em cima; com o Wi-Fi do no ligado, a lista das redes
-// ja usadas (tocar escolhe, o x esquece) e as acoes NOVA REDE / TRAZER DO TAB5.
-// Mudar o interruptor ou escolher rede e PENDENTE: GRAVAR NO NO manda e o no
-// reinicia, como qualquer outra mudanca.
+// ---- Node's Wi-Fi: everything on one screen ---------------------------------
+// On/off switch up top; with the node's Wi-Fi on, the list of already-used
+// networks (tap chooses, the x forgets) and the NEW NETWORK / PULL FROM TAB5
+// actions. Toggling the switch or choosing a network is PENDING: SAVE TO THE
+// NODE sends it and the node restarts, like any other change.
 static const int RD_LIN = 78, RD_BTN_A = 60;
 static const int WF_TOG_Y = 84, WF_TOG_H = 100, WF_LISTA_Y = 84 + 100 + 56;
 
@@ -2680,9 +2685,9 @@ static uint32_t fnv_str(const char* t)
 }
 
 static bool wf_liga_visivel(void) { return s_mud.wifi_muda ? s_mud.wifi_liga : s_cfg.wifi_ligado; }
-// A lista so existe com o Wi-Fi do no LIGADO de fato (depois do reinicio).
+// The list only exists once the node's Wi-Fi is actually ON (after a restart).
 static bool wf_lista_visivel(void) { return s_cfg.wifi_conhecido && s_cfg.wifi_ligado && wf_liga_visivel(); }
-// 0 = sem botoes, 1 = GRAVAR/DESCARTAR, 2 = NOVA REDE/TRAZER DO TAB5
+// 0 = no buttons, 1 = SAVE/DISCARD, 2 = NEW NETWORK/PULL FROM TAB5
 static int wf_botoes(void) { return ha_pendente() ? 1 : (wf_lista_visivel() ? 2 : 0); }
 
 static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg)
@@ -2696,7 +2701,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   s_assin_ant = assin;
 
   tab5_screen_clear(x0, a.y, larg, a.altura, TFT_BLACK);
-  tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE);
+  tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "BACK", d.color565(50, 55, 65), TFT_WHITE);
   tab5_texto(d, 3.6f);
   d.setTextDatum(middle_left);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -2730,14 +2735,14 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   if (wf_lista_visivel()) {
     tab5_texto(d, 2.4f);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    d.drawString("REDES  (toque para escolher)", x0 + 32, a.y + WF_LISTA_Y - 24);
+    d.drawString("NETWORKS  (tap to choose)", x0 + 32, a.y + WF_LISTA_Y - 24);
     const int n = mesh_wifi_no_n();
     const int cabe = (a.altura - WF_LISTA_Y - reserva) / RD_LIN;
     if (n == 0) {
       tab5_texto(d, 2.8f);
       d.setTextColor(TFT_DARKGREY, TFT_BLACK);
       char t0[64];
-      snprintf(t0, sizeof(t0), "nenhuma rede guardada - use NOVA REDE ou TRAZER DO TAB5");
+      snprintf(t0, sizeof(t0), "no saved networks - use NEW NETWORK or PULL FROM TAB5");
       cortar_ao_caber(d, t0, larg - 64);
       d.drawString(t0, x0 + 32, a.y + WF_LISTA_Y + 36);
     }
@@ -2767,7 +2772,7 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
     tab5_texto(d, 2.8f);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
     char t0[80];
-    snprintf(t0, sizeof(t0), "ligue o Wi-Fi e grave: depois de reiniciar, as redes aparecem aqui");
+    snprintf(t0, sizeof(t0), "turn on Wi-Fi and save: the networks show up here after it restarts");
     cortar_ao_caber(d, t0, larg - 64);
     d.drawString(t0, x0 + 32, a.y + WF_LISTA_Y + 10);
   }
@@ -2789,10 +2794,10 @@ static void desenhar_redes(lgfx::LovyanGFX& d, const area_t& a, int x0, int larg
   const bool pronto = s_cfg.state == MESH_CFG_PRONTO;
   if (botoes == 1) {
     tab5_botao(d, x0 + 24, by, bl, RD_BTN_A, "SAVE TO THE NODE", pronto ? TFT_GREENYELLOW : d.color565(50, 55, 65), pronto ? TFT_BLACK : TFT_DARKGREY);
-    tab5_botao(d, x0 + 48 + bl, by, bl, RD_BTN_A, "DESCARTAR", d.color565(50, 55, 65), TFT_WHITE);
+    tab5_botao(d, x0 + 48 + bl, by, bl, RD_BTN_A, "DISCARD", d.color565(50, 55, 65), TFT_WHITE);
   } else if (botoes == 2) {
-    tab5_botao(d, x0 + 24, by, bl, RD_BTN_A, "NOVA REDE", TFT_GREENYELLOW, TFT_BLACK);
-    tab5_botao(d, x0 + 48 + bl, by, bl, RD_BTN_A, "TRAZER DO TAB5", d.color565(50, 55, 65), TFT_WHITE);
+    tab5_botao(d, x0 + 24, by, bl, RD_BTN_A, "NEW NETWORK", TFT_GREENYELLOW, TFT_BLACK);
+    tab5_botao(d, x0 + 48 + bl, by, bl, RD_BTN_A, "PULL FROM TAB5", d.color565(50, 55, 65), TFT_WHITE);
   }
   d.setTextDatum(top_left);
 }
@@ -2823,7 +2828,7 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
                       : s_editando == ED_WIFI_SSID ? "node's Wi-Fi network (up to 32 letters)"
                       : "node's Wi-Fi password (8 to 64 letters)";
       char tit2[96];
-      if (s_editando == ED_WIFI_SENHA && s_mud.wifi_ssid[0]) { snprintf(tit2, sizeof(tit2), "senha da rede \"%s\" (8 a 64 letras)", s_mud.wifi_ssid); }
+      if (s_editando == ED_WIFI_SENHA && s_mud.wifi_ssid[0]) { snprintf(tit2, sizeof(tit2), "password for \"%s\" (8 to 64 characters)", s_mud.wifi_ssid); }
       else { snprintf(tit2, sizeof(tit2), "%s", tit); }
       cortar_ao_caber(d, tit2, larg - 48);
       d.drawString(tit2, x0 + 24, a.y + 24);
@@ -2854,7 +2859,7 @@ static void desenhar_config(lgfx::LovyanGFX& d, const area_t& a, int x0)
   const int ex = ex_min > x0 + 380 ? ex_min : x0 + 380;
   if (TUDO) {
     tab5_screen_clear(x0, a.y, larg, CFG_TOPO, TFT_BLACK);
-    if (s_grupo >= 0) { tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "VOLTAR", d.color565(50, 55, 65), TFT_WHITE); }
+    if (s_grupo >= 0) { tab5_botao(d, x0 + 24, a.y + 12, 200, 56, "BACK", d.color565(50, 55, 65), TFT_WHITE); }
     tab5_texto(d, 3.6f);
     d.setTextDatum(middle_left);
     d.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -2976,12 +2981,13 @@ static void cfg_tecla(int ac)
   sistema_pedir_redesenho();
 }
 
-// GRAVAR NO NO: valida o Wi-Fi pendente, manda a transacao e guarda a rede.
+// SAVE TO THE NODE: validates the pending Wi-Fi, sends the transaction, and saves the network.
 static void cfg_gravar(void)
 {
   if (s_cfg.state != MESH_CFG_PRONTO) { return; }
-  // Interruptor mexido sem rede nova: reenvia a rede atual COM a senha que
-  // guardamos, para a senha do no nao se perder na regravacao da secao.
+  // Switch toggled without a new network: resend the current network WITH
+  // the password we saved, so the node's password doesn't get lost when
+  // this section is re-saved.
   if (s_mud.wifi_muda && !s_mud.wifi_ssid[0] && s_cfg.wifi_ssid[0]) {
     for (int k = 0; k < mesh_wifi_no_n(); ++k) {
       mesh_wifi_rede_t r;
@@ -2995,13 +3001,13 @@ static void cfg_gravar(void)
       memset(&r, 0, sizeof(r));
     }
   }
-  if (s_mud.wifi_psk[0] && !s_mud.wifi_ssid[0]) { cfg_aviso("Wi-Fi: informe a rede E a senha"); return; }
-  if (s_mud.wifi_ssid[0] && !s_mud.wifi_psk[0] && !s_mud.wifi_aberta) { cfg_aviso("Wi-Fi: informe a rede E a senha"); return; }
+  if (s_mud.wifi_psk[0] && !s_mud.wifi_ssid[0]) { cfg_aviso("Wi-Fi: enter both the network AND the password"); return; }
+  if (s_mud.wifi_ssid[0] && !s_mud.wifi_psk[0] && !s_mud.wifi_aberta) { cfg_aviso("Wi-Fi: enter both the network AND the password"); return; }
   char nova_rede[33], nova_senha[65];
   snprintf(nova_rede, sizeof(nova_rede), "%s", s_mud.wifi_ssid);
   snprintf(nova_senha, sizeof(nova_senha), "%s", s_mud.wifi_psk);
   if (mesh_cfg_gravar(&s_mud)) {
-    // Guardada para escolher da proxima vez (cartao, senha cifrada).
+    // Saved to pick from next time (card, password encrypted).
     if (nova_rede[0]) { mesh_wifi_no_salvar(nova_rede, nova_senha); }
     memset(&s_mud, 0, sizeof(s_mud)); cfg_aviso(""); s_redes_msg[0] = 0;
   }
@@ -3027,13 +3033,13 @@ static void tocar_config(int x, int y)
     const bool bt_y = y >= by && y < by + RD_BTN_A;
     const bool bt_1 = bt_y && x >= bx && x < bx + bl;
     const bool bt_2 = bt_y && x >= bx + bl + 24 && x < bx + 2 * bl + 24;
-    if (y >= 12 && y < 68 && x >= bx && x < bx + 200) {                  // VOLTAR
+    if (y >= 12 && y < 68 && x >= bx && x < bx + 200) {                  // BACK
       s_redes_pg = false;
       lista_itens_mudaram(&s_l_cfg, cfg_n_itens());
       memset(s_cfg_pintada, 0, sizeof(s_cfg_pintada));
       pintura_pedir(&s_p);
       sistema_pedir_redesenho_completo();
-    } else if (y >= WF_TOG_Y && y < WF_TOG_Y + WF_TOG_H) {               // interruptor
+    } else if (y >= WF_TOG_Y && y < WF_TOG_Y + WF_TOG_H) {               // switch
       if (s_cfg.state != MESH_CFG_PRONTO || !s_cfg.wifi_conhecido) { return; }
       const bool novo = !wf_liga_visivel();
       s_mud.wifi_liga = novo;
@@ -3041,14 +3047,14 @@ static void tocar_config(int x, int y)
       if (!novo || !s_mud.wifi_muda) { memset(s_mud.wifi_ssid, 0, sizeof(s_mud.wifi_ssid)); memset(s_mud.wifi_psk, 0, sizeof(s_mud.wifi_psk)); s_mud.wifi_aberta = false; }
       s_redes_msg[0] = 0;
       sistema_pedir_redesenho();
-    } else if (botoes == 1 && bt_1) {                                    // GRAVAR NO NO
+    } else if (botoes == 1 && bt_1) {                                    // SAVE TO THE NODE
       cfg_gravar();
-    } else if (botoes == 1 && bt_2) {                                    // DESCARTAR
+    } else if (botoes == 1 && bt_2) {                                    // DISCARD
       memset(&s_mud, 0, sizeof(s_mud));
       s_redes_msg[0] = 0;
       pintura_pedir(&s_p);
       sistema_pedir_redesenho_completo();
-    } else if (botoes == 2 && bt_1) {                                    // NOVA REDE
+    } else if (botoes == 2 && bt_1) {                                    // NEW NETWORK
       s_redes_pg = false;
       memset(s_mud.wifi_psk, 0, sizeof(s_mud.wifi_psk));
       s_mud.wifi_aberta = false;
@@ -3057,11 +3063,11 @@ static void tocar_config(int x, int y)
       tecvirt_abrir(&s_kb_cfg);
       pintura_pedir(&s_p);
       sistema_pedir_redesenho_completo();
-    } else if (botoes == 2 && bt_2) {                                    // TRAZER DO TAB5
+    } else if (botoes == 2 && bt_2) {                                    // PULL FROM TAB5
       const int n = mesh_wifi_no_trazer_do_tab5();
       if (n < 0)       { snprintf(s_redes_msg, sizeof(s_redes_msg), "the Tab5 has no loaded networks (turn on the Tab5's Wi-Fi once)"); }
       else if (n == 0) { snprintf(s_redes_msg, sizeof(s_redes_msg), "nothing new: all the Tab5's networks are already here"); }
-      else             { snprintf(s_redes_msg, sizeof(s_redes_msg), "%d rede(s) trazida(s) do Tab5", n); }
+      else             { snprintf(s_redes_msg, sizeof(s_redes_msg), "%d network(s) pulled from the Tab5", n); }
       sistema_pedir_redesenho();
     } else if (wf_lista_visivel() && y >= WF_LISTA_Y && y < a.altura - RD_BTN_A - 14 - 14 - 40) {
       const int i = (y - WF_LISTA_Y) / RD_LIN;
@@ -3095,8 +3101,8 @@ static void tocar_config(int x, int y)
       pintura_pedir(&s_p);
       sistema_pedir_redesenho_completo();
     } else if (y >= ly && y < ly + 56 && x >= bx && x < bx + 320) {
-      if (s_limpar_ms && (tab5_agora_ms() - s_limpar_ms) < 4000) { s_limpar_ms = 0; mesh_diario_limpar(); }
-      else { s_limpar_ms = tab5_agora_ms() | 1u; }
+      if (s_limpar_ms && (tab5_now_ms() - s_limpar_ms) < 4000) { s_limpar_ms = 0; mesh_diario_limpar(); }
+      else { s_limpar_ms = tab5_now_ms() | 1u; }
       sistema_pedir_redesenho();
     }
     return;
@@ -3255,11 +3261,11 @@ static void tocar_config(int x, int y)
       cfg_aviso(mesh_cfg_acertar_hora() ? "node's clock set" : "the Tab5 does not know the time yet");
       return;
     case RC_REINICIAR:
-      if (s_reiniciar_ms && (tab5_agora_ms() - s_reiniciar_ms) < 4000) {
+      if (s_reiniciar_ms && (tab5_now_ms() - s_reiniciar_ms) < 4000) {
         s_reiniciar_ms = 0;
         cfg_aviso(mesh_cfg_reiniciar() ? "" : "could not restart");
       } else {
-        s_reiniciar_ms = tab5_agora_ms();
+        s_reiniciar_ms = tab5_now_ms();
         sistema_pedir_redesenho();
       }
       return;

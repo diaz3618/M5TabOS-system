@@ -257,7 +257,7 @@ static void anotar_envio(uint32_t id, uint32_t para)
   s_prox_envio = (s_prox_envio + 1) % MESH_MAX_ENVIOS;
   e->id     = id;
   e->para   = para;
-  e->em_ms  = tab5_agora_ms();
+  e->em_ms  = tab5_now_ms();
   e->state = MESH_ENVIANDO;
   e->erro   = 0;
   s_envios_ver++;
@@ -557,7 +557,7 @@ static uint32_t s_epoch_ref_ms = 0;       // nosso uptime quando ele chegou
 uint32_t tab5_mesh_epoch(void)
 {
   if (s_epoch_ref == 0) { return 0; }
-  return s_epoch_ref + (tab5_agora_ms() - s_epoch_ref_ms) / 1000;
+  return s_epoch_ref + (tab5_now_ms() - s_epoch_ref_ms) / 1000;
 }
 
 // So aceita carimbo que ADIANTE o relogio. Assim um last_heard antigo, do dump
@@ -568,7 +568,7 @@ static void marcar_epoch(uint32_t carimbo)
   const uint32_t agora = tab5_mesh_epoch();
   if (carimbo <= agora) { return; }
   s_epoch_ref    = carimbo;
-  s_epoch_ref_ms = tab5_agora_ms();
+  s_epoch_ref_ms = tab5_now_ms();
 }
 
 // ---------------------------------------------------------------------------
@@ -597,27 +597,27 @@ static uint32_t s_vivo_ref_ms  = 0;
 
 static bool trafego_ao_vivo(void)
 {
-  return s_config_ok_ms != 0 && (tab5_agora_ms() - s_config_ok_ms) > QUEUE_DRENADA_MS;
+  return s_config_ok_ms != 0 && (tab5_now_ms() - s_config_ok_ms) > QUEUE_DRENADA_MS;
 }
 
 static void marcar_hora_viva(uint32_t carimbo)
 {
   if (carimbo < EPOCH_MINIMO || !trafego_ao_vivo()) { return; }
   s_vivo_ref    = carimbo;
-  s_vivo_ref_ms = tab5_agora_ms();
+  s_vivo_ref_ms = tab5_now_ms();
 }
 
 uint32_t tab5_mesh_hora_viva(void)
 {
   const uint32_t ref = s_vivo_ref, ms = s_vivo_ref_ms;
-  if (ref == 0 || (tab5_agora_ms() - ms) > HORA_VIVA_VALE_MS) { return 0; }
-  return ref + (tab5_agora_ms() - ms) / 1000;
+  if (ref == 0 || (tab5_now_ms() - ms) > HORA_VIVA_VALE_MS) { return 0; }
+  return ref + (tab5_now_ms() - ms) / 1000;
 }
 
 static void travar(void)   { if (s_trava) xSemaphoreTake(s_trava, portMAX_DELAY); }
 static void destravar(void){ if (s_trava) xSemaphoreGive(s_trava); }
 
-bool     tab5_mesh_no_ar(void)       { return (tab5_agora_ms() - s_ultimo_quadro_ms) < SILENCIO_MS
+bool     tab5_mesh_no_ar(void)       { return (tab5_now_ms() - s_ultimo_quadro_ms) < SILENCIO_MS
                                            && s_ultimo_quadro_ms != 0; }
 
 // HA QUANTO TEMPO O RADIO NAO FALA, em ms. UINT32_MAX = nunca falou.
@@ -642,9 +642,9 @@ uint32_t tab5_mesh_silencio_ms(void)
     // lento para reconectar (boot frio, ruido) cairia direto no mesmo loop
     // de reinicio a cada 2s que o GPS mostrou. Contar a partir de QUANDO O
     // SERVICO SUBIU, e nao um sentinela fixo, fecha o buraco.
-    return s_servico_ativo ? (tab5_agora_ms() - s_iniciado_em_ms) : UINT32_MAX;
+    return s_servico_ativo ? (tab5_now_ms() - s_iniciado_em_ms) : UINT32_MAX;
   }
-  return tab5_agora_ms() - s_ultimo_quadro_ms;
+  return tab5_now_ms() - s_ultimo_quadro_ms;
 }
 uint32_t tab5_mesh_meu_numero(void)  { return s_meu_num; }
 const char* tab5_mesh_firmware(void) { return s_firmware; }
@@ -702,7 +702,7 @@ uint32_t tab5_mesh_despejos(void) { return s_despejos; }
 static int32_t idade_do_no(const mesh_no_t& no)
 {
   const uint32_t ep = tab5_mesh_epoch();
-  if (no.visto_local_ms != 0) { return (int32_t)((tab5_agora_ms() - no.visto_local_ms) / 1000); }
+  if (no.visto_local_ms != 0) { return (int32_t)((tab5_now_ms() - no.visto_local_ms) / 1000); }
   if (no.visto_em >= EPOCH_MINIMO && ep > no.visto_em) { return (int32_t)(ep - no.visto_em); }
   return -1;
 }
@@ -739,14 +739,14 @@ static uint32_t s_ordem_ms = 0;
 
 static int ordem_nos(void)
 {
-  if (s_ordem_ver == s_nos_ver && (tab5_agora_ms() - s_ordem_ms) < 1000) { return s_ordem_n; }
+  if (s_ordem_ver == s_nos_ver && (tab5_now_ms() - s_ordem_ms) < 1000) { return s_ordem_n; }
   // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso da internet a
   // versao muda a cada pacote, e a pagina de nos pede uma linha de cada vez -
   // eram varias ordenacoes de 256 nos por desenho. Um quarto de segundo de
   // atraso na ordem nao se ve; o processamento, sim.
-  if (s_ordem_ver != UINT32_MAX && (tab5_agora_ms() - s_ordem_ms) < 250) { return s_ordem_n; }
+  if (s_ordem_ver != UINT32_MAX && (tab5_now_ms() - s_ordem_ms) < 250) { return s_ordem_n; }
   s_ordem_ver = s_nos_ver;
-  s_ordem_ms  = tab5_agora_ms();
+  s_ordem_ms  = tab5_now_ms();
 
   // Tres faixas:
   //   0 - o nosso no;
@@ -2804,7 +2804,7 @@ static void avisar_nos(void)
   // E na rede do no ate 4 por segundo: a ponte MQTT tambem chega em rajada.
   static uint32_t ultimo_ms[2] = { 0, 0 };
   const int k = (s_rede_rx == MESH_REDE_INTERNET) ? 1 : 0;
-  const uint32_t t = tab5_agora_ms();
+  const uint32_t t = tab5_now_ms();
   if (t - ultimo_ms[k] < (k ? 1000u : 250u)) { return; }
   ultimo_ms[k] = t;
   sistema_avisar(AVISO_MESH_NOS);
@@ -3014,7 +3014,7 @@ static void ler_packet(pb_leitor_t l)
       // o node_info chega em rajada no dump de configuracao, para TODOS os nos
       // de uma vez, e carimbar todos ali faria a malha inteira parecer ter sido
       // ouvida agora. Pacote e diferente - ele so chega quando o no falou.
-      no->visto_local_ms = tab5_agora_ms();
+      no->visto_local_ms = tab5_now_ms();
       if (quando >= EPOCH_MINIMO) { no->visto_em = quando; }
       fixar_se_pelo_ar(no);   // ouvido pelo ar agora: ganha o lugar no topo e a protecao do despejo
       ++s_nos_ver;
@@ -3099,7 +3099,7 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
     // terminou" de "terminou e nao chega mensagem", e o conserto e outro.
     uint64_t v;
     if (pb_varint(&l, &v)) {
-      s_config_ok_ms = tab5_agora_ms();   // a hora ao vivo conta daqui (ver marcar_hora_viva)
+      s_config_ok_ms = tab5_now_ms();   // a hora ao vivo conta daqui (ver marcar_hora_viva)
       // A configuracao dos canais chegou inteira: s_canais_sujos ja esta de
       // pe, e a carona da tarefa "cartao" grava em ate 1 s (fora do radio).
       mesh_admin_fim_dump();         // a configuracao do no tambem
@@ -3348,7 +3348,7 @@ void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou)
   // pedido e o "so configuracao", sem a NodeDB inteira atras.
   if (reiniciou) { s_acordar_proxima = true; s_so_config = false; }
   else           { s_so_config = true; }
-  s_reapresentar_ms = (tab5_agora_ms() + ms) | 1u;
+  s_reapresentar_ms = (tab5_now_ms() + ms) | 1u;
 }
 
 static void pedir_apresentacao(void)
@@ -3424,10 +3424,10 @@ static void laco_envios(void)
   if (!s_fila_envio) { return; }
   for (int k = 0; k < 4; ++k) {
     if (xQueuePeek(s_fila_envio, &e, 0) != pdTRUE) { return; }
-    if (!e.internet && ultimo_ms && tab5_agora_ms() - ultimo_ms < 2100) { return; }
+    if (!e.internet && ultimo_ms && tab5_now_ms() - ultimo_ms < 2100) { return; }
     xQueueReceive(s_fila_envio, &e, 0);
     const bool ok = e.internet ? mesh_mqtt_internet_enviar(e.d, e.n) : enlace_enviar(e.d, e.n);
-    if (!e.internet) { ultimo_ms = tab5_agora_ms(); }
+    if (!e.internet) { ultimo_ms = tab5_now_ms(); }
     if (!ok) {
       // O enlace caiu entre o toque e a vez dela: falhou, e a tela diz.
       ESP_LOGW(TAG, "pacote %08lX: o enlace recusou", (unsigned long)e.id);
@@ -3546,7 +3546,7 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   // A HORA DO ENVIO, em UTC como a rx_time do radio. Era 0 - e
   // 0 no fuso -3 vira 31/12/1969 na tela. Relogio ainda nao acertado (sem GPS
   // nem malha desde o boot) continua 0 = "sem data", que a tela sabe tratar.
-  const uint32_t quando = tab5_hora_epoch();
+  const uint32_t quando = tab5_time_epoch();
   guardar_msg(s_meu_num, para, canal, enviado, quando, 0, 0, id, false, MESH_SALTOS_DESCONHECIDO);
   lembrar_carimbo(id, quando);   // corrigido se o relogio saltar (ao_saltar_relogio)
   destravar();
@@ -3604,7 +3604,7 @@ static bool enviar_posicao(void)
 
   uint8_t pos[32];
   pb_escritor_t w = pb_escritor(pos, sizeof(pos));
-  mesh_pb_posicao(&w, lat, lon, (int32_t)g.altitude_m, tab5_hora_epoch());
+  mesh_pb_posicao(&w, lat, lon, (int32_t)g.altitude_m, tab5_time_epoch());
 
   // Para o no: sem saltos (nao sai dele). Difusao: 3 saltos (ver tab5_mesh_enviar).
   const mesh_pb_envelope_t env = { com_no ? s_meu_num : MESH_PB_DIFUSAO, -1, PORT_POSICAO, pos,
@@ -3640,7 +3640,7 @@ static void informar_no_ao_mqtt(void)
 static void mesh_na_carona(void)
 {
   if (!s_servico_ativo) { return; }
-  const uint32_t t = tab5_agora_ms();
+  const uint32_t t = tab5_now_ms();
   static uint32_t proximos_canais = 0, proxima_nodedb = 600000;
   if (s_canais_sujos && (int32_t)(t - proximos_canais) >= 0) {
     proximos_canais = t + 15000;
@@ -3699,7 +3699,7 @@ static void vTaskMesh(void*)
     // (o prazo do uart_read_bytes la embaixo); bem dentro dos 5s do watchdog.
     esp_task_wdt_reset();
 
-    const uint32_t t = tab5_agora_ms();
+    const uint32_t t = tab5_now_ms();
 
     // Apresentacao SO quando o enlace esta mudo. Pedir de novo com o enlace
     // vivo faz o radio REINICIAR o download de configuracao inteiro - foi o que
@@ -3878,7 +3878,7 @@ static void vTaskMesh(void*)
           travar();
           s_c_quadros++;
           ler_from_radio(quadro, n);
-          s_ultimo_quadro_ms = tab5_agora_ms();
+          s_ultimo_quadro_ms = tab5_now_ms();
           destravar();
         }
       } else if (atual == MQ_PROXY) {
@@ -3911,7 +3911,7 @@ static void vTaskMesh(void*)
         travar();
         s_c_quadros++;
         ler_from_radio(quadro, n);
-        s_ultimo_quadro_ms = tab5_agora_ms();
+        s_ultimo_quadro_ms = tab5_now_ms();
         destravar();
       }
       continue;
@@ -3966,7 +3966,7 @@ static void vTaskMesh(void*)
           travar();
           s_c_quadros++;
           ler_from_radio(quadro, usado);
-          s_ultimo_quadro_ms = tab5_agora_ms();
+          s_ultimo_quadro_ms = tab5_now_ms();
           destravar();
           estado = 0;
         }
@@ -4164,7 +4164,7 @@ static void iniciar_via(uint8_t via)
   tab5_mutex_criar(&s_tx);
   if (!s_fila_envio) { s_fila_envio = xQueueCreateWithCaps(MESH_FILA_ENVIO, sizeof(envio_fila_t), MALLOC_CAP_SPIRAM); }
   if (s_fila_envio) { xQueueReset(s_fila_envio); }
-  tab5_hora_ao_saltar(ao_saltar_relogio);   // idempotente
+  tab5_time_on_jump(ao_saltar_relogio);   // idempotente
 
 
   s_notif = notif_registrar("Meshtastic");
@@ -4257,7 +4257,7 @@ static void iniciar_via(uint8_t via)
   // toque; acima do registro (1), porque perder byte da serial e irreversivel.
   // ATIVO ANTES DE A TAREFA EXISTIR: com prioridade 3 ela comeca na hora,
   // antes de quem chamou (a sondagem, prioridade 1) voltar - e ja envia.
-  s_iniciado_em_ms = tab5_agora_ms();   // ver o aviso em tab5_mesh_silencio_ms()
+  s_iniciado_em_ms = tab5_now_ms();   // ver o aviso em tab5_mesh_silencio_ms()
   s_servico_ativo  = true;
   // 6 KB: com 4 KB o monitor registrou no minimo 264 bytes livres em uso real.
   if (!parada_preparar(&s_parada)

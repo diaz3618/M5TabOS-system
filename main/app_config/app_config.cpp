@@ -17,7 +17,7 @@
 // atravessa todos (settings.h).
 
 #include <math.h>
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "app.h"
 #include <cmath>
 #include "settings.h"
@@ -718,9 +718,9 @@ static void wf_item_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int largu
   texto(d, tx, y + 12, 30, true, uso ? TFT_GREENYELLOW : TFT_WHITE, v.ssid);
   char linha[80], dist[12];
   tab5_signal_distance_text(v.rssi, TAB5_SIGNAL_P1M_WIFI, dist, sizeof(dist));
-  snprintf(linha, sizeof(linha), "%s%s%d dBm %s  ·  canal %u  ·  %s", uso ? "conectada  ·  " : "",
-           (!uso && v.known) ? "conhecida  ·  " : "", (int)v.rssi, dist, (unsigned)v.channel,
-           v.open ? "aberta" : "com senha");
+  snprintf(linha, sizeof(linha), "%s%s%d dBm %s  ·  channel %u  ·  %s", uso ? "connected  ·  " : "",
+           (!uso && v.known) ? "known  ·  " : "", (int)v.rssi, dist, (unsigned)v.channel,
+           v.open ? "open" : "password-protected");
   texto(d, tx, y + 52, 22, false, cor_sub(d), linha);
   d.drawFastHLine(tx, y + WF_ITEM_A - 1, x0 + largura - tx, cor_linha(d));
 }
@@ -745,9 +745,10 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool tudo)
   const int r = tab5_wifi_rssi();
   if (con && r != TAB5_WIFI_RSSI_UNKNOWN) { snprintf(det, sizeof(det), "%s  ·  %d dBm", tab5_wifi_ip(), r); }
   else if (con)                                { snprintf(det, sizeof(det), "%s", tab5_wifi_ip()); }
-  else                                         { snprintf(det, sizeof(det), "%d rede(s) conhecida(s)", tab5_wifi_known_count()); }
-  // O texto digitado NAO entra na assinatura: cada letra repintava a pagina
-  // inteira e o teclado junto. Agora a letra repinta so o campo.
+  else                                         { snprintf(det, sizeof(det), "%d known network(s)", tab5_wifi_known_count()); }
+  // The typed text does NOT enter the signature: every letter used to
+  // repaint the whole page plus the keyboard. Now a letter repaints only
+  // the field.
   snprintf(assin, sizeof(assin), "%s|%s|%d|%d|%d|%s|%d", sub, det, (int)ajustes_wifi(), (int)tab5_wifi_searching(),
            s_wf_n, s_aviso, (int)s_wf_senha);
   const bool mudou = pintura_mudou_s(&s_p, s_assin, sizeof(s_assin), assin) || tudo;
@@ -885,7 +886,7 @@ static void toque_wifi(int tx, int ty)
   const int i = lista_item_tocado(&s_l_wifi, tx, ty, &dy);
   if (i < 0 || i >= s_wf_n) { return; }
   const tab5_wifi_seen_t& v = s_wf[i];
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   if (wf_em_uso(v.ssid)) {
     // Em uso: o primeiro toque avisa, o segundo (em 4 s) esquece a rede.
     if (strcmp(s_wf_esquecer, v.ssid) == 0 && agora - s_wf_esquecer_ms < 4000) {

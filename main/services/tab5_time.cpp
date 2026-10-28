@@ -3,6 +3,7 @@
 #include "tab5_gps.hpp"
 #include "tab5_mesh.hpp"
 #include "tab5_wifi.hpp"
+#include "settings.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -42,7 +43,7 @@ static nivel_t  s_nivel          = NIVEL_NENHUM;
 static uint32_t s_ultima_sync_ms = 0;
 
 #define MAX_ASSINANTES 4
-static tab5_hora_salto_cb s_assinantes[MAX_ASSINANTES];
+static tab5_time_jump_cb s_assinantes[MAX_ASSINANTES];
 
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ static bool              s_sntp_de_pe = false;
 
 extern "C" void sntp_sync_time(struct timeval* tv)
 {
-  s_ntp_ms    = tab5_agora_ms();
+  s_ntp_ms    = tab5_now_ms();
   s_ntp_epoch = (uint32_t)tv->tv_sec;
 }
 
@@ -76,8 +77,8 @@ static void garantir_sntp(void)
 static uint32_t hora_ntp(void)
 {
   const uint32_t ms = s_ntp_ms, ep = s_ntp_epoch;
-  if (ms == 0 || ep < EPOCH_MINIMO || (tab5_agora_ms() - ms) > NTP_VALIDO_MS) { return 0; }
-  return ep + (tab5_agora_ms() - ms) / 1000;
+  if (ms == 0 || ep < EPOCH_MINIMO || (tab5_now_ms() - ms) > NTP_VALIDO_MS) { return 0; }
+  return ep + (tab5_now_ms() - ms) / 1000;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ static uint32_t hora_gps(void)
 static bool pode_usar(nivel_t nivel)
 {
   if (nivel > s_nivel) { return true; }   // fonte melhor: na hora
-  const uint32_t desde = tab5_agora_ms() - s_ultima_sync_ms;
+  const uint32_t desde = tab5_now_ms() - s_ultima_sync_ms;
   if (nivel == s_nivel) { return desde >= RESSINCRONIZAR_MS; }
   return desde >= VALIDADE_MS;            // a melhor sumiu faz tempo
 }
@@ -152,15 +153,15 @@ static bool acertar(uint32_t epoch, nivel_t nivel)
     // HORA LOCAL no log, a mesma que a barra mostra. Em UTC ("18:19Z") ela
     // parecia errada para quem le, que esta 3 h atras.
     struct tm t = { };
-    tab5_hora_local(epoch, &t);
+    tab5_local_time(epoch, &t);
     char ajuste[48];
     descrever_ajuste(antes, delta, ajuste, sizeof(ajuste));
     ESP_LOGI(TAG, "hora acertada %s: %02d/%02d/%04d %02d:%02d:%02d (UTC%+d) - %s",
              PELO_NIVEL[nivel], t.tm_mday, t.tm_mon + 1, t.tm_year + 1900,
-             t.tm_hour, t.tm_min, t.tm_sec, TAB5_FUSO_S / 3600, ajuste);
+             t.tm_hour, t.tm_min, t.tm_sec, (int)(tab5_utc_offset_s() / 3600), ajuste);
   }
   s_nivel = nivel;
-  s_ultima_sync_ms = tab5_agora_ms();
+  s_ultima_sync_ms = tab5_now_ms();
 
   // O relogio velho so e comparavel se era uma hora de verdade: saindo de
   // 1970 (RTC nunca acertado) nada foi carimbado - carimbo abaixo do minimo
@@ -173,7 +174,7 @@ static bool acertar(uint32_t epoch, nivel_t nivel)
   return true;
 }
 
-void tab5_hora_sincronizar(void)
+void tab5_time_sync(void)
 {
   garantir_sntp();
 
@@ -187,9 +188,9 @@ void tab5_hora_sincronizar(void)
   if (mesh > EPOCH_MINIMO && pode_usar(NIVEL_MESH)) { acertar(mesh, NIVEL_MESH); }
 }
 
-const char* tab5_hora_fonte(void) { return NOME_NIVEL[s_nivel]; }
+const char* tab5_time_source(void) { return NOME_NIVEL[s_nivel]; }
 
-void tab5_hora_ao_saltar(tab5_hora_salto_cb cb)
+void tab5_time_on_jump(tab5_time_jump_cb cb)
 {
   for (int i = 0; i < MAX_ASSINANTES; ++i) {
     if (s_assinantes[i] == cb) { return; }
@@ -198,13 +199,15 @@ void tab5_hora_ao_saltar(tab5_hora_salto_cb cb)
   ESP_LOGW(TAG, "assinantes de salto esgotados");
 }
 
-void tab5_hora_local(uint32_t epoch_utc, struct tm* out)
+int32_t tab5_utc_offset_s(void) { return (int32_t)settings_utc_offset_hours() * 3600; }
+
+void tab5_local_time(uint32_t epoch_utc, struct tm* out)
 {
-  const time_t deslocado = (time_t)epoch_utc + TAB5_FUSO_S;
+  const time_t deslocado = (time_t)epoch_utc + tab5_utc_offset_s();
   gmtime_r(&deslocado, out);
 }
 
-void tab5_hora_nome_do_dia(uint32_t epoch_utc, const char* prefixo, const char* sufixo,
+void tab5_day_filename(uint32_t epoch_utc, const char* prefixo, const char* sufixo,
                            char* out, size_t tam)
 {
   if (epoch_utc < 1577836800u) {   // 2020-01-01: antes disso o RTC nunca foi acertado
@@ -212,6 +215,6 @@ void tab5_hora_nome_do_dia(uint32_t epoch_utc, const char* prefixo, const char* 
     return;
   }
   struct tm lt;
-  tab5_hora_local(epoch_utc, &lt);
+  tab5_local_time(epoch_utc, &lt);
   snprintf(out, tam, "%s%04d-%02d-%02d%s", prefixo, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday, sufixo);
 }

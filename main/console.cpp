@@ -1,5 +1,5 @@
 #include "console.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 
 #include <stdio.h>
 #include <string.h>
@@ -1267,7 +1267,7 @@ static void vTaskConcorrencia(void*)
     ++s_conc_leituras;
     (void)hora;
 
-    const uint32_t agora = tab5_agora_ms();
+    const uint32_t agora = tab5_now_ms();
     if (agora - ultimo_log >= 1000) {
       ultimo_log = agora;
       printf("[concorrencia] %lu leituras | gps valida=%d lat=%.5f lon=%.5f "
@@ -1341,7 +1341,7 @@ static void vTaskSimMapa(void*)
     nmea_position_t pos = tab5_gps_position();
     ++s_sim_leituras[0];
 
-    const uint32_t agora = tab5_agora_ms();
+    const uint32_t agora = tab5_now_ms();
     if (agora - ultimo_log >= 1000) {
       ultimo_log = agora;
       printf("[app-mapa]  pedido #%-6lu -> gps valida=%d lat=%.5f lon=%.5f\n",
@@ -1360,7 +1360,7 @@ static void vTaskSimNivel(void*)
     tab5_imu_latest(&d);
     ++s_sim_leituras[1];
 
-    const uint32_t agora = tab5_agora_ms();
+    const uint32_t agora = tab5_now_ms();
     if (agora - ultimo_log >= 1000) {
       ultimo_log = agora;
       printf("[app-nivel] pedido #%-6lu -> imu valida=%d ax=%.2f ay=%.2f az=%.2f\n",

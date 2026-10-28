@@ -18,7 +18,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "tab5_monitor.hpp"   // tab5_mem_marco
 #include <cstdio>
 #include <cstring>
@@ -311,7 +311,7 @@ static void anotar(const ble_addr_t* a, int8_t rssi, const uint8_t* data, uint8_
     s_rssi_publicado[i] = v->rssi;
     novo = true;
   }
-  v->seen_ms = tab5_agora_ms();
+  v->seen_ms = tab5_now_ms();
   if (campos) {
     // O name vem na resposta de varredura, o service no anuncio: cada relato
     // traz uma parte, e o que ja se sabe nao e apagado por um relato sem ela.

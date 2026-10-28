@@ -11,7 +11,7 @@
 #include "esp_timer.h"
 #include "app.h"          // sistema_avisar
 #include "tab5_gps.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "settings.h"       // AJUSTES_MESH_BLUETOOTH
 
 static const char* TAG = "mesh_admin";
@@ -122,7 +122,7 @@ void mesh_admin_guardar_aviso(const uint8_t* b, size_t n)
   ESP_LOGW(TAG, "aviso do no: %s", msg);
   taskENTER_CRITICAL(&s_mux);
   memcpy(s_aviso, msg, sizeof(s_aviso));
-  s_aviso_ms = tab5_agora_ms() | 1u;
+  s_aviso_ms = tab5_now_ms() | 1u;
   taskEXIT_CRITICAL(&s_mux);
   ++s_versao;
   sistema_avisar(AVISO_MESH_NOS);
@@ -183,7 +183,7 @@ static int32_t precisao_de(const bruto_t& c)
 
 static mesh_cfg_estado_t estado(void)
 {
-  if (s_gravando && (tab5_agora_ms() - s_gravando_ms) > GRAVANDO_PRAZO_MS) {
+  if (s_gravando && (tab5_now_ms() - s_gravando_ms) > GRAVANDO_PRAZO_MS) {
     ESP_LOGW(TAG, "o no nao se reapresentou em %d s depois de gravar", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
   }
@@ -471,7 +471,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     }
     ESP_LOGI(TAG, "secao MQTT enviada sem transacao (Bluetooth) - o no grava, desliga o BLE e reinicia");
     s_gravando = true;
-    s_gravando_ms = tab5_agora_ms();
+    s_gravando_ms = tab5_now_ms();
     ++s_versao;
     tab5_mesh_interno_reapresentar_em(15000, true);
     return true;
@@ -490,7 +490,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
   }
   ESP_LOGI(TAG, "transacao enviada (%d mensagem(ns)) - o no grava e reinicia", n_msgs);
   s_gravando = true;
-  s_gravando_ms = tab5_agora_ms();
+  s_gravando_ms = tab5_now_ms();
   ++s_versao;
   // Pela serial o no reiniciado nao fala sozinho: pedir a configuracao depois
   // do boot (o BLE reconecta e pede sozinho; pedir de novo nao faz mal).
@@ -507,7 +507,7 @@ bool mesh_cfg_posicao_fixa_do_gps(void)
   uint8_t pos[32];
   pb_escritor_t wp = pb_escritor(pos, sizeof(pos));
   mesh_pb_posicao(&wp, (int32_t)(g.lat * 1e7), (int32_t)(g.lon * 1e7), (int32_t)g.altitude_m,
-                  tab5_hora_epoch());
+                  tab5_time_epoch());
   uint8_t a[48];
   const size_t n = admin_msg(a, sizeof(a), ADM_SET_FIXED_POSITION, &wp);
   const bool ok = n && tab5_mesh_interno_admin(a, n);
@@ -527,7 +527,7 @@ bool mesh_cfg_tirar_posicao_fixa(void)
 bool mesh_cfg_acertar_hora(void)
 {
   if (estado() != MESH_CFG_PRONTO) { return false; }
-  const uint32_t agora = tab5_hora_epoch();
+  const uint32_t agora = tab5_time_epoch();
   if (!agora) { ESP_LOGW(TAG, "hora do Tab5 ainda nao acertada"); return false; }
   uint8_t a[8];
   pb_escritor_t w = pb_escritor(a, sizeof(a));
@@ -541,7 +541,7 @@ bool mesh_cfg_reiniciar(void)
   const bool ok = admin_varint(ADM_REBOOT_SECONDS, 5);
   if (ok) {
     s_gravando = true;   // mesma espera: o no some e volta
-    s_gravando_ms = tab5_agora_ms();
+    s_gravando_ms = tab5_now_ms();
     ++s_versao;
     tab5_mesh_interno_reapresentar_em(15000, true);
   }

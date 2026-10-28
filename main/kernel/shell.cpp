@@ -740,10 +740,10 @@ static char s_nav_temp[16] = "";  // a temperatura que a faixa mostra (com app a
 // acertado (sem RTC valido nem rede) - melhor que uma hora de 1970.
 static void hora_agora(char* out, size_t n)
 {
-  const uint32_t t = tab5_hora_epoch();
+  const uint32_t t = tab5_time_epoch();
   if (!t) { snprintf(out, n, "--:--"); return; }
   struct tm lt;
-  tab5_hora_local(t, &lt);
+  tab5_local_time(t, &lt);
   snprintf(out, n, "%02d:%02d", lt.tm_hour, lt.tm_min);
 }
 
@@ -1456,10 +1456,10 @@ static void data_por_extenso(char* out, size_t n)
                                        "Thursday", "Friday", "Saturday" };
   static const char* const MESES[] = { "January", "February", "March", "April", "May", "June",
                                        "July", "August", "September", "October", "November", "December" };
-  const uint32_t t = tab5_hora_epoch();
+  const uint32_t t = tab5_time_epoch();
   if (!t) { snprintf(out, n, " "); return; }
   struct tm lt;
-  tab5_hora_local(t, &lt);
+  tab5_local_time(t, &lt);
   snprintf(out, n, "%s, %s %d", DIAS[lt.tm_wday % 7], MESES[lt.tm_mon % 12], lt.tm_mday);
 }
 

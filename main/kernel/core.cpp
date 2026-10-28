@@ -913,7 +913,7 @@ void sistema_som_devolver_pinos(void)
 void sistema_beep(float hz, uint32_t ms)
 {
   if (s_som_reservado) { return; }   // pinos com o USB (ver acima)
-  const uint32_t t = tab5_agora_ms();
+  const uint32_t t = tab5_now_ms();
   if (!M5.Speaker.isRunning()) { s_som_quente_em = t + SOM_AQUECER_MS; }
   const int32_t falta = (int32_t)(s_som_quente_em - t);
 
@@ -1367,7 +1367,7 @@ static void desenhar_conteudo(bool limpar_area, bool completo_para_apps,
   // desenhar() cairia na mesma armadilha - o conserto e aqui, nao em cada app.
   if (limpar_area) { s_sujo_layout = false; }
   s_sujo_dados  = false;
-  s_ultimo_desenho = tab5_agora_ms();
+  s_ultimo_desenho = tab5_now_ms();
 
   // A MARCA MORRE COM A PASSADA. Ela afirma "este retangulo esta desta cor
   // AGORA"; depois que o app desenhou por cima, deixa de ser verdade. Deixa-la
@@ -1683,7 +1683,7 @@ static void vTaskSondagemGrove(void*)
   } else {
     if (reiniciar) {
       s_sondas_extra = 0;          // reabre as tentativas automaticas
-      s_grove_desde  = tab5_agora_ms(); // ... a partir de AGORA, nao do boot
+      s_grove_desde  = tab5_now_ms(); // ... a partir de AGORA, nao do boot
     }
     if (ajustes_grove()) {
       const grove_type_t achado = tab5_grove_detect();
@@ -1730,7 +1730,7 @@ static void iniciar_sondagem_em_fundo(bool reiniciar_contagem)
 static void vTaskInterface(void *pvParameters)
 {
   (void)pvParameters;
-  s_ultimo_toque = tab5_agora_ms();
+  s_ultimo_toque = tab5_now_ms();
 
   // NO WATCHDOG DE VERDADE, e nao so o da tarefa ociosa.
   //
@@ -1835,9 +1835,9 @@ static void vTaskInterface(void *pvParameters)
     const int64_t volta_t0 = esp_timer_get_time();
     ETAPA("toque (M5.update, I2C)");
     // Navegacao travada = teclado (ou captura) lendo o toque por nivel.
-    ajustar_leitura_do_toque(s_nav_travada && (tab5_agora_ms() - s_ultimo_toque) < 500);
+    ajustar_leitura_do_toque(s_nav_travada && (tab5_now_ms() - s_ultimo_toque) < 500);
     M5.update();
-    const uint32_t t = tab5_agora_ms();
+    const uint32_t t = tab5_now_ms();
 
     atender_pedido_de_relogio();
 
@@ -2028,7 +2028,7 @@ static void vTaskInterface(void *pvParameters)
       // regra de so a interface tocar o barramento. So escreve de fato a
       // cada ~10min (ver RESSINCRONIZAR_MS), a chamada 1x/s e so para
       // perceber uma fonte nova assim que ela aparecer.
-      tab5_hora_sincronizar();
+      tab5_time_sync();
       vigiar_mesh_internet(t);
     }
 
@@ -2136,7 +2136,7 @@ static void vTaskInterface(void *pvParameters)
           // CONFIRMADA a luz sobe: a primeira coisa que o olho ve ja e o
           // conteudo certo. comp_painel_novo() e consumido aqui para o topo
           // do loop nao pedir um segundo redesenho completo.
-          const uint32_t t0 = tab5_agora_ms();
+          const uint32_t t0 = tab5_now_ms();
           bloqueio_ao_ligar_tela();
           comp_painel_novo();
           desenhar_barra_status(tela_virtual(), true);
@@ -2144,7 +2144,7 @@ static void vTaskInterface(void *pvParameters)
           comp_apresentar();
           comp_esperar_troca();
           ESP_LOGI(TAG, "acordando: redesenho levou %lu ms",
-                   (unsigned long)(tab5_agora_ms() - t0));
+                   (unsigned long)(tab5_now_ms() - t0));
 
           // A rampa de brilho bloqueia esta tarefa; a animacao da tela de
           // bloqueio avanca um quadro a cada degrau para nao ficar congelada.
@@ -2156,7 +2156,7 @@ static void vTaskInterface(void *pvParameters)
           // rede secundaria (a bandeira acima e a principal), e agora ela conta
           // do momento em que a tela ficou utilizavel - nao de quando o
           // despertar comecou.
-          s_acordou_em = tab5_agora_ms();
+          s_acordou_em = tab5_now_ms();
 
           // REDE DE SEGURANCA, AGORA SO QUANDO ELA FAZ FALTA.
           //
@@ -2647,7 +2647,7 @@ static void vTaskInterface(void *pvParameters)
     // e o aparelho reinicia mesmo funcionando bem.
     esp_task_wdt_reset();
     s_voltas   = s_voltas + 1;   // escritor unico: esta tarefa
-    s_volta_ms = tab5_agora_ms();
+    s_volta_ms = tab5_now_ms();
     ETAPA("esperando evento");
 
     // A espera na notificacao (ulTaskNotifyTake) no lugar do vTaskDelay() de sempre - acorda no MESMO
@@ -2772,7 +2772,7 @@ void sistema_iniciar(void)
 // soltas, e um valor um passo atrasado nao muda o diagnostico.
 void sistema_diag_interface(sistema_diag_t* d)
 {
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   d->etapa          = (const char*)s_etapa;
   d->voltas         = s_voltas;
   d->ms_desde_volta = s_volta_ms ? agora - s_volta_ms : 0;

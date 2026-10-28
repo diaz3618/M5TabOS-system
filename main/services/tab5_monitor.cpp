@@ -137,7 +137,7 @@ void tab5_mem_marco(const char* etapa)
   const uint32_t i = __atomic_fetch_add(&s_marcos_n, 1, __ATOMIC_RELAXED);
   if (i >= MEM_MARCOS_N) { return; }
   mem_marco_t& m = s_marcos[i];
-  m.ms          = tab5_agora_ms();
+  m.ms          = tab5_now_ms();
   m.livre       = livre;
   m.maior_bloco = (uint32_t)hi.largest_free_block;
   m.minimo      = (uint32_t)hi.minimum_free_bytes;
@@ -156,13 +156,13 @@ int tab5_mem_extrato(mem_marco_t* out, int max)
 
 static inline uint32_t uptime_s(void) { return (uint32_t)(esp_timer_get_time() / 1000000LL); }
 
-static uint32_t epoch_valido(void) { return tab5_hora_epoch(); }
+static uint32_t epoch_valido(void) { return tab5_time_epoch(); }
 
 static void nome_do_dia(const char* prefixo, char* out, size_t tam)
 {
   char pre[24];
   snprintf(pre, sizeof(pre), "%s-", prefixo);
-  tab5_hora_nome_do_dia(epoch_valido(), pre, ".csv", out, tam);
+  tab5_day_filename(epoch_valido(), pre, ".csv", out, tam);
 }
 
 static void hora_texto(char* out, size_t tam)
@@ -170,7 +170,7 @@ static void hora_texto(char* out, size_t tam)
   const uint32_t e = epoch_valido();
   if (!e) { snprintf(out, tam, "--:--:--"); return; }
   struct tm lt;
-  tab5_hora_local(e, &lt);
+  tab5_local_time(e, &lt);
   snprintf(out, tam, "%02d:%02d:%02d", lt.tm_hour, lt.tm_min, lt.tm_sec);
 }
 

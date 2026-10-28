@@ -7,7 +7,7 @@
 #include "virtual_screen.hpp"
 #include "tab5_imu.hpp"
 #include "tab5_keyboard.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms - o mesmo relogio do laco da interface
+#include "tab5_time.hpp"   // tab5_now_ms - o mesmo relogio do laco da interface
 #include "esp_log.h"
 
 static const char* TAG = "orientacao";
@@ -129,7 +129,7 @@ void orientacao_ao_abrir(const app_t* app)
   s_modo     = app->orientacao;
   s_cand     = -1;
   s_seguidas = 0;
-  s_ultima_ms = s_girou_ms = tab5_agora_ms();
+  s_ultima_ms = s_girou_ms = tab5_now_ms();
 
   uint8_t rot = ROT_EM_PE;
   tab5_imu_data_t m = { };

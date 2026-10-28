@@ -33,7 +33,7 @@ typedef struct {
   uint8_t  tipos;         // C6_FT_*, acumulado desde que apareceu
   uint8_t  channel;
   uint32_t frames;        // acumulado
-  uint32_t seen_ms;       // tab5_agora_ms() do ultimo lote em que apareceu
+  uint32_t seen_ms;       // tab5_now_ms() do ultimo lote em que apareceu
 } farejo_item_t;
 
 // Liga, ou troca a configuracao (c6_farejo_cfg_t em tab5_c6.h; cfg->liga e

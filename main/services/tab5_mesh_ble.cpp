@@ -1,5 +1,5 @@
 #include "tab5_mesh_ble.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "tab5_ble.hpp"
 #include "tab5_owners.hpp"
 #include "task_pool.h"
@@ -282,7 +282,7 @@ static bool achar_no(ble_addr_t* alvo)
   int melhor = -1;
   int8_t rssi = -128;
   tab5_ble_seen_t v;
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   for (int i = 0; i < tab5_ble_seen_count(); ++i) {
     if (!tab5_ble_get_seen(i, &v) || agora - v.seen_ms > 15000) { continue; }
     if (tem_salvo ? (memcmp(v.addr, quer, 6) == 0) : (v.meshtastic && v.rssi > rssi)) {

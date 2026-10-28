@@ -118,6 +118,15 @@ void    ajustes_definir_relogio_painel(uint8_t mhz);
 uint8_t ajustes_volume(void);
 void    ajustes_definir_volume(uint8_t volume);
 
+// TIMEZONE OFFSET - whole hours from UTC, user-set (default 0/UTC). Only
+// affects display (tab5_local_time() in tab5_time.hpp); the RTC, sync, and
+// logs stay in pure UTC on purpose - see the big warning in tab5_time.hpp.
+#define SETTINGS_UTC_OFFSET_MIN  -12
+#define SETTINGS_UTC_OFFSET_MAX   14
+
+int8_t settings_utc_offset_hours(void);
+void   settings_set_utc_offset_hours(int8_t hours);
+
 // CASA - posicao de referencia para calcular distancia/direcao ate uma
 // localizacao recebida (Mesh, app_mesh.cpp). E do usuario e nao do Mesh
 // especificamente, pelo mesmo motivo do brilho: nao e requisito de nenhum

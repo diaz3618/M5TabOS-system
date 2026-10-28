@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 
 static const char *TAG = "keyboard";
 
@@ -263,7 +263,7 @@ bool tab5_keyboard_init(void)
     return false;
   }
   s_bus_ok = true;
-  s_proxima_busca = tab5_agora_ms() + BUSCA_MS;
+  s_proxima_busca = tab5_now_ms() + BUSCA_MS;
   // O G50 como input com pull-up (o kernel ja o configura com a
   // interrupcao; isto so garante o nivel legivel se aquilo falhar). Nao mexe
   // no type de interrupcao.
@@ -298,7 +298,7 @@ static bool int_em_baixo(void) { return gpio_get_level((gpio_num_t)TAB5_KEYBOARD
 // Le o proximo evento HID raw da queue. false = queue vazia (ou keyboard saiu).
 static bool ler_hid(uint8_t* mod, uint8_t* hid)
 {
-  const uint32_t t = tab5_agora_ms();
+  const uint32_t t = tab5_now_ms();
   const bool int_baixo = int_em_baixo();
   if (s_int_confiavel && !int_baixo && !s_pode_ter_mais && s_seg_hid == 0
    && (t - s_conferido_ms) < TECLADO_CONFERIR_MS) {
@@ -371,7 +371,7 @@ bool tab5_keyboard_read(tab5_key_t* ev)
   {
     // Ausente: procura de tempos em tempos. E isto que faz o keyboard funcionar
     // ao ser encaixado com o aparelho on, sem reiniciar.
-    const uint32_t t = tab5_agora_ms();
+    const uint32_t t = tab5_now_ms();
     if ((int32_t)(t - s_proxima_busca) < 0) { return false; }
     s_proxima_busca = t + BUSCA_MS;
     if (!search(false)) { return false; }
@@ -381,7 +381,7 @@ bool tab5_keyboard_read(tab5_key_t* ev)
   // key especial: sai agora, na ordem em que foi apertado.
   if (s_tem_guardada) { *ev = s_guardada; s_tem_guardada = false; return true; }
 
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   uint8_t m = 0, hid = 0;
   if (!ler_hid(&m, &hid)) {
     // Fila vazia: a key segurada repete, se for a vez dela.

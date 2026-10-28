@@ -3,7 +3,7 @@
 #include "tab5_ui.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "tab5_keyboard.hpp" // tempos da repeticao
 #include <stdlib.h>
 #include <string.h>
@@ -518,7 +518,7 @@ static int confirmar(tecvirt_t* t, int tecla)
   static const uint32_t REPIQUE_MS     = 45;
   static const uint32_t SHIFT_DUPLO_MS = 400;
   if (tecla == TECVIRT_NENHUMA) { return 0; }
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
   // APAGAR e a tecla batida em rajada no mesmo ponto: sem freio de repique.
   if (!eh_apagar(tecla) && tecla == t->ultima_tecla && agora - t->tecla_ms < REPIQUE_MS) { return 0; }
   t->tecla_ms = agora;
@@ -615,7 +615,7 @@ int tecvirt_nivel(tecvirt_t* t, int* acoes, int max)
   int na = 0;
   auto anotar = [&](int ac) { if (ac && na < max) { acoes[na++] = ac; } };
   const int16_t antes = t->tecla_sob;
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
 
   // 1) Dedos que ja estavam: seguem a tecla sob eles, ou soltam.
   for (int k = 0; k < SISTEMA_TOQUES_MAX; ++k) {
@@ -704,6 +704,6 @@ int tecvirt_clique(tecvirt_t* t, int xs, int ys)
 {
   // So a rede para o toque rapido demais para o nivel ter visto (senao daria
   // letra dupla): o nivel cuida de tudo que ele viu.
-  if (!t->aberto || t->livre < LIVRE_AMOSTRAS || dedos_ativos(t) || tab5_agora_ms() - t->tecla_ms < 120) { return 0; }
+  if (!t->aberto || t->livre < LIVRE_AMOSTRAS || dedos_ativos(t) || tab5_now_ms() - t->tecla_ms < 120) { return 0; }
   return confirmar(t, tecla_no_ponto(t->a, xs, ys, TECVIRT_NENHUMA));   // confirmar() marca tecla_ms
 }

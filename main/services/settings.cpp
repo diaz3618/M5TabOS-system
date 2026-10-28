@@ -19,6 +19,7 @@ static bool    s_teclado = false;
 static bool    s_grove   = false;
 static uint8_t s_tela_s  = 30;   // padrao antigo do sistema, em segundos
 static uint8_t s_relogio_painel = 60;  // padrao de fabrica do M5GFX
+static int8_t  s_utc_offset_h = 0;   // UTC by default - stored biased by 12 (0..26) to fit nvs_get_u8
 static bool    s_pronto = false;
 
 // Graus x 1.000.000 (microgaus), inteiro: cabe num i32 da NVS sem depender
@@ -123,6 +124,11 @@ void ajustes_iniciar(void)
       s_relogio_painel = (v < AJUSTES_RELOGIO_MIN) ? AJUSTES_RELOGIO_MIN
                        : (v > AJUSTES_RELOGIO_MAX) ? AJUSTES_RELOGIO_MAX : v;
     }
+    if (nvs_get_u8(h, "utc_off", &v) == ESP_OK) {
+      const int lido = (int)v - 12;
+      s_utc_offset_h = (lido < SETTINGS_UTC_OFFSET_MIN) ? SETTINGS_UTC_OFFSET_MIN
+                     : (lido > SETTINGS_UTC_OFFSET_MAX) ? SETTINGS_UTC_OFFSET_MAX : (int8_t)lido;
+    }
     int32_t vi;
     if (nvs_get_i32(h, "casa_lat", &vi) == ESP_OK) { s_casa_lat_ue6 = vi; }
     if (nvs_get_i32(h, "casa_lon", &vi) == ESP_OK) { s_casa_lon_ue6 = vi; }
@@ -190,6 +196,16 @@ void ajustes_definir_volume(uint8_t volume)
 
   s_volume_pendente = true;
   adiar_gravacao();   // idem: so o valor final vai para a NVS
+}
+
+int8_t settings_utc_offset_hours(void) { return s_utc_offset_h; }
+
+void settings_set_utc_offset_hours(int8_t hours)
+{
+  if (hours < SETTINGS_UTC_OFFSET_MIN) { hours = SETTINGS_UTC_OFFSET_MIN; }
+  if (hours > SETTINGS_UTC_OFFSET_MAX) { hours = SETTINGS_UTC_OFFSET_MAX; }
+  s_utc_offset_h = hours;
+  gravar_u8("utc_off", (uint8_t)(hours + 12));
 }
 
 bool ajustes_wifi(void) { return s_wifi; }

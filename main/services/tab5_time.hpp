@@ -24,7 +24,7 @@
 //   RESSINCRONIZAR_MS; uma fonte PIOR so depois de a melhor sumir por
 //   VALIDADE_MS. Assim o Mesh nunca desfaz o que o NTP ou o GPS acertaram.
 // - SALTO: quando o acerto muda o relogio em mais de SALTO_S, quem carimbou
-//   coisas com a hora velha e avisado (tab5_hora_ao_saltar) e corrige os
+//   coisas com a hora velha e avisado (tab5_time_on_jump) e corrige os
 //   proprios carimbos desta sessao - a mensagem enviada antes do acerto sai
 //   do dia errado junto com o relogio.
 #pragma once
@@ -33,57 +33,57 @@
 #include <stddef.h>
 #include <time.h>
 #include "esp_timer.h"
-struct tm;   // forward-declarado so para o ponteiro de tab5_hora_local() -
+struct tm;   // forward-declarado so para o ponteiro de tab5_local_time() -
              // quem usa struct tm de verdade inclui <ctime> por conta propria.
 
 // Confere as fontes e ajusta o RTC quando a regra de consistencia acima
 // deixa. Chamar 1x/s, DA TAREFA DE INTERFACE - e quem pode escrever no RTC
 // (ver tab5_rtc.hpp).
-void tab5_hora_sincronizar(void);
+void tab5_time_sync(void);
 
 // De onde veio o ultimo acerto desta sessao: "internet", "GPS", "Mesh", ou
 // "relogio interno" (nenhuma fonte ainda - vale o que o RTC guardou).
-const char* tab5_hora_fonte(void);
+const char* tab5_time_source(void);
 
 // Aviso de SALTO: 'delta_s' e quanto o relogio andou (positivo = foi para a
 // frente). Chamado da tarefa de interface, logo depois do acerto; quem
 // assina so corrige os proprios carimbos e volta (sem cartao, sem espera
 // longa). Ate 4 assinantes.
-typedef void (*tab5_hora_salto_cb)(int32_t delta_s);
-void tab5_hora_ao_saltar(tab5_hora_salto_cb cb);
+typedef void (*tab5_time_jump_cb)(int32_t delta_s);
+void tab5_time_on_jump(tab5_time_jump_cb cb);
 
 // -------------------------------------------------------------------------
-// FUSO.
+// TIMEZONE.
 // -------------------------------------------------------------------------
-// FIXO, sem horario de verao - o Brasil parou de observar DST em 2019. Se um
-// dia isto precisar variar por regiao/estacao, e AQUI que entra a logica -
-// nao espalhada pelos apps.
+// User-configurable whole-hour offset from UTC (Settings > About), no DST
+// logic - if that's ever needed, this is where it goes, not scattered
+// across apps.
 //
-// SO AFETA EXIBICAO. O RTC, a sincronizacao e os logs continuam em UTC PURO
-// de proposito - e o unico jeito de comparar carimbo de tempo entre nos da
-// malha, arquivos de log e GPS sem ambiguidade. So quem vai MOSTRAR a hora
-// chama isto - gmtime_r() direto continua certo para qualquer outro uso.
-#define TAB5_FUSO_S (-3 * 3600)
+// DISPLAY ONLY. The RTC, sync, and logs stay in pure UTC on purpose - it's
+// the only way to compare timestamps between mesh nodes, log files, and GPS
+// without ambiguity. Only code that's about to SHOW the time calls this -
+// gmtime_r() directly is still correct for any other use.
+int32_t tab5_utc_offset_s(void);
 
 // O RELOGIO JA FOI ACERTADO? Abaixo disto (2020-09-13) uma hora nao e de
 // verdade: o RTC sem acerto (sem GPS, rede ou malha desde o boot) ou um
 // carimbo antigo gravado como 0. Era o mesmo numero escrito em doze lugares,
 // com quatro nomes diferentes - um so, aqui.
 #define TAB5_EPOCH_VALIDO 1600000000u
-static inline bool tab5_hora_valida(uint32_t epoch_utc) { return epoch_utc > TAB5_EPOCH_VALIDO; }
+static inline bool tab5_time_is_valid(uint32_t epoch_utc) { return epoch_utc > TAB5_EPOCH_VALIDO; }
 
 // AGORA, em epoch UTC - ou 0 enquanto o relogio nao foi acertado. O 0 e o
 // "sem data" que telas, arquivos e o Meshtastic ja sabem tratar.
-static inline uint32_t tab5_hora_epoch(void)
+static inline uint32_t tab5_time_epoch(void)
 {
   const time_t t = time(nullptr);
   return (t > (time_t)TAB5_EPOCH_VALIDO) ? (uint32_t)t : 0;
 }
 
-// Converte epoch UTC para struct tm NO FUSO LOCAL (TAB5_FUSO_S) - mesmo
-// formato de gmtime_r() (que e o que faz por baixo, so que sobre o epoch ja
-// deslocado).
-void tab5_hora_local(uint32_t epoch_utc, struct tm* out);
+// Converts UTC epoch to struct tm in the LOCAL TIMEZONE (tab5_utc_offset_s())
+// - same format as gmtime_r() (which is what it does underneath, just on the
+// already-offset epoch).
+void tab5_local_time(uint32_t epoch_utc, struct tm* out);
 
 // NOME DE ARQUIVO DO DIA: "<prefixo>AAAA-MM-DD<sufixo>", no dia LOCAL - o dia
 // de quem usa. Todo arquivo diario do sistema (log, energia, monitor) usa
@@ -91,12 +91,12 @@ void tab5_hora_local(uint32_t epoch_utc, struct tm* out);
 // a conta do seu jeito, o log em UTC virava o dia 3 horas antes dos outros).
 // So o NOME e local: o conteudo continua carimbado em UTC.
 // Relogio ainda sem acerto (epoch antes de 2020): "<prefixo>sem-data<sufixo>".
-//   tab5_hora_nome_do_dia(time(nullptr), "log_", ".txt", nome, sizeof(nome));
-void tab5_hora_nome_do_dia(uint32_t epoch_utc, const char* prefixo, const char* sufixo,
+//   tab5_day_filename(time(nullptr), "log_", ".txt", nome, sizeof(nome));
+void tab5_day_filename(uint32_t epoch_utc, const char* prefixo, const char* sufixo,
                            char* out, size_t tam);
 
 // RELOGIO MONOTONO, em ms desde o boot - para medir intervalos, nunca para
 // mostrar hora. Um so para o sistema inteiro (eram oito copias locais, metade
 // pelo tick do FreeRTOS e metade pelo esp_timer). Da a volta em ~49 dias:
 // compare sempre por diferenca (agora - antes), nunca por maior/menor.
-static inline uint32_t tab5_agora_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+static inline uint32_t tab5_now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }

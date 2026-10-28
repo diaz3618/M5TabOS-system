@@ -130,10 +130,10 @@ static uint32_t      s_dia_ver = 0;                    // sobe a cada carga nova
 // Inicio da janela de 24 h para o instante atual; 0 sem relogio acertado.
 static uint32_t janela_t0(void)
 {
-  const uint32_t agora = tab5_hora_epoch();
+  const uint32_t agora = tab5_time_epoch();
   if (!agora) { return 0; }
   struct tm lt;
-  tab5_hora_local(agora, &lt);
+  tab5_local_time(agora, &lt);
   return agora - (uint32_t)(lt.tm_min * 60 + lt.tm_sec) - 23u * 3600u;
 }
 
@@ -174,8 +174,8 @@ static void pedir_24h(void)
   s_carga_t0 = janela_t0();
   s_carga_nome[0][0] = s_carga_nome[1][0] = 0;
   if (s_carga_t0) {
-    tab5_hora_nome_do_dia(s_carga_t0, "energia-", ".csv", s_carga_nome[0], sizeof(s_carga_nome[0]));
-    tab5_hora_nome_do_dia((uint32_t)time(nullptr), "energia-", ".csv", s_carga_nome[1], sizeof(s_carga_nome[1]));
+    tab5_day_filename(s_carga_t0, "energia-", ".csv", s_carga_nome[0], sizeof(s_carga_nome[0]));
+    tab5_day_filename((uint32_t)time(nullptr), "energia-", ".csv", s_carga_nome[1], sizeof(s_carga_nome[1]));
   }
   s_carga_pronta = false;
   s_carga_pedida = sistema_trabalho(trabalho_24h, nullptr);
@@ -360,7 +360,7 @@ static void montar_24h(pontos_t* p)
   // completa com o anel da RAM, do minuto seguinte ao ultimo gravado ate
   // agora. O anel nao guarda o repouso; esses poucos minutos contam como
   // tela acesa (o app esta aberto, afinal).
-  const uint32_t agora = tab5_hora_epoch();
+  const uint32_t agora = tab5_time_epoch();
   if (!agora) { return; }
   const int n = tab5_power_history(s_m->ram);
   for (int i = 0; i < n; ++i) {
@@ -544,7 +544,7 @@ static void eixo_tempo(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, bool 
     if (h24) {
       if (k == divs) { txt = "agora"; }
       else {
-        struct tm lt; tab5_hora_local(s_dia->t0 + (uint32_t)k * 6u * 3600u, &lt);
+        struct tm lt; tab5_local_time(s_dia->t0 + (uint32_t)k * 6u * 3600u, &lt);
         snprintf(buf, sizeof(buf), "%dh", lt.tm_hour); txt = buf;
       }
     }
@@ -674,7 +674,7 @@ static void desenhar_grafico1(lgfx::LovyanGFX& d, const area_t& a)
     char val[24];
     snprintf(val, sizeof(val), formato(s_serie), (double)v->val[k]);
     if (s_24h) {
-      struct tm lt; tab5_hora_local(s_dia->t0 + (uint32_t)v->t[k] * 60u, &lt);
+      struct tm lt; tab5_local_time(s_dia->t0 + (uint32_t)v->t[k] * 60u, &lt);
       snprintf(buf, sizeof(buf), "%02d:%02d   %s", lt.tm_hour, lt.tm_min, val);
     } else {
       const int s = v->t[k];
@@ -756,7 +756,7 @@ static void desenhar_grafico2(lgfx::LovyanGFX& d, const area_t& a)
   d.setTextDatum(top_left);
   if (s_hora_sel >= 0) {
     const hora_t* hr = &s_m->horas[s_hora_sel];
-    struct tm lt; tab5_hora_local(s_dia->t0 + (uint32_t)s_hora_sel * 3600u, &lt);
+    struct tm lt; tab5_local_time(s_dia->t0 + (uint32_t)s_hora_sel * 3600u, &lt);
     snprintf(buf, sizeof(buf), "%dh - %dh: gastou %.0f mAh · carregou %.0f mAh",
              lt.tm_hour, (lt.tm_hour + 1) % 24, (double)(hr->tela + hr->repouso), (double)hr->carga);
     fn(d, 24); d.setTextColor(TFT_WHITE, TFT_BLACK); d.drawString(buf, a.x + M, y1);

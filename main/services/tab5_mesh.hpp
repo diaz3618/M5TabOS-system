@@ -58,7 +58,7 @@
 // campos que versoes novas acrescentarem.
 #define MESH_PAYLOAD_MAX 200
 
-// Hora valida: tab5_hora_valida() / tab5_hora_epoch() (services/tab5_time.hpp).
+// Hora valida: tab5_time_is_valid() / tab5_time_epoch() (services/tab5_time.hpp).
 
 // AS DUAS REDES. NO e a de sempre (o no, o modo internet, o proxy); INTERNET e
 // o LongFast pelo servidor publico (services/tab5_mesh_mqtt.hpp), ligado em

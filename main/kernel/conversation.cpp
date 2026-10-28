@@ -122,18 +122,18 @@ int conversa_quebrar_linhas(lgfx::LovyanGFX& d, const char* txt, int largura_px,
 static int dia_local(uint32_t epoch)
 {
   struct tm t;
-  tab5_hora_local(epoch, &t);
+  tab5_local_time(epoch, &t);
   return (t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday;
 }
 
 static void formatar_dia(uint32_t epoch, char* out, size_t tam)
 {
-  if (const uint32_t agora = tab5_hora_epoch()) {
+  if (const uint32_t agora = tab5_time_epoch()) {
     if (dia_local(epoch) == dia_local(agora))          { snprintf(out, tam, "HOJE");  return; }
     if (dia_local(epoch) == dia_local(agora - 86400u)) { snprintf(out, tam, "ONTEM"); return; }
   }
   struct tm t;
-  tab5_hora_local(epoch, &t);
+  tab5_local_time(epoch, &t);
   snprintf(out, tam, "%02d/%02d", t.tm_mday, t.tm_mon + 1);
 }
 
@@ -204,7 +204,7 @@ static void marca_envio(lgfx::LovyanGFX& d, int cx, int cy, uint8_t envio)
 // Devolve true quando a ESTRUTURA mudou (quantidade ou altura de algum balao):
 // ai a lista inteira se reorganiza. Senao, so os baloes que mudaram (a marca
 // de envio, tipicamente) sao anotados para repintar.
-static int hora_a(const balao_t* b) { return tab5_hora_valida(b->quando) ? HORA_A : 0; }
+static int hora_a(const balao_t* b) { return tab5_time_is_valid(b->quando) ? HORA_A : 0; }
 
 static uint32_t assinatura(const conversa_msg_t* m, int larg)
 {
@@ -257,7 +257,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     if (i < n_antes && b->assin == as) {
       // Mesmo conteudo: medidas valem. So o divisor de dia, que depende do vizinho.
       b->inicio_dia = false;
-      if (tab5_hora_valida(b->quando)) {
+      if (tab5_time_is_valid(b->quando)) {
         const int dia = dia_local(b->quando);
         b->inicio_dia = (dia != dia_ant);
         dia_ant = dia;
@@ -306,7 +306,7 @@ static bool medir(conversa_t* c, lgfx::LovyanGFX& d, int larg)
     // Divisor antes da primeira mensagem de cada dia. Sem data (relogio nao
     // acertado quando ela chegou) nao abre dia - senao virava 31/12/1969.
     b->inicio_dia = false;
-    if (tab5_hora_valida(b->quando)) {
+    if (tab5_time_is_valid(b->quando)) {
       const int dia = dia_local(b->quando);
       b->inicio_dia = (dia != dia_ant);
       dia_ant = dia;
@@ -370,7 +370,7 @@ static void balao_desenhar(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, v
 
   if (hora_a(b)) {
     struct tm t;
-    tab5_hora_local(b->quando, &t);
+    tab5_local_time(b->quando, &t);
     char hora[8];
     snprintf(hora, sizeof(hora), "%02d:%02d", t.tm_hour, t.tm_min);
     const int hy = y + b->ba;

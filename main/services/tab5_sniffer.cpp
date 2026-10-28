@@ -1,7 +1,7 @@
 #include "tab5_sniffer.hpp"
 #include "tab5_listener.hpp"
 #include "tab5_wifi.hpp"
-#include "tab5_time.hpp"      // tab5_agora_ms
+#include "tab5_time.hpp"      // tab5_now_ms
 #include "task_pool.h"
 #include "service_stop.hpp"      // pedir/confirmar a saida da tarefa (o mesmo do GPS e do Mesh)
 #include "tab5_mutex.hpp"
@@ -88,7 +88,7 @@ static void juntar_lote(const uint8_t* d, size_t n)
   const uint8_t* reg = d + sizeof(cab);
   int k = (int)((n - sizeof(cab)) / sizeof(c6_farejo_reg_t));
   if (k > cab.n) { k = cab.n; }
-  const uint32_t agora = tab5_agora_ms();
+  const uint32_t agora = tab5_now_ms();
 
   // O lote chega quando o periodo FECHA: o RSSI medio dele e do meio do
   // periodo. (O caminho C6 -> P4 leva poucos ms; o periodo leva 100+.)

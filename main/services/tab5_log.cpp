@@ -1,7 +1,7 @@
 #include "tab5_log.hpp"
 #include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
 #include "tab5_sd.hpp"
-#include "tab5_time.hpp"   // tab5_hora_nome_do_dia
+#include "tab5_time.hpp"   // tab5_day_filename
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -146,11 +146,11 @@ static int log_vprintf(const char* fmt, va_list args)
   return ret;
 }
 
-// Dia LOCAL no nome, como energia e monitor (tab5_hora_nome_do_dia); as linhas
+// Dia LOCAL no nome, como energia e monitor (tab5_day_filename); as linhas
 // e a marca de boot continuam em UTC.
 static void nome_arquivo_hoje(char* out, size_t tam)
 {
-  tab5_hora_nome_do_dia((uint32_t)time(nullptr), "log_", ".txt", out, tam);
+  tab5_day_filename((uint32_t)time(nullptr), "log_", ".txt", out, tam);
 }
 
 // Esvazia o que estiver no buffer para o arquivo de HOJE. Chamada so pela

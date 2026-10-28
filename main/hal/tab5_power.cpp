@@ -1,5 +1,5 @@
 #include "tab5_power.hpp"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include "tab5_marks.hpp"
 #include "tab5_sensors.hpp"
 #include "tab5_screen.hpp"
@@ -77,14 +77,14 @@ static void anotar_grove(bool turn_on)
 {
   if (s_grove_hw == (int8_t)turn_on) { return; }
   s_grove_hw = (int8_t)turn_on;
-  s_grove_toque_ms = tab5_agora_ms() | 1u;
+  s_grove_toque_ms = tab5_now_ms() | 1u;
 }
 uint32_t tab5_power_grove_touch_ms(void) { return s_grove_toque_ms; }
 uint32_t tab5_power_apply_ms(void)     { return s_aplicar_ms; }
 
 void tab5_power_apply(const tab5_profile_t& profile)
 {
-  s_aplicar_ms = tab5_agora_ms() | 1u;
+  s_aplicar_ms = tab5_now_ms() | 1u;
   anotar_grove(profile.grove_5v);
   tab5_mark("profile de energia", profile.cpu_min_mhz);
   // --- trilhos de 5V, agora um a um ---------------------------------------
@@ -880,14 +880,14 @@ bool tab5_power_sleep(int cpu_mhz)
   // 3. Desmonta panel e barramento. E o que solta as locks de PM - ver o
   //    bloco grande acima. Depois daqui NAO EXISTE FRAMEBUFFER: ninguem pode
   //    desenhar ate o montar_tela() do resume().
-  const uint32_t t0 = tab5_agora_ms();
+  const uint32_t t0 = tab5_now_ms();
   if (!desmontar_tela()) {
     ESP_LOGE(TAG, "sleep: unmount failed - voltando ao state aceso");
     desfazer_repouso();
     return false;
   }
   s_desmontado = true;
-  ESP_LOGI(TAG, "sleep: DSI desmontado em %lu ms", (unsigned long)(tab5_agora_ms() - t0));
+  ESP_LOGI(TAG, "sleep: DSI desmontado em %lu ms", (unsigned long)(tab5_now_ms() - t0));
 
   // 4. Baixa o clock - sem panel nao ha underrun, entao pode.
   if (!ajustar_teto(cpu_mhz)) {
@@ -942,7 +942,7 @@ bool tab5_power_resume(void)
   //    init(true) manda SWRESET e reexecuta a inicializacao) e com a LUZ
   //    APAGADA: who chamou redesenha no escuro e so entao chama
   //    tab5_power_wake_screen().
-  const uint32_t t0 = tab5_agora_ms();
+  const uint32_t t0 = tab5_now_ms();
   bool ok = montar_tela();
   if (!ok) {
     // Uma segunda chance: a primeira failure pode ser um LDO ou uma PHY que
@@ -969,7 +969,7 @@ bool tab5_power_resume(void)
 
   s_em_repouso = false;
   ESP_LOGI(TAG, "resume: DSI remontado em %lu ms, clock em %d MHz",
-           (unsigned long)(tab5_agora_ms() - t0), mhz);
+           (unsigned long)(tab5_now_ms() - t0), mhz);
   return true;
 }
 

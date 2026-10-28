@@ -219,7 +219,7 @@ static void contar_visto(const uint8_t mac[6])
   if (s_n_vistos < VISTOS_MAX) { memcpy(s_vistos[s_n_vistos++], mac, 6); }
 }
 
-static uint32_t agora_epoch(void) { return tab5_hora_epoch(); }
+static uint32_t agora_epoch(void) { return tab5_time_epoch(); }
 
 // ---------------------------------------------------------------------------
 // A TAREFA
@@ -556,7 +556,7 @@ void tab5_espnow_iniciar(void)
   // do C6 (ele reaplica o canal fixo toda vez que o radio volta), entao basta
   // a vontade estar em s_canal_fixo antes disso.
   s_canal_fixo = ajustes_espnow_canal();
-  tab5_hora_ao_saltar(ao_saltar_relogio);
+  tab5_time_on_jump(ao_saltar_relogio);
   tab5_wifi_on_stack_ready(espnow_cutucar);   // sem enlace a tarefa dorme 30 s; o Wi-Fi acorda ela
   // 6 KB, e nao 4: esta tarefa MONTA O CARTAO (gravar/carregar o historico),
   // e o f_mount do FATFS desce fundo na stack. Com 4 KB o monitor viu 140

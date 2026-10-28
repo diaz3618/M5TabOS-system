@@ -10,7 +10,7 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "tab5_time.hpp"   // tab5_agora_ms
+#include "tab5_time.hpp"   // tab5_now_ms
 #include <string.h>
 
 static const char* TAG = "gps";
@@ -75,7 +75,7 @@ bool tab5_gps_service_active(void) { return s_servico_ativo; }
 
 bool tab5_gps_on_air(void)
 {
-  return s_ultima_sentenca_ms != 0 && (tab5_agora_ms() - s_ultima_sentenca_ms) < 15000;
+  return s_ultima_sentenca_ms != 0 && (tab5_now_ms() - s_ultima_sentenca_ms) < 15000;
 }
 
 uint32_t tab5_gps_silence_ms(void)
@@ -95,9 +95,9 @@ uint32_t tab5_gps_silence_ms(void)
     // sentinela fixo - assim o chamador (a vigia) ve o silencio crescendo
     // de verdade e so desconfia depois do prazo INTEIRO ter passado, igual
     // ja acontece quando ele fala e depois some.
-    return s_servico_ativo ? (tab5_agora_ms() - s_iniciado_em_ms) : UINT32_MAX;
+    return s_servico_ativo ? (tab5_now_ms() - s_iniciado_em_ms) : UINT32_MAX;
   }
-  return tab5_agora_ms() - s_ultima_sentenca_ms;
+  return tab5_now_ms() - s_ultima_sentenca_ms;
 }
 
 bool tab5_gps_subscribe(QueueHandle_t queue)
@@ -177,7 +177,7 @@ static void vTaskGPS_corpo(void*)
             continue;
           }
 
-          s_ultima_sentenca_ms = tab5_agora_ms();
+          s_ultima_sentenca_ms = tab5_now_ms();
 
           // Os 2 primeiros caracteres depois do '$' mudam por constelacao
           // (GP=GPS, GL=GLONASS...); por isso comparamos a partir do 3o.
@@ -286,7 +286,7 @@ bool tab5_gps_start(void)
     ESP_LOGE(TAG, "sem memoria para a tarefa do GPS");
     return false;
   }
-  s_iniciado_em_ms = tab5_agora_ms();   // ver o aviso em tab5_gps_silence_ms()
+  s_iniciado_em_ms = tab5_now_ms();   // ver o aviso em tab5_gps_silence_ms()
   s_servico_ativo  = true;
 
   // Prioridade 3, mesma do service Mesh: abaixo da interface (4), acima do
