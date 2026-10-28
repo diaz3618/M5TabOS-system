@@ -1,7 +1,7 @@
 #include "app.h"   // sistema_avisar
 #include "tab5_owners.hpp"
 #include "task_pool.h"
-#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes na PSRAM
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes in PSRAM
 #include "tab5_mesh.hpp"
 
 #include <string.h>
@@ -11,7 +11,7 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "app_task.h"
-#include "service_stop.hpp"      // parada cooperativa da tarefa (kernel)
+#include "service_stop.hpp"      // parada cooperativa of tarefa (kernel)
 #include "driver/uart.h"
 #include "esp_task_wdt.h"
 #include "esp_log.h"
@@ -37,8 +37,8 @@
 
 static const char *TAG = "mesh";
 
-// NVS do proprio servico: o que o radio contou (nosso numero, canais,
-// favoritos), separado das preferencias da pessoa (ajustes).
+// NVS of proprio servico: o que o radio contou (nosso numero, canais,
+// favoritos), separado das preferences of pessoa (ajustes).
 #define MESH_NVS "mesh"
 
 #define MESH_UART   UART_NUM_1
@@ -46,122 +46,122 @@ static const char *TAG = "mesh";
 #define MESH_TX     53
 #define MESH_BAUD   115200
 
-// Sem frame por este tempo, consideramos o enlace caido.
+// Sem frame por este time, consideramos o enlace caido.
 // QUANTO SILENCIO ANTES DE DAR O ENLACE POR MUDO.
 //
-// Era 30s, e 30s e MENOS do que uma malha parada leva para falar. O radio nao
-// diz nada por conta propria: telemetria dele sai a cada meia hora, e se
+// Era 30s, e 30s e MENOS of que uma malha parada leva para falar. O radio nao
+// diz nada por conta propria: telemetria dele exit a cada meia hora, e se
 // ninguem transmite nada nao chega frame nenhum. Ou seja, numa malha quieta o
-// enlace passava a maior parte do tempo marcado como "mudo" - com o C6L
-// perfeitamente conectado. E "mudo" tinha consequencia: disparava um pedido de
-// configuracao a cada 10s (ver a tarefa), e cada pedido REINICIA o download
-// inteiro no radio. Ficavamos num ciclo de pedir configuracao para sempre, e
-// enquanto o dump roda o trafego ao vivo espera na queue do radio - que e
-// pequena e descarta o excedente. Mensagem que chega nessa janela some.
+// enlace passava a maior parte of time marcado como "mudo" - com o C6L
+// perfeitamente conectado. E "mudo" tinha consequencia: disparava one request of
+// configuracao a cada 10s (ver a tarefa), e cada request REINICIA o download
+// inteiro no radio. Ficavamos num ciclo of request configuracao para sempre, e
+// enquanto o dump roda o trafego on vivo espera in queue of radio - que e
+// pequena e descarta o excedente. Mensagem que chega nessa window some.
 //
-// 90s: ainda percebe um cabo arrancado em pouco mais de um minuto, e ja nao
+// 90s: ainda percebe one cabo arrancado em pouco mais of one minuto, e ja nao
 // confunde "a malha esta quieta" com "o radio sumiu".
 #define SILENCIO_MS 90000
 
 // ---------------------------------------------------------------------------
-// Protobuf: services/mesh_pb.hpp (o mesmo codec da ponte MQTT e do admin)
+// Protobuf: services/mesh_pb.hpp (o mesmo codec of ponte MQTT e of admin)
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Estado
 // ---------------------------------------------------------------------------
 static SemaphoreHandle_t s_trava = nullptr;
 
-// VIDA DO SERVICO. Ate aqui ele so sabia nascer: uma vez de pe, segurava a UART
-// do Grove para sempre. Trocar o C6L pelo GPS no cabo nao adiantava nada - o
-// modulo novo estava la, mudo, com a porta na mao de quem ja tinha ido embora.
+// VIDA DO SERVICO. Ate aqui ele so sabia nascer: uma vez of pe, segurava a UART
+// of Grove para sempre. Trocar o C6L pelo GPS no cabo nao adiantava nada - o
+// modulo novo estava la, mudo, com a porta in mao of quem ja tinha ido embora.
 //
-// Parada COOPERATIVA (kernel/service_stop.hpp), e nao vTaskDelete de fora: a
-// tarefa pega mutex e escreve no cartao, e mata-la no meio disso deixaria o
-// mutex preso e o arquivo aberto. Quem pede marca o pedido; a tarefa termina
+// Parada COOPERATIVA (kernel/service_stop.hpp), e nao vTaskDelete of fora: a
+// tarefa pega mutex e escreve no cartao, e mata-la no middle disso deixaria o
+// mutex preso e o arquivo open. Quem pede marca o request; a tarefa termina
 // o que estava fazendo, confirma, e so entao a limpeza acontece.
-static parada_t      s_parada = { };
-static bool          s_servico_ativo = false;  // ha tarefa e enlace de pe
-// POR ONDE: o cabo Grove ou o Bluetooth. Fixado no iniciar, pela
-// preferencia (settings_mesh_transport) - so muda parando e subindo de novo.
+static stop_t      s_parada = { };
+static bool          s_servico_active = false;  // ha tarefa e enlace of pe
+// POR ONDE: o cabo Grove ou o Bluetooth. Fixado no start, pela
+// preferencia (settings_mesh_transport) - so muda stopping e subindo of novo.
 static uint8_t       s_via = SETTINGS_MESH_TRANSPORT_SERIAL;
 EXT_RAM_BSS_ATTR static mesh_no_t   s_nos[MESH_MAX_NOS];
-static uint32_t    s_despejos = 0;   // quantas vezes achar_no() despejou o mais antigo desde o boot
+static uint32_t    s_despejos = 0;   // quantas vezes achar_no() despejou o mais antigo since o boot
 EXT_RAM_BSS_ATTR static mesh_msg_t  s_msgs[MESH_MAX_MSGS];
 static int         s_n_msgs = 0;
-// TOTAL DE VERDADE, NUNCA SATURA. Sintoma: mensagem nova so aparecia depois
-// de trocar de tela e voltar. app_mesh.cpp detectava
-// "chegou mensagem nova" comparando tab5_mesh_num_msgs() (que devolve
-// s_n_msgs) contra o valor da ultima passada - mas s_n_msgs e o tamanho do
-// ANEL de 8 posicoes (MESH_MAX_MSGS), que para de crescer assim que 8
-// mensagens (de QUALQUER conversa) ja passaram por ele. Depois disso o
-// numero fica parado para sempre, e o comparador nunca mais via diferenca -
-// so trocar de tela forcava outros caminhos (s_hist_pronto=false direto) a
-// recarregar. Este contador so cresce, nunca reseta a MESH_MAX_MSGS.
+// TOTAL DE VERDADE, NUNCA SATURA. Sintoma: message nova so aparecia depois
+// of switch of screen e voltar. app_mesh.cpp detectava
+// "chegou message nova" comparando tab5_mesh_num_msgs() (que devolve
+// s_n_msgs) contra o valor of ultima pass - mas s_n_msgs e o tamanho of
+// ANEL of 8 posicoes (MESH_MAX_MSGS), que para of crescer assim que 8
+// mensagens (of QUALQUER conversa) ja passaram por ele. Depois disso o
+// numero stays parado para sempre, e o comparador nunca mais via diferenca -
+// so switch of screen forcava outros caminhos (s_hist_pronto=false direto) a
+// reload. Este contador so cresce, nunca reseta a MESH_MAX_MSGS.
 static uint32_t     s_total_msgs = 0;
 static int         s_nao_lidas = 0;
 static int         s_nao_lidas_dir = 0;
 static mesh_saude_t s_saude = { };
 static uint32_t    s_meu_num = 0;
 static char        s_firmware[24] = { 0 };
-static uint32_t    s_ultimo_quadro_ms = 0;
+static uint32_t    s_ultimo_frame_ms = 0;
 static uint32_t    s_iniciado_em_ms   = 0;   // ver o aviso em tab5_mesh_silencio_ms()
-static int         s_notif = -1;   // fonte no servico de notificacao
+static int         s_notif = -1;   // fonte no servico of notification
 
-// DE QUAL REDE E O QUADRO QUE ESTA SENDO LIDO AGORA. So a tarefa do servico
-// le quadros (sempre com a trava), e o da fila da internet e lido com isto em
-// MESH_REDE_INTERNET: achar_no marca a rede do no, guardar_msg poe a mensagem na
-// conversa "LongFast Internet". Mais simples que levar a rede por cada funcao do
-// caminho de leitura, que e o mesmo para as duas.
+// DE QUAL REDE E O QUADRO QUE ESTA SENDO LIDO AGORA. So a tarefa of servico
+// le quadros (sempre com a trava), e o of fila of internet e lido com isto em
+// MESH_REDE_INTERNET: achar_no marca a rede of no, guardar_msg poe a message in
+// conversa "LongFast Internet". Mais simples que levar a rede por cada funcao of
+// caminho of leitura, que e o mesmo para as duas.
 static uint8_t     s_rede_rx = MESH_REDE_NO;
 
 // NOMES REAIS DOS CANAIS, ditos pelo proprio radio.
 //
-// Antes o canal 0 era "LongFast" cravado no codigo e o resto virava "Canal 1",
+// Antes o canal 0 era "LongFast" cravado no code e o resto virava "Canal 1",
 // "Canal 2". Mas o Meshtastic MANDA a configuracao dos canais no dump inicial
-// (FromRadio campo 10) - com o nome que voce escolheu no celular. Ignorar isso
-// era inventar um rotulo quando o certo estava chegando pela serial.
-static char s_canal_nome[MESH_MAX_CANAIS][MESH_NOME_CONVERSA];
+// (FromRadio field 10) - com o name que voce escolheu no celular. Ignorar isso
+// era inventar one rotulo when o certo estava chegando pela serial.
+static char s_canal_name[MESH_MAX_CANAIS][MESH_NOME_CONVERSA];
 
 // SE O CANAL ESTA ATIVO AGORA, pela ULTIMA config que o radio mandou - nasceu
-// junto de "canais disponiveis" (ver mais abaixo). Antes disto
-// nada guardava esse estado: s_canal_nome[] so era ESCRITO quando o papel
-// vinha != 0 (ver o parser do campo 10 abaixo), mas nunca ficava sabendo que
-// um canal tinha sido DESLIGADO - o nome antigo so ficava parado la,
-// indistinguivel de "ainda ativo". Comeca tudo false: so vira true quando a
+// junto of "canais disponiveis" (ver mais abaixo). Antes disto
+// nada guardava esse estado: s_canal_nome[] so era ESCRITO when o papel
+// vinha != 0 (ver o parser of field 10 abaixo), mas nunca ficava sabendo que
+// one canal tinha sido DESLIGADO - o name antigo so ficava parado la,
+// indistinguivel of "ainda active". Comeca everything false: so vira true when a
 // PRIMEIRA config chegar, e nenhum canal deveria ser oferecido como
 // "disponivel" antes disso (nao sabemos nada sobre ele ainda).
-static bool s_canal_ativo[MESH_MAX_CANAIS];
-static bool s_canais_conhecidos = false;   // ha configuracao (do radio ou da NVS)
+static bool s_canal_active[MESH_MAX_CANAIS];
+static bool s_canais_conhecidos = false;   // ha configuracao (of radio ou of NVS)
 static bool s_canais_lidos      = false;   // a NVS ja foi consultada
-static bool s_canais_sujos      = false;   // mudou e ainda nao foi para a NVS
+static bool s_canais_sujos      = false;   // changed e ainda nao foi para a NVS
 static void recordar_canais(void);
 
-// O radio avisou que reiniciou (FromRadio campo 8). Sem isto, a gente so
-// percebia pelo silencio - e esperava o prazo inteiro de 10s para so entao
-// pedir a configuracao de novo.
+// O radio avisou que reiniciou (FromRadio field 8). Sem isto, a gente so
+// percebia pelo silencio - e esperava o prazo inteiro of 10s para so entao
+// request a configuracao of novo.
 static volatile bool s_radio_reiniciou = false;
 static mesh_conversa_t s_conv[MESH_MAX_CONVERSAS];
 
 // ORDEM DA COLUNA (ver tab5_mesh_conversas_versao no .hpp). 's_conv_seq' e a
-// ultima atividade da conversa NESTA sessao, num contador que so cresce -
-// nao o rx_time, que vale 0 quando o relogio ainda nao foi acertado e
-// empataria tudo. Conversa so lida do cartao fica com 0: vai para o fim, na
-// ordem da pasta.
+// ultima atividade of conversa NESTA sessao, num contador que so cresce -
+// nao o rx_time, que vale 0 when o clock ainda nao foi acertado e
+// empataria everything. Conversa so lida of cartao stays com 0: vai para o end, in
+// order of pasta.
 static uint32_t s_conv_seq[MESH_MAX_CONVERSAS];
 static uint32_t s_seq = 0;
 static uint32_t s_conv_ver = 0;
-static int      visivel_de(int interno);
+static int      visivel_of(int interno);
 
-// NAO LIDAS QUE SOBREVIVEM AO SERVICO. Parar o servico (troca de via, Wi-Fi
+// NAO LIDAS QUE SOBREVIVEM AO SERVICO. Parar o servico (troca of via, Wi-Fi
 // caindo no modo internet, Bluetooth caindo, C6L achado no Grove) zera
-// s_conv[] - e com ele as nao lidas. Visto ao vivo: o aviso da barra SUMIA
-// sem ninguem ter aberto o Mesh, so porque o servico subiu de novo por outra
-// via. Aqui fica a contagem de cada conversa ate ela ser LIDA de verdade;
-// achar_ou_criar_conversa() devolve o numero quando a conversa renasce.
+// s_conv[] - e com ele as nao lidas. Visto on vivo: o aviso of barra SUMIA
+// sem ninguem ter open o Mesh, so porque o servico subiu of novo por outra
+// via. Aqui stays a contagem of cada conversa ate ela ser LIDA of verdade;
+// achar_ou_criar_conversa() devolve o numero when a conversa renasce.
 typedef struct { bool usada; bool channel; uint8_t idx; uint32_t no; uint16_t n; } nao_lida_guardada_t;
 static nao_lida_guardada_t s_guardadas[MESH_MAX_CONVERSAS];
 
-static nao_lida_guardada_t* guardada_de(bool canal, uint8_t idx, uint32_t no, bool criar)
+static nao_lida_guardada_t* guardada_of(bool canal, uint8_t idx, uint32_t no, bool create)
 {
   nao_lida_guardada_t* livre = nullptr;
   for (auto& g : s_guardadas) {
@@ -169,7 +169,7 @@ static nao_lida_guardada_t* guardada_de(bool canal, uint8_t idx, uint32_t no, bo
     if (canal && g.channel && g.idx == idx) { return &g; }
     if (!canal && !g.channel && g.no == no) { return &g; }
   }
-  if (!criar || !livre) { return nullptr; }
+  if (!create || !livre) { return nullptr; }
   *livre = { true, canal, idx, no, 0 };
   return livre;
 }
@@ -180,7 +180,7 @@ static void guardar_nao_lidas(void)
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     const mesh_conversa_t& c = s_conv[i];
     if (!c.usada) { continue; }
-    nao_lida_guardada_t* g = guardada_de(c.channel, c.idx, c.no, c.nao_lidas > 0);
+    nao_lida_guardada_t* g = guardada_of(c.channel, c.idx, c.no, c.nao_lidas > 0);
     if (!g) { continue; }
     if (c.nao_lidas > 0) { g->n = (uint16_t)(c.nao_lidas > 0xFFFF ? 0xFFFF : c.nao_lidas); }
     else                 { g->usada = false; }
@@ -199,168 +199,168 @@ static bool ha_nao_lidas_guardadas(void)
 
 #define MESH_PASTA "Meshtastic"
 
-// Contadores de diagnostico. Existem porque "nos 0/0" nao diz se o LocalStats
+// Contadores of diagnostics. Existem porque "nos 0/0" nao diz se o LocalStats
 // nao CHEGA ou se chega e o filtro descarta - e sao perguntas com conserto oposto.
 static uint32_t s_c_quadros = 0, s_c_pacotes = 0, s_c_telemetria = 0;
-static uint32_t s_c_localstats = 0, s_c_texto = 0, s_c_nodeinfo = 0;
-static int      s_ultima_variante = -1;   // ultimo campo visto dentro de Telemetry
+static uint32_t s_c_localstats = 0, s_c_text = 0, s_c_nodeinfo = 0;
+static int      s_ultima_variante = -1;   // ultimo field visto dentro of Telemetry
 
-// Quantas vezes um Routing chegou DEPOIS do pacote ja estar ENTREGUE (ver
+// Quantas vezes one Routing chegou DEPOIS of pacote ja estar ENTREGUE (ver
 // marcar_envio). Nao muda o estado mostrado - "confirmado" continua valendo -
-// mas e um numero com finalidade propria: se ele cresce rapido, quer dizer
-// que a confirmacao "alguem ouviu" esta vindo facil e a confirmacao forte do
-// radio (fim a fim) esta vindo dificil - ou seja, a malha ESTA funcionando,
-// so que no limite do alcance. E um termometro de qualidade de rota que nao
-// existiria se o segundo Routing fosse so descartado sem contar.
+// mas e one numero com finalidade propria: se ele cresce rapido, quer dizer
+// que a confirmacao "alguem ouviu" esta vindo facil e a confirmacao forte of
+// radio (end a end) esta vindo dificil - ou seja, a malha ESTA funcionando,
+// so que no limit of alcance. E one termometro of qualidade of rota que nao
+// existiria se o segundo Routing fosse so descartado sem count.
 static uint32_t s_c_routing_extra = 0;
 
 
 // ---------------------------------------------------------------------------
 // OS ENVIOS EM VOO
 // ---------------------------------------------------------------------------
-// Anel dos ultimos pacotes que NOS mandamos, com o estado de cada um. Fica so
-// em RAM de proposito: o cartao guarda o id junto da mensagem, mas nao o
-// estado - reabrir o app amanha e ver "enviando" num pacote de ontem seria
-// mentira. Id que nao esta mais aqui devolve MESH_ENVIO_NA, e a tela nao
-// desenha marca nenhuma.
+// Anel dos ultimos pacotes que NOS mandamos, com o estado of cada one. Fica so
+// em RAM of proposito: o cartao guarda o id junto of message, mas nao o
+// estado - reabrir o app amanha e ver "enviando" num pacote of ontem seria
+// mentira. Id que nao esta mais aqui devolve MESH_ENVIO_NA, e a screen nao
+// desenha marca none.
 #define MESH_MAX_ENVIOS 16
 
-// Quanto esperar pela confirmacao antes de desistir. O radio retransmite
-// sozinho algumas vezes e, quando desiste, ELE avisa com Routing.MAX_RETRANSMIT
-// - este prazo e so a rede de seguranca para quando o enlace morre no meio.
+// Quanto wait pela confirmacao antes of abandon. O radio retransmite
+// sozinho algumas vezes e, when desiste, ELE avisa com Routing.MAX_RETRANSMIT
+// - este prazo e so a rede of seguranca para when o enlace morre no middle.
 #define MESH_ACK_MS 60000
 
 typedef struct {
   uint32_t id;
-  uint32_t para;     // destino: decide o que um ACK quer dizer (ver marcar_envio)
+  uint32_t para;     // destino: decide o que one ACK quer dizer (ver marcar_envio)
   uint32_t em_ms;
   uint8_t  state;
   uint8_t  erro;
-} envio_t;
+} send_state_t;
 
-static envio_t  s_envios[MESH_MAX_ENVIOS];
-static int      s_prox_envio = 0;
+static send_state_t  s_envios[MESH_MAX_ENVIOS];
+static int      s_prox_send_state = 0;
 static uint32_t s_envios_ver = 0;
 
-static void anotar_envio(uint32_t id, uint32_t para)
+static void anotar_send_state(uint32_t id, uint32_t para)
 {
   if (id == 0) { return; }
 
-  // Ja acompanhado? Nao duplica. Importa porque agora ha DOIS caminhos que
-  // chamam isto - o nosso envio e o eco de uma mensagem que saiu do celular -,
-  // e a mesma mensagem pode passar pelos dois.
+  // Ja acompanhado? Nao duplica. Importa porque now ha DOIS caminhos que
+  // chamam isto - o nosso send_state e o eco of uma message que exited of celular -,
+  // e a mesma message pode passar pelos dois.
   for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
     if (s_envios[i].id == id) { return; }
   }
 
-  envio_t* e = &s_envios[s_prox_envio];
-  s_prox_envio = (s_prox_envio + 1) % MESH_MAX_ENVIOS;
+  send_state_t* e = &s_envios[s_prox_send_state];
+  s_prox_send_state = (s_prox_send_state + 1) % MESH_MAX_ENVIOS;
   e->id     = id;
   e->para   = para;
   e->em_ms  = tab5_now_ms();
   e->state = MESH_ENVIANDO;
   e->erro   = 0;
   s_envios_ver++;
-  sistema_avisar(AVISO_MESH_ENVIO);
+  system_notify(AVISO_MESH_ENVIO);
 }
 
 // ---------------------------------------------------------------------------
 // O DESFECHO VAI PARA O CARTAO. O caminho, nao.
 // ---------------------------------------------------------------------------
-// A primeira versao guardava o estado so em RAM, com o argumento de que
-// "reabrir amanha e ver ENVIANDO num pacote de ontem seria mentira". O
+// A primeira versao guardava o estado so em RAM, com o argumento of que
+// "reabrir amanha e ver ENVIANDO num pacote of ontem seria mentira". O
 // argumento vale - para ENVIANDO. Nao vale para o resto.
 //
-// "Falhou por falta de rota" e um FATO FINAL: ele nao fica mais nem menos
-// verdadeiro com o tempo, e some da tela so porque o anel de 16 envios girou ou
-// o aparelho reiniciou. Quem mandou a mensagem quer saber que ela nao chegou,
+// "Falhou por falta of rota" e one FATO FINAL: ele nao stays mais nem menos
+// verdadeiro com o time, e some of screen so porque o anel of 16 envios girou ou
+// o aparelho reiniciou. Quem mandou a message quer saber que ela nao chegou,
 // hoje e semana que vem.
 //
-// Entao a divisao e por NATUREZA do estado, nao por comodidade:
+// Entao a divisao e por NATUREZA of estado, nao por comodidade:
 //   ENVIANDO      - passageiro, so RAM. Nunca gravado.
 //   ENTREGUE      - final, gravado.
-//   FALHOU        - final, gravado, com o motivo.
-//   SEM_RESPOSTA  - final ("desisti de esperar"), gravado.
+//   FALHOU        - final, gravado, com o reason.
+//   SEM_RESPOSTA  - final ("desisti of wait"), gravado.
 //
-// Arquivo PROPRIO e nao a linha da mensagem: a mensagem e gravada no instante
-// do envio, quando o desfecho ainda nao existe. Reescrever aquela linha depois
+// Arquivo PROPRIO e nao a line of message: a message e gravada no instante
+// of send_state, when o desfecho ainda nao existe. Reescrever aquela line depois
 // significaria reescrever o arquivo inteiro a cada ACK. Aqui e so acrescentar.
 #define MESH_ARQ_ENVIOS "envios.txt"
 
 static void gravar_desfecho(uint32_t id, uint8_t estado, uint8_t erro)
 {
   if (id == 0) { return; }
-  char linha[40];
-  snprintf(linha, sizeof(linha), "E,%08lX,%u,%u\n", (unsigned long)id, (unsigned)estado, (unsigned)erro);
-  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, linha);   // gravador do sistema (hal/tab5_sd.hpp)
+  char line[40];
+  snprintf(line, sizeof(line), "E,%08lX,%u,%u\n", (unsigned long)id, (unsigned)estado, (unsigned)erro);
+  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, line);   // gravador of sistema (hal/tab5_sd.hpp)
 }
 
 // ---------------------------------------------------------------------------
-// CARIMBO CORRIGIDO - quando o relogio salta (ver tab5_time.hpp)
+// CARIMBO CORRIGIDO - when o clock salta (ver tab5_time.hpp)
 // ---------------------------------------------------------------------------
-// A mensagem enviada leva a hora do NOSSO relogio. Se ele estava errado e uma
-// fonte o acerta depois, a mensagem ficava no dia errado para sempre: a linha
-// dela ja esta no cartao. Reescrever o arquivo da conversa por isso seria
-// caro; em vez disso vai uma linha "H,<id>,<quando>" para o envios.txt, o
-// mesmo arquivo so de acrescentar dos desfechos, e o leitor do historico
-// troca o carimbo de quem tem id la (ultima linha vence, como no "E").
+// A message enviada leva a hora of NOSSO clock. Se ele estava errado e uma
+// fonte o acerta depois, a message ficava no dia errado para sempre: a line
+// dela ja esta no cartao. Reescrever o arquivo of conversa por isso seria
+// caro; em vez disso vai uma line "H,<id>,<when>" para o envios.txt, o
+// mesmo arquivo so of acrescentar dos desfechos, e o leitor of historico
+// troca o carimbo of quem tem id la (ultima line vence, como no "E").
 //
-// So as mensagens DESTA sessao: as de antes foram carimbadas por outro
-// relogio (outro boot), que pode ter estado certo.
+// So as mensagens DESTA sessao: as of antes foram carimbadas por outro
+// clock (outro boot), que pode ter estado certo.
 #define MESH_CARIMBADAS 16
-typedef struct { uint32_t id; uint32_t quando; } carimbada_t;
+typedef struct { uint32_t id; uint32_t when; } carimbada_t;
 static carimbada_t s_carimbadas[MESH_CARIMBADAS];
 static int         s_prox_carimbada = 0;
 
-static void travar(void);
+static void lock(void);
 static void destravar(void);
 
 // Com a trava tomada.
-static void lembrar_carimbo(uint32_t id, uint32_t quando)
+static void lembrar_carimbo(uint32_t id, uint32_t when)
 {
-  if (id == 0 || quando == 0) { return; }
+  if (id == 0 || when == 0) { return; }
   s_carimbadas[s_prox_carimbada].id     = id;
-  s_carimbadas[s_prox_carimbada].quando = quando;
+  s_carimbadas[s_prox_carimbada].when = when;
   s_prox_carimbada = (s_prox_carimbada + 1) % MESH_CARIMBADAS;
 }
 
-// Tarefa de interface, logo depois do acerto do relogio. So RAM e o gravador
-// do sistema (tab5_sd_enqueue_append copia e volta): nada de cartao aqui.
-static void ao_saltar_relogio(int32_t delta)
+// Tarefa of interface, logo depois of acerto of clock. So RAM e o gravador
+// of sistema (tab5_sd_enqueue_append copia e iteration): nada of cartao aqui.
+static void on_saltar_clock(int32_t delta)
 {
   int n = 0;
-  travar();
+  lock();
   for (int i = 0; i < MESH_CARIMBADAS; ++i) {
     carimbada_t* c = &s_carimbadas[i];
     if (c->id == 0) { continue; }
-    c->quando = (uint32_t)((int64_t)c->quando + delta);
+    c->when = (uint32_t)((int64_t)c->when + delta);
     for (int k = 0; k < s_n_msgs; ++k) {
-      if (s_msgs[k].id == c->id) { s_msgs[k].quando = c->quando; }
+      if (s_msgs[k].id == c->id) { s_msgs[k].when = c->when; }
     }
-    char linha[40];
-    snprintf(linha, sizeof(linha), "H,%08lX,%lu\n", (unsigned long)c->id, (unsigned long)c->quando);
-    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, linha);
+    char line[40];
+    snprintf(line, sizeof(line), "H,%08lX,%lu\n", (unsigned long)c->id, (unsigned long)c->when);
+    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_ENVIOS, line);
     ++n;
   }
-  // O app rele o historico quando este contador muda: e o que tira da tela
-  // o balao no dia errado.
+  // O app rele o historico when este contador muda: e o que tira of screen
+  // o bubble no dia errado.
   if (n) { ++s_total_msgs; }
   destravar();
   if (n) {
     ESP_LOGI(TAG, "hora do aparelho corrigida em %+ld s: horario de %d mensagem(ns) enviada(s) "
                   "antes do acerto foi ajustado", (long)delta, n);
-    sistema_avisar(AVISO_MESH_MSG);
+    system_notify(AVISO_MESH_MSG);
   }
 }
 
-// Desfechos lidos do cartao, UMA VEZ por carga de historico.
+// Desfechos lidos of cartao, UMA VEZ por carga of historico.
 //
-// A primeira versao chamava uma funcao "procura este id no arquivo" de DENTRO
-// do loop que le as mensagens. Com 40 mensagens na conversa isso virava 40
-// aberturas e 40 varreduras completas do envios.txt, no cartao, com dois
-// arquivos abertos ao mesmo tempo e o usuario esperando a conversa aparecer.
+// A primeira versao chamava uma funcao "procura este id no arquivo" of DENTRO
+// of loop que le as mensagens. Com 40 mensagens in conversa isso virava 40
+// aberturas e 40 varreduras complete of envios.txt, no cartao, com dois
+// arquivos abertos on mesmo time e o user esperando a conversa aparecer.
 // Custo O(mensagens x desfechos) para responder uma pergunta que cabe em 1KB
-// de RAM.
+// of RAM.
 //
 // Agora o arquivo e lido uma vez para esta tabela e a consulta e em memoria.
 #define MESH_DESFECHOS 64
@@ -369,29 +369,29 @@ typedef struct {
   uint32_t id;
   uint8_t  state;
   uint8_t  erro;
-  uint32_t quando;   // carimbo corrigido ("H"); 0 = o da linha da mensagem vale
+  uint32_t when;   // carimbo corrigido ("H"); 0 = o of line of message vale
 } desfecho_t;
 
-// ULTIMO VENCE. O arquivo so cresce, entao a linha mais recente de um id e a
-// verdade atual - um pacote pode ir de SEM_RESPOSTA para ENTREGUE quando um ACK
-// chega atrasado. Por isso sobrescrevemos a entrada em vez de parar na primeira.
+// ULTIMO VENCE. O arquivo so cresce, entao a line mais recente of one id e a
+// verdade current - one pacote pode ir of SEM_RESPOSTA para ENTREGUE when one ACK
+// chega atrasado. Por isso sobrescrevemos a entrada em vez of stop in primeira.
 //
 // Tabela cheia: descarta a mais ANTIGA (anel). O arquivo e cronologico, entao o
 // que sobra sao os 64 desfechos mais recentes - e o historico so mostra as
-// ultimas dezenas de mensagens de qualquer jeito.
+// ultimas dezenas of mensagens of qualquer jeito.
 static int carregar_desfechos(desfecho_t* tab, int max)
 {
   FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_ENVIOS, "r");
   if (!f) { return 0; }
 
   int n = 0, prox = 0;
-  char linha[64];
+  char line[64];
   int voltas = 0;
-  while (fgets(linha, sizeof(linha), f)) {
-    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao segurar o core
+  while (fgets(line, sizeof(line), f)) {
+    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao hold o core
     unsigned long lid = 0, lq = 0; unsigned est = 0, err = 0;
-    const bool eh_hora = (sscanf(linha, "H,%8lX,%lu", &lid, &lq) == 2);
-    if (!eh_hora && sscanf(linha, "E,%8lX,%u,%u", &lid, &est, &err) != 3) { continue; }
+    const bool eh_hora = (sscanf(line, "H,%8lX,%lu", &lid, &lq) == 2);
+    if (!eh_hora && sscanf(line, "E,%8lX,%u,%u", &lid, &est, &err) != 3) { continue; }
 
     int alvo = -1;
     for (int i = 0; i < n; ++i) { if (tab[i].id == (uint32_t)lid) { alvo = i; break; } }
@@ -400,10 +400,10 @@ static int carregar_desfechos(desfecho_t* tab, int max)
       else         { alvo = prox; prox = (prox + 1) % max; }
       tab[alvo].state = MESH_ENVIO_NA;
       tab[alvo].erro   = 0;
-      tab[alvo].quando = 0;
+      tab[alvo].when = 0;
     }
     tab[alvo].id = (uint32_t)lid;
-    if (eh_hora) { tab[alvo].quando = (uint32_t)lq; continue; }
+    if (eh_hora) { tab[alvo].when = (uint32_t)lq; continue; }
     tab[alvo].state = (uint8_t)est;
     tab[alvo].erro   = (uint8_t)err;
   }
@@ -414,7 +414,7 @@ static int carregar_desfechos(desfecho_t* tab, int max)
 static uint32_t buscar_carimbo(const desfecho_t* tab, int n, uint32_t id)
 {
   if (id == 0) { return 0; }
-  for (int i = 0; i < n; ++i) { if (tab[i].id == id) { return tab[i].quando; } }
+  for (int i = 0; i < n; ++i) { if (tab[i].id == id) { return tab[i].when; } }
   return 0;
 }
 
@@ -429,60 +429,60 @@ static uint8_t buscar_desfecho(const desfecho_t* tab, int n, uint32_t id, uint8_
   return MESH_ENVIO_NA;
 }
 
-// O QUE UM ROUTING QUER DIZER depende de QUEM o mandou ('de') e para onde ia
-// o nosso pacote. Silencioso quando o id nao e nosso: a malha esta cheia de
+// O QUE UM ROUTING QUER DIZER depende of QUEM o mandou ('of') e para onde ia
+// o nosso pacote. Silencioso when o id nao e nosso: a malha esta cheia of
 // roteamento que nao nos diz respeito.
 //
-// O no gera um ACK IMPLICITO quando ouve um vizinho repetir o nosso pacote:
-// um Routing com erro 0 vindo DELE MESMO (de == nosso numero). Ele prova que
-// a malha ouviu - e, por economia de ar, o no PARA de retransmitir ali.
-//   - DIFUSAO: nao ha destinatario para confirmar; o implicito e o melhor que
+// O no gera one ACK IMPLICITO when ouve one vizinho repetir o nosso pacote:
+// one Routing com erro 0 vindo DELE MESMO (of == nosso numero). Ele prova que
+// a malha ouviu - e, por economia of ar, o no PARA of retransmitir ali.
+//   - DIFUSAO: nao ha destinatario para confirm; o implicito e o melhor que
 //     existe, e vale ENTREGUE (o app oficial faz o mesmo).
-//   - DIRETA: o implicito e meio caminho - vale OUVIDO. ENTREGUE so com o ACK
-//     do PROPRIO destinatario (de == para).
+//   - DIRETA: o implicito e middle caminho - vale OUVIDO. ENTREGUE so com o ACK
+//     of PROPRIO destinatario (of == para).
 //
-// Antes os dois eram iguais: a direta virava "confirmada" no primeiro eco de
-// um vizinho, e quando o no depois relatava que o destino nunca respondeu
-// (erro 5, MAX_RETRANSMIT), a trava de "ENTREGUE e terminal" engolia o
-// relato. A tela dizia entregue para mensagem que nao chegou.
+// Antes os dois eram iguais: a direta virava "confirmada" no first eco of
+// one vizinho, e when o no depois relatava que o destino nunca respondeu
+// (erro 5, MAX_RETRANSMIT), a trava of "ENTREGUE e terminal" engolia o
+// relato. A screen dizia entregue para message que nao chegou.
 //
-// O IMPLICITO DO MQTT NAO E "OUVIDO". Com o C6L ligado na internet, o
-// firmware (src/mqtt/MQTT.cpp) gera um ACK implicito para si mesmo quando o
-// SERVIDOR devolve o nosso proprio pacote - igual ao de um vizinho, so que
-// marcado transport_mechanism = MQTT. Ele prova que o pacote chegou ao
+// O IMPLICITO DO MQTT NAO E "OUVIDO". Com o C6L enabled in internet, o
+// firmware (src/mqtt/MQTT.cpp) gera one ACK implicito para si mesmo when o
+// SERVIDOR devolve o nosso proprio pacote - igual on of one vizinho, so que
+// marcado transport_mechanism = MQTT. Ele prova que o pacote chegou on
 // servidor, nao que algum radio o ouviu. Contado como OUVIDO, uma direta para
-// um no DESLIGADO ganhava o check cinza na hora e, como OUVIDO nao desce, o
+// one no DESLIGADO ganhava o check cinza in hora e, como OUVIDO nao desce, o
 // "tentou demais" que o radio manda depois era engolido: o X so aparecia com
-// a internet desligada. O proprio firmware ja ignora esse ACK para parar as
+// a internet desligada. O proprio firmware ja ignora esse ACK para stop as
 // retransmissoes (ReliableRouter::sniffReceived); aqui ele tambem nao muda a
-// marca de uma direta. Na difusao continua valendo ENTREGUE - quem esta no
-// servidor recebe, e e a mesma regra de antes.
-static void marcar_envio(uint32_t id, int erro, uint32_t de, bool so_mqtt = false)
+// marca of uma direta. Na difusao continua valendo ENTREGUE - quem esta no
+// servidor recebe, e e a mesma regra of antes.
+static void marcar_send_state(uint32_t id, int erro, uint32_t of, bool so_mqtt = false)
 {
   for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
-    envio_t* e = &s_envios[i];
+    send_state_t* e = &s_envios[i];
     if (e->id != id || id == 0) { continue; }
 
     const bool difusao = (e->para == 0xFFFFFFFFu);
-    if (so_mqtt && erro == 0 && !difusao && de != e->para) {
+    if (so_mqtt && erro == 0 && !difusao && of != e->para) {
       ESP_LOGI(TAG, "mensagem %08lX: chegou ao servidor MQTT - esperando o destino", (unsigned long)id);
       return;
     }
     uint8_t novo;
     if (erro == 0) {
-      novo = (difusao || de == e->para) ? MESH_ENTREGUE : MESH_OUVIDO;
+      novo = (difusao || of == e->para) ? MESH_ENTREGUE : MESH_OUVIDO;
     } else {
       novo = MESH_FALHOU;
     }
 
     // ENTREGUE e terminal: nada posterior o desfaz. OUVIDO so sobe (para
-    // ENTREGUE); um erro depois dele nao vira "falhou" - a malha OUVIU, o que
-    // faltou foi a confirmacao do destino, e a marca de OUVIDO ja diz isso.
+    // ENTREGUE); one erro depois dele nao vira "falhou" - a malha OUVIU, o que
+    // faltou foi a confirmacao of destino, e a marca of OUVIDO ja diz isso.
     if (e->state == MESH_ENTREGUE || (e->state == MESH_OUVIDO && novo != MESH_ENTREGUE)) {
       if (erro != 0) {
-        ++s_c_routing_extra;   // ver o comentario da declaracao - nao e so ruido
+        ++s_c_routing_extra;   // ver o comentario of declaracao - nao e so ruido
         ESP_LOGI(TAG, "mensagem %08lX: aviso '%s' chegou depois de %s - continua assim", (unsigned long)id,
-                 mesh_erro_nome((uint8_t)erro), e->state == MESH_ENTREGUE ? "entregue" : "ouvido");
+                 mesh_erro_name((uint8_t)erro), e->state == MESH_ENTREGUE ? "entregue" : "ouvido");
       }
       return;
     }
@@ -490,16 +490,16 @@ static void marcar_envio(uint32_t id, int erro, uint32_t de, bool so_mqtt = fals
     e->state = novo;
     e->erro   = (uint8_t)erro;
     s_envios_ver++;
-    sistema_avisar(AVISO_MESH_ENVIO);
+    system_notify(AVISO_MESH_ENVIO);
     gravar_desfecho(id, novo, (uint8_t)erro);
     ESP_LOGI(TAG, "mensagem %08lX: %s%s", (unsigned long)id,
              novo == MESH_ENTREGUE ? "entregue ao destino" : novo == MESH_OUVIDO ? "ouvida por outro no (sem confirmacao do destino)" : "FALHOU - ",
-             novo == MESH_FALHOU ? mesh_erro_nome((uint8_t)erro) : "");
+             novo == MESH_FALHOU ? mesh_erro_name((uint8_t)erro) : "");
     return;
   }
 }
 
-uint8_t tab5_mesh_estado_envio(uint32_t id, uint8_t* erro)
+uint8_t tab5_mesh_estado_send_state(uint32_t id, uint8_t* erro)
 {
   if (id == 0) { return MESH_ENVIO_NA; }
   for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
@@ -512,10 +512,10 @@ uint8_t tab5_mesh_estado_envio(uint32_t id, uint8_t* erro)
 
 uint32_t tab5_mesh_envios_versao(void) { return s_envios_ver; }
 
-const char* mesh_erro_nome(uint8_t erro)
+const char* mesh_erro_name(uint8_t erro)
 {
-  // Routing.Error do meshtastic. So os que da para acontecer aqui; a lista
-  // cresce a cada versao do firmware e o resto cai no "?".
+  // Routing.Error of meshtastic. So os que of para acontecer aqui; a lista
+  // cresce a cada versao of firmware e o resto cai no "?".
   switch (erro) {
     case 0:   return "ok";
     case 1:   return "sem rota";
@@ -538,21 +538,21 @@ const char* mesh_erro_nome(uint8_t erro)
 }
 
 // ---------------------------------------------------------------------------
-// QUE HORAS SAO - emprestadas do radio
+// QUE HORAS SAO - emprestadas of radio
 // ---------------------------------------------------------------------------
 // O Tab5 acorda sem hora certa, mas todo NodeInfo traz last_heard e todo pacote
-// traz rx_time, os dois em segundos de epoch e vindos do relogio do C6L.
+// traz rx_time, os dois em segundos of epoch e vindos of clock of C6L.
 // Guardamos o maior carimbo ja visto junto com o nosso uptime naquele instante;
-// dai em diante a hora anda com o nosso relogio, e a conta de "ha quanto tempo"
-// fecha com erro de segundos.
+// dai em diante a hora anda com o nosso clock, e a conta of "ha quanto time"
+// fecha com erro of segundos.
 //
-// O piso de 2020 e para nao aceitar carimbo de radio que ainda nao sincronizou
-// (ele manda 0, ou um numero pequeno de uptime) e ancorar a referencia no ano
-// de 1970 - o que faria todo no aparecer visto ha 56 anos.
+// O piso of 2020 e para nao aceitar carimbo of radio que ainda nao sincronizou
+// (ele manda 0, ou one numero pequeno of uptime) e ancorar a referencia no ano
+// of 1970 - o que faria todo no aparecer visto ha 56 anos.
 #define EPOCH_MINIMO 1577836800u          // 2020-01-01
 
-static uint32_t s_epoch_ref    = 0;       // carimbo do radio
-static uint32_t s_epoch_ref_ms = 0;       // nosso uptime quando ele chegou
+static uint32_t s_epoch_ref    = 0;       // carimbo of radio
+static uint32_t s_epoch_ref_ms = 0;       // nosso uptime when ele chegou
 
 uint32_t tab5_mesh_epoch(void)
 {
@@ -560,134 +560,134 @@ uint32_t tab5_mesh_epoch(void)
   return s_epoch_ref + (tab5_now_ms() - s_epoch_ref_ms) / 1000;
 }
 
-// So aceita carimbo que ADIANTE o relogio. Assim um last_heard antigo, do dump
+// So aceita carimbo que ADIANTE o clock. Assim one last_heard antigo, of dump
 // inicial, nunca puxa a referencia para tras.
 static void marcar_epoch(uint32_t carimbo)
 {
   if (carimbo < EPOCH_MINIMO) { return; }
-  const uint32_t agora = tab5_mesh_epoch();
-  if (carimbo <= agora) { return; }
+  const uint32_t now = tab5_mesh_epoch();
+  if (carimbo <= now) { return; }
   s_epoch_ref    = carimbo;
   s_epoch_ref_ms = tab5_now_ms();
 }
 
 // ---------------------------------------------------------------------------
-// HORA AO VIVO - a unica deste arquivo que acerta o relogio do sistema
+// HORA AO VIVO - a unica deste arquivo que acerta o clock of sistema
 // ---------------------------------------------------------------------------
-// tab5_mesh_epoch() acima serve para "ha quanto tempo", e so. Ancorada no
-// MAIOR last_heard da lista de nos, ela fica ATRASADA quanto for o silencio
-// da malha - o no mais recente pode ter falado ontem. Usada como "agora" ela
-// acertava o relogio com esse atraso: a mensagem enviada saia carimbada no
-// dia errado, e o "HOJE" da conversa pulava para o dia certo so quando uma
-// resposta de verdade chegava.
+// tab5_mesh_epoch() acima serve para "ha quanto time", e so. Ancorada no
+// MAIOR last_heard of lista of nos, ela stays ATRASADA quanto for o silencio
+// of malha - o no mais recente pode ter falado ontem. Usada como "now" ela
+// acertava o clock com esse atraso: a message enviada saia carimbada no
+// dia errado, e o "HOJE" of conversa pulava para o dia certo so when uma
+// resposta of verdade chegava.
 //
-// Aqui entra so carimbo que e "agora" por construcao:
-//   - rx_time de pacote que chegou DEPOIS de o no terminar o dump e esvaziar
-//     a queue do que guardou enquanto estavamos desconectados (esses tem o
-//     rx_time de quando ELE recebeu, minutos ou horas atras);
-//   - o campo 'time' da telemetria do nosso proprio no, pelo mesmo filtro.
-// O rx_time e sempre do relogio do NOSSO no (ele carimba ao receber), mesmo
+// Aqui entra so carimbo que e "now" por construcao:
+//   - rx_time of pacote que chegou DEPOIS of o no terminar o dump e esvaziar
+//     a queue of que guardou enquanto estavamos desconectados (esses tem o
+//     rx_time of when ELE recebeu, minutos ou horas atras);
+//   - o field 'time' of telemetria of nosso proprio no, pelo mesmo filtro.
+// O rx_time e sempre of clock of NOSSO no (ele carimba on receber), mesmo
 // para pacote que atravessou a malha ou veio pela ponte MQTT.
-#define QUEUE_DRENADA_MS 10000u            // depois do fim do dump
+#define QUEUE_DRENADA_MS 10000u            // depois of end of dump
 #define HORA_VIVA_VALE_MS (60u * 60u * 1000u)
 
-static uint32_t s_config_ok_ms = 0;        // fim do dump; 0 = ainda rodando
+static uint32_t s_config_ok_ms = 0;        // end of dump; 0 = ainda running
 static uint32_t s_vivo_ref     = 0;
 static uint32_t s_vivo_ref_ms  = 0;
 
-static bool trafego_ao_vivo(void)
+static bool trafego_on_vivo(void)
 {
   return s_config_ok_ms != 0 && (tab5_now_ms() - s_config_ok_ms) > QUEUE_DRENADA_MS;
 }
 
-static void marcar_hora_viva(uint32_t carimbo)
+static void marcar_hora_alive(uint32_t carimbo)
 {
-  if (carimbo < EPOCH_MINIMO || !trafego_ao_vivo()) { return; }
+  if (carimbo < EPOCH_MINIMO || !trafego_on_vivo()) { return; }
   s_vivo_ref    = carimbo;
   s_vivo_ref_ms = tab5_now_ms();
 }
 
-uint32_t tab5_mesh_hora_viva(void)
+uint32_t tab5_mesh_hora_alive(void)
 {
   const uint32_t ref = s_vivo_ref, ms = s_vivo_ref_ms;
   if (ref == 0 || (tab5_now_ms() - ms) > HORA_VIVA_VALE_MS) { return 0; }
   return ref + (tab5_now_ms() - ms) / 1000;
 }
 
-static void travar(void)   { if (s_trava) xSemaphoreTake(s_trava, portMAX_DELAY); }
+static void lock(void)   { if (s_trava) xSemaphoreTake(s_trava, portMAX_DELAY); }
 static void destravar(void){ if (s_trava) xSemaphoreGive(s_trava); }
 
-bool     tab5_mesh_no_ar(void)       { return (tab5_now_ms() - s_ultimo_quadro_ms) < SILENCIO_MS
-                                           && s_ultimo_quadro_ms != 0; }
+bool     tab5_mesh_no_ar(void)       { return (tab5_now_ms() - s_ultimo_frame_ms) < SILENCIO_MS
+                                           && s_ultimo_frame_ms != 0; }
 
 // HA QUANTO TEMPO O RADIO NAO FALA, em ms. UINT32_MAX = nunca falou.
 //
-// Existe porque "o enlace esta vivo?" e "alguem arrancou o modulo do cabo?" sao
-// perguntas diferentes e querem prazos diferentes. O no_ar() e generoso de
-// proposito (90s) para nao chamar de morta uma malha que so esta quieta. A
-// vigia do Grove precisa do numero CRU para escolher o proprio prazo - e, com
-// ela apoiada no no_ar(), subir o SILENCIO_MS de 30s para 90s empurrou a
-// deteccao de troca de modulo de 90s para 150s sem ninguem pedir.
+// Existe porque "o enlace esta vivo?" e "alguem arrancou o modulo of cabo?" sao
+// perguntas diferentes e querem prazos diferentes. O no_ar() e generoso of
+// proposito (90s) para nao chamar of morta uma malha que so esta quieta. A
+// vigia of Grove precisa of numero CRU para escolher o proprio prazo - e, com
+// ela apoiada no no_ar(), raise o SILENCIO_MS of 30s para 90s empurrou a
+// deteccao of troca of modulo of 90s para 150s sem ninguem request.
 uint32_t tab5_mesh_silencio_ms(void)
 {
-  if (s_ultimo_quadro_ms == 0) {
-    // NENHUM frame AINDA - mas pode ser so porque o servico acabou de
-    // subir, nao porque o radio sumiu. MESMO BUG do GPS (ver o aviso grande
+  if (s_ultimo_frame_ms == 0) {
+    // NENHUM frame AINDA - mas pode ser so porque o servico acabou of
+    // raise, nao porque o radio sumiu. MESMO BUG of GPS (ver o aviso grande
     // em tab5_gps_silence_ms(), achado em hardware):
-    // UINT32_MAX incondicional faz a vigia do Grove (kernel/core.cpp) enxergar
-    // "mudo ha 60s" no PRIMEIRO tique (ate 2s) depois de QUALQUER reinicio,
-    // sem dar ao radio nem os 60s de MUDO_MS que o codigo pretendia dar. Na
+    // UINT32_MAX incondicional faz a vigia of Grove (kernel/core.cpp) enxergar
+    // "mudo ha 60s" no PRIMEIRO tique (ate 2s) depois of QUALQUER reinicio,
+    // sem dar on radio nem os 60s of MUDO_MS que o code pretendia dar. Na
     // pratica o C6L costuma responder rapido o bastante para nunca bater
-    // nessa janela - mas a malha jamais teve garantia disso, e um radio
+    // nessa window - mas a malha jamais teve garantia disso, e one radio
     // lento para reconectar (boot frio, ruido) cairia direto no mesmo loop
-    // de reinicio a cada 2s que o GPS mostrou. Contar a partir de QUANDO O
-    // SERVICO SUBIU, e nao um sentinela fixo, fecha o buraco.
-    return s_servico_ativo ? (tab5_now_ms() - s_iniciado_em_ms) : UINT32_MAX;
+    // of reinicio a cada 2s que o GPS mostrou. Contar a partir of QUANDO O
+    // SERVICO SUBIU, e nao one sentinela fixo, fecha o buraco.
+    return s_servico_active ? (tab5_now_ms() - s_iniciado_em_ms) : UINT32_MAX;
   }
-  return tab5_now_ms() - s_ultimo_quadro_ms;
+  return tab5_now_ms() - s_ultimo_frame_ms;
 }
 uint32_t tab5_mesh_meu_numero(void)  { return s_meu_num; }
 const char* tab5_mesh_firmware(void) { return s_firmware; }
 
-void tab5_mesh_definir_beep(bool tocar)
+void tab5_mesh_set_beep(bool touch)
 {
-  settings_set_mesh_beep(tocar);
+  settings_set_mesh_beep(touch);
   // Se a fonte ainda nao existe (servico nunca subiu nesta sessao), nao ha
-  // bandeira para atualizar agora - tab5_mesh_iniciar() aplica a preferencia
+  // bandeira para atualizar now - tab5_mesh_iniciar() aplica a preferencia
   // gravada no instante em que a fonte nascer, ver acima.
-  if (s_notif >= 0) { notif_silenciar(s_notif, !tocar); }
+  if (s_notif >= 0) { notification_silenciar(s_notif, !touch); }
 }
 
-bool tab5_mesh_beep_ligado(void) { return settings_mesh_beep(); }
+bool tab5_mesh_beep_enabled(void) { return settings_mesh_beep(); }
 int      tab5_mesh_nao_lidas(void)   { return s_nao_lidas; }
 int      tab5_mesh_nao_lidas_diretas(void) { return s_nao_lidas_dir; }
 static void publicar_notif(void);   // definida adiante, junto das outras
 
 
 void tab5_mesh_contadores(uint32_t* quadros, uint32_t* pacotes, uint32_t* telemetria,
-                          uint32_t* localstats, uint32_t* texto, uint32_t* nodeinfo,
+                          uint32_t* localstats, uint32_t* text, uint32_t* nodeinfo,
                           int* ultima_variante)
 {
   if (quadros)    *quadros    = s_c_quadros;
   if (pacotes)    *pacotes    = s_c_pacotes;
   if (telemetria) *telemetria = s_c_telemetria;
   if (localstats) *localstats = s_c_localstats;
-  if (texto)      *texto      = s_c_texto;
+  if (text)      *text      = s_c_text;
   if (nodeinfo)   *nodeinfo   = s_c_nodeinfo;
   if (ultima_variante) *ultima_variante = s_ultima_variante;
 }
 
-// Ver o comentario da declaracao de s_c_routing_extra: nao e ruido, e um
-// termometro de qualidade de rota - cresce quando "alguem ouviu" chega facil
-// mas a confirmacao forte do radio nao chega.
+// Ver o comentario of declaracao of s_c_routing_extra: nao e ruido, e one
+// termometro of qualidade of rota - cresce when "alguem ouviu" chega facil
+// mas a confirmacao forte of radio nao chega.
 uint32_t tab5_mesh_routing_extra(void) { return s_c_routing_extra; }
 
-void tab5_mesh_saude(mesh_saude_t* s) { if (s) { travar(); *s = s_saude; destravar(); } }
+void tab5_mesh_saude(mesh_saude_t* s) { if (s) { lock(); *s = s_saude; destravar(); } }
 
 int tab5_mesh_num_nos(void)
 {
   int n = 0;
-  travar();
+  lock();
   for (int i = 0; i < MESH_MAX_NOS; ++i) { if (s_nos[i].usado) { ++n; } }
   destravar();
   return n;
@@ -695,11 +695,11 @@ int tab5_mesh_num_nos(void)
 
 uint32_t tab5_mesh_despejos(void) { return s_despejos; }
 
-// Ha quantos segundos o no foi ouvido; -1 = nao da para saber. Duas fontes,
-// nesta ordem:
-//   1. nosso proprio avistamento - exato, nao depende de relogio nenhum;
-//   2. o last_heard do radio contra a hora emprestada dele.
-static int32_t idade_do_no(const mesh_no_t& no)
+// Ha quantos segundos o no foi ouvido; -1 = nao of para saber. Duas fontes,
+// nesta order:
+//   1. nosso proprio avistamento - exato, nao depende of clock nenhum;
+//   2. o last_heard of radio contra a hora emprestada dele.
+static int32_t idade_of_no(const mesh_no_t& no)
 {
   const uint32_t ep = tab5_mesh_epoch();
   if (no.visto_local_ms != 0) { return (int32_t)((tab5_now_ms() - no.visto_local_ms) / 1000); }
@@ -707,16 +707,16 @@ static int32_t idade_do_no(const mesh_no_t& no)
   return -1;
 }
 
-// A ORDEM DA TABELA, a mesma do cliente web: o nosso no primeiro, depois do
-// ouvido mais recentemente ao mais antigo, e os sem idade conhecida no fim.
-// Antes era a ordem das vagas do vetor - um no que acabou de falar podia
-// estar no fim da lista, e a lista "embaralhava" a cada despejo. SEM TRAVA.
+// A ORDEM DA TABELA, a mesma of cliente web: o nosso no first, depois of
+// ouvido mais recentemente on mais antigo, e os sem idade conhecida no end.
+// Antes era a order das vagas of vetor - one no que acabou of falar podia
+// estar no end of lista, e a lista "embaralhava" a cada despejo. SEM TRAVA.
 static uint32_t s_prox_fixado = 0;
 static int      fav_pos(uint32_t num);   // favoritos, mais abaixo
 
-// LUGAR FIXO dado NA CHEGADA do dado (pacote ou NodeInfo com SNR de radio), e
-// nao quando a tela pergunta: e ele que protege o no do despejo (achar_no),
-// e o despejo acontece com a tela fechada tambem. SEM TRAVA.
+// LUGAR FIXO dado NA CHEGADA of dado (pacote ou NodeInfo com SNR of radio), e
+// nao when a screen pergunta: e ele que protege o no of despejo (achar_no),
+// e o despejo acontece com a screen closed tambem. SEM TRAVA.
 static void fixar_se_pelo_ar(mesh_no_t* no)
 {
   if (no && !no->fixado && no->num != s_meu_num && tab5_mesh_no_pelo_ar(no)) {
@@ -725,36 +725,36 @@ static void fixar_se_pelo_ar(mesh_no_t* no)
 }
 
 // ORDEM EM CACHE. Com 256 vagas, ordenar a cada tab5_mesh_no(i) - uma vez por
-// linha desenhada - viraria milhoes de comparacoes por segundo. A ordem so
-// muda quando a tabela muda (s_nos_ver) ou quando o tempo passa (a idade da
-// faixa de baixo): refeita no maximo uma vez por segundo, ou na hora se algo
+// line desenhada - viraria milhoes of comparacoes por segundo. A order so
+// muda when a tabela muda (s_nos_ver) ou when o time passa (a idade of
+// faixa of bottom): refeita no maximum uma vez por segundo, ou in hora se algo
 // chegou. Com a trava tomada.
 static uint32_t s_nos_ver = 0;
-EXT_RAM_BSS_ATTR static int s_ordem[MESH_MAX_NOS];
-static int      s_ordem_n = 0;
-EXT_RAM_BSS_ATTR static int s_ordem_rede[2][MESH_MAX_NOS];   // a mesma ordem, separada por rede
-static int      s_ordem_rede_n[2] = { 0, 0 };
-static uint32_t s_ordem_ver = UINT32_MAX;
-static uint32_t s_ordem_ms = 0;
+EXT_RAM_BSS_ATTR static int s_order[MESH_MAX_NOS];
+static int      s_order_n = 0;
+EXT_RAM_BSS_ATTR static int s_order_rede[2][MESH_MAX_NOS];   // a mesma order, separada por rede
+static int      s_order_rede_n[2] = { 0, 0 };
+static uint32_t s_order_ver = UINT32_MAX;
+static uint32_t s_order_ms = 0;
 
-static int ordem_nos(void)
+static int order_nos(void)
 {
-  if (s_ordem_ver == s_nos_ver && (tab5_now_ms() - s_ordem_ms) < 1000) { return s_ordem_n; }
-  // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso da internet a
-  // versao muda a cada pacote, e a pagina de nos pede uma linha de cada vez -
-  // eram varias ordenacoes de 256 nos por desenho. Um quarto de segundo de
-  // atraso na ordem nao se ve; o processamento, sim.
-  if (s_ordem_ver != UINT32_MAX && (tab5_now_ms() - s_ordem_ms) < 250) { return s_ordem_n; }
-  s_ordem_ver = s_nos_ver;
-  s_ordem_ms  = tab5_now_ms();
+  if (s_order_ver == s_nos_ver && (tab5_now_ms() - s_order_ms) < 1000) { return s_order_n; }
+  // MUDOU, MAS ACABOU DE ORDENAR: espera 250 ms. Com trafego denso of internet a
+  // versao muda a cada pacote, e a pagina of nos pede uma line of cada vez -
+  // eram varias ordenacoes of 256 nos por drawing. Um quarto of segundo of
+  // atraso in order nao se ve; o processamento, sim.
+  if (s_order_ver != UINT32_MAX && (tab5_now_ms() - s_order_ms) < 250) { return s_order_n; }
+  s_order_ver = s_nos_ver;
+  s_order_ms  = tab5_now_ms();
 
   // Tres faixas:
   //   0 - o nosso no;
-  //   F - os FAVORITOS (estrela), na ordem em que foram marcados;
-  //   1 - os ouvidos PELO AR, FIXOS: na ordem em que apareceram com SNR pela
-  //       primeira vez - nao descem quando outro fala;
-  //   2 - o resto (MQTT, ou sem SNR), do ouvido mais recentemente ao mais
-  //       antigo. Quem ganha SNR sobe para a faixa 1 e fica.
+  //   F - os FAVORITOS (estrela), in order em que foram marcados;
+  //   1 - os ouvidos PELO AR, FIXOS: in order em que apareceram com SNR pela
+  //       primeira vez - nao descem when outro fala;
+  //   2 - o resto (MQTT, ou sem SNR), of ouvido mais recentemente on mais
+  //       antigo. Quem ganha SNR sobe para a faixa 1 e stays.
   EXT_RAM_BSS_ATTR static int64_t chave[MESH_MAX_NOS];
   int n = 0;
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
@@ -764,22 +764,22 @@ static int ordem_nos(void)
     int64_t k;
     const int fp = fav_pos(no.num);
     if (no.num == s_meu_num) { k = -1; }
-    else if (fp >= 0)        { k = fp; }                         // favoritos, na ordem em que foram marcados
+    else if (fp >= 0)        { k = fp; }                         // favoritos, in order em que foram marcados
     else if (no.fixado)      { k = ((int64_t)1 << 20) + no.fixado; }
     else {
-      int64_t idade = idade_do_no(no);
+      int64_t idade = idade_of_no(no);
       if (idade < 0) { idade = INT32_MAX; }
       k = ((int64_t)1 << 40) + idade;
     }
     int j = n++;
-    while (j > 0 && k < chave[j - 1]) { s_ordem[j] = s_ordem[j - 1]; chave[j] = chave[j - 1]; --j; }
-    s_ordem[j] = i; chave[j] = k;
+    while (j > 0 && k < chave[j - 1]) { s_order[j] = s_order[j - 1]; chave[j] = chave[j - 1]; --j; }
+    s_order[j] = i; chave[j] = k;
   }
-  s_ordem_n = n;
-  s_ordem_rede_n[0] = s_ordem_rede_n[1] = 0;
+  s_order_n = n;
+  s_order_rede_n[0] = s_order_rede_n[1] = 0;
   for (int k = 0; k < n; ++k) {
-    const int r = s_nos[s_ordem[k]].rede == MESH_REDE_INTERNET ? 1 : 0;
-    s_ordem_rede[r][s_ordem_rede_n[r]++] = s_ordem[k];
+    const int r = s_nos[s_order[k]].rede == MESH_REDE_INTERNET ? 1 : 0;
+    s_order_rede[r][s_order_rede_n[r]++] = s_order[k];
   }
   return n;
 }
@@ -790,16 +790,16 @@ bool tab5_mesh_no_pelo_ar(const mesh_no_t* no)
 }
 
 // ---------------------------------------------------------------------------
-// FAVORITOS - a estrela, a mesma do no e do cliente web
+// FAVORITOS - a estrela, a mesma of no e of cliente web
 // ---------------------------------------------------------------------------
-// O Meshtastic ja tem favoritos: NodeInfo.is_favorite (campo 10) no dump, e o
+// O Meshtastic ja tem favoritos: NodeInfo.is_favorite (field 10) no dump, e o
 // AdminMessage set_favorite_node (39) / remove_favorite_node (40) para mudar.
-// Usando os dele, a estrela marcada aqui aparece no cliente web e na tela do
-// no, e o no protege o favorito do despejo da NodeDB dele tambem.
+// Usando os dele, a estrela marcada aqui aparece no cliente web e in screen of
+// no, e o no protege o favorito of despejo of NodeDB dele tambem.
 //
-// Guardados TAMBEM aqui (NVS), na ordem em que foram marcados - e a ordem no
-// topo da tabela. Sem o radio (modo internet) a lista local vale sozinha; a
-// mudanca feita assim fica PENDENTE e vai para o no no proximo dump. Com o
+// Guardados TAMBEM aqui (NVS), in order em que foram marcados - e a order no
+// topo of tabela. Sem o radio (modo internet) a lista local vale sozinha; a
+// mudanca feita assim stays PENDENTE e vai para o no no next dump. Com o
 // radio, o dump e a verdade: estrela tirada no cliente web some daqui tambem.
 #define MESH_MAX_FAVS  32
 #define MESH_NVS_FAVS  "favs"
@@ -811,7 +811,7 @@ typedef struct { uint32_t num; bool quer; } fav_pend_t;
 static fav_pend_t s_fav_pend[MESH_FAV_PEND];
 static int        s_n_fav_pend = 0;
 
-static bool       enlace_enviar(const uint8_t* corpo, size_t n);
+static bool       enlace_send(const uint8_t* body, size_t n);
 static mesh_no_t* achar_no(uint32_t num);
 
 static void recordar_favs(void)
@@ -835,7 +835,7 @@ static void salvar_favs(void)
   nvs_close(h);
 }
 
-// Posicao na lista de favoritos; -1 = nao e. SEM TRAVA.
+// Posicao in lista of favoritos; -1 = nao e. SEM TRAVA.
 static int fav_pos(uint32_t num)
 {
   recordar_favs();
@@ -843,7 +843,7 @@ static int fav_pos(uint32_t num)
   return -1;
 }
 
-// So a lista local (e a NVS, se mudou). SEM TRAVA.
+// So a lista local (e a NVS, se changed). SEM TRAVA.
 static void fav_aplicar(uint32_t num, bool quer)
 {
   const int pos = fav_pos(num);
@@ -851,7 +851,7 @@ static void fav_aplicar(uint32_t num, bool quer)
   if (quer) {
     if (s_n_favs >= MESH_MAX_FAVS) { ESP_LOGW(TAG, "favoritos cheios (%d)", MESH_MAX_FAVS); return; }
     s_favs[s_n_favs++] = num;
-    achar_no(num);   // favorito fica na tabela mesmo sem ter falado nesta sessao
+    achar_no(num);   // favorito stays in tabela mesmo sem ter falado nesta sessao
   } else {
     for (int i = pos; i < s_n_favs - 1; ++i) { s_favs[i] = s_favs[i + 1]; }
     --s_n_favs;
@@ -860,40 +860,40 @@ static void fav_aplicar(uint32_t num, bool quer)
   ++s_nos_ver;
 }
 
-static int fav_pendente(uint32_t num)
+static int fav_pending(uint32_t num)
 {
   for (int i = 0; i < s_n_fav_pend; ++i) { if (s_fav_pend[i].num == num) { return i; } }
   return -1;
 }
 
-// O no esta do outro lado e ja terminou o dump: da para mandar admin.
+// O no esta of outro lado e ja terminou o dump: of para mandar admin.
 static bool radio_aceita_admin(void)
 {
-  return s_servico_ativo && s_meu_num != 0 && s_config_ok_ms != 0
+  return s_servico_active && s_meu_num != 0 && s_config_ok_ms != 0
       && (s_via == SETTINGS_MESH_TRANSPORT_SERIAL || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado()));
 }
 
 // ToRadio{ packet: MeshPacket{ to: nos, decoded: Data{ portnum: ADMIN(6),
 // payload: <AdminMessage> }, id } }. Sem 'from' (= 0): e o que o no
-// reconhece como admin LOCAL, de um cliente conectado - aceito sem chave de
-// sessao (AdminModule.cpp, ramo mp.from == 0, da 2.5 ate a atual).
-// Unico caminho de AdminMessage do servico: favoritos e tab5_mesh_admin.
+// reconhece como admin LOCAL, of one cliente conectado - aceito sem chave of
+// sessao (AdminModule.cpp, ramo mp.from == 0, of 2.5 ate a current).
+// Unico caminho of AdminMessage of servico: favoritos e tab5_mesh_admin.
 #define PORT_ADMIN 6
 bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n_adm)
 {
   if (!adm || n_adm == 0 || n_adm > MESH_PAYLOAD_MAX + 33) { return false; }   // Data.payload: 233
   if (s_meu_num == 0) { return false; }   // sem o nosso numero, o 'to' iria 0 - e 0 nao e o no
   const mesh_pb_envelope_t e = { s_meu_num, -1, PORT_ADMIN, adm, n_adm, esp_random() | 1u, 0, false };
-  uint8_t quadro[MESH_PAYLOAD_MAX + 88];
-  const size_t n = mesh_pb_to_radio(&e, quadro, sizeof(quadro));
-  const bool ok = n && enlace_enviar(quadro, n);
-  if (ok) { mesh_diario_nota_envio(MESH_ENV_ADMIN); }
+  uint8_t frame[MESH_PAYLOAD_MAX + 88];
+  const size_t n = mesh_pb_to_radio(&e, frame, sizeof(frame));
+  const bool ok = n && enlace_send(frame, n);
+  if (ok) { mesh_diario_nota_send_state(MESH_ENV_ADMIN); }
   return ok;
 }
 
 bool tab5_mesh_interno_pode_admin(void) { return radio_aceita_admin(); }
 
-static bool enviar_admin_favorito(uint32_t num, bool quer)
+static bool send_admin_favorito(uint32_t num, bool quer)
 {
   // AdminMessage{ 39: set_favorite_node | 40: remove_favorite_node = num }
   uint8_t adm[12];
@@ -904,31 +904,31 @@ static bool enviar_admin_favorito(uint32_t num, bool quer)
   return ok;
 }
 
-// Fim do dump: o que foi mudado sem o radio vai agora. Com a trava.
-static void enviar_favs_pendentes(void)
+// Fim of dump: o que foi mudado sem o radio vai now. Com a trava.
+static void send_favs_pendentes(void)
 {
   if (!radio_aceita_admin()) { return; }
-  for (int i = 0; i < s_n_fav_pend; ++i) { enviar_admin_favorito(s_fav_pend[i].num, s_fav_pend[i].quer); }
+  for (int i = 0; i < s_n_fav_pend; ++i) { send_admin_favorito(s_fav_pend[i].num, s_fav_pend[i].quer); }
   s_n_fav_pend = 0;
 }
 
 bool tab5_mesh_favorito(uint32_t num)
 {
-  travar();
+  lock();
   const bool f = fav_pos(num) >= 0;
   destravar();
   return f;
 }
 
-void tab5_mesh_definir_favorito(uint32_t num, bool quer)
+void tab5_mesh_set_favorito(uint32_t num, bool quer)
 {
   if (num == 0) { return; }
-  travar();
+  lock();
   if (num != s_meu_num) {
     fav_aplicar(num, quer);
-    // Para o no: agora, se ele esta ai; senao fica pendente para o dump.
-    int k = fav_pendente(num);
-    if (radio_aceita_admin() && enviar_admin_favorito(num, quer)) {
+    // Para o no: now, se ele esta ai; senao stays pending para o dump.
+    int k = fav_pending(num);
+    if (radio_aceita_admin() && send_admin_favorito(num, quer)) {
       if (k >= 0) { s_fav_pend[k] = s_fav_pend[--s_n_fav_pend]; }
     } else {
       if (k < 0 && s_n_fav_pend < MESH_FAV_PEND) { k = s_n_fav_pend++; }
@@ -936,27 +936,27 @@ void tab5_mesh_definir_favorito(uint32_t num, bool quer)
     }
   }
   destravar();
-  sistema_avisar(AVISO_MESH_NOS);
+  system_notify(AVISO_MESH_NOS);
 }
 
-// O que o dump disse de um no (campo 10 ausente = false, e proto3). Pendente
+// O que o dump disse of one no (field 10 ausente = false, e proto3). Pendente
 // nosso vence: e uma mudanca que o no ainda nao recebeu.
-static void fav_do_radio(uint32_t num, bool fav)
+static void fav_of_radio(uint32_t num, bool fav)
 {
-  if (num == s_meu_num || s_via == SETTINGS_MESH_TRANSPORT_INTERNET || fav_pendente(num) >= 0) { return; }
+  if (num == s_meu_num || s_via == SETTINGS_MESH_TRANSPORT_INTERNET || fav_pending(num) >= 0) { return; }
   fav_aplicar(num, fav);
 }
 
 bool tab5_mesh_no(int idx, mesh_no_t* saida)
 {
   bool ok = false;
-  travar();
-  const int n = ordem_nos();
-  if (idx >= 0 && idx < n && s_nos[s_ordem[idx]].usado) {   // ordem de ate 250 ms atras
-    *saida = s_nos[s_ordem[idx]];
-    // Campo DERIVADO, preenchido so na copia: sem isso envelheceria entre a
-    // leitura e o desenho. Sem fonte nenhuma fica -1, e a tela escreve "?".
-    saida->idade_s = idade_do_no(*saida);
+  lock();
+  const int n = order_nos();
+  if (idx >= 0 && idx < n && s_nos[s_order[idx]].usado) {   // order of ate 250 ms atras
+    *saida = s_nos[s_order[idx]];
+    // Campo DERIVADO, preenchido so in copia: sem isso envelheceria entre a
+    // leitura e o drawing. Sem fonte none stays -1, e a screen escreve "?".
+    saida->idade_s = idade_of_no(*saida);
     saida->favorito = fav_pos(saida->num) >= 0;
     ok = true;
   }
@@ -966,9 +966,9 @@ bool tab5_mesh_no(int idx, mesh_no_t* saida)
 
 int tab5_mesh_num_nos_rede(uint8_t rede)
 {
-  travar();
-  ordem_nos();
-  const int n = s_ordem_rede_n[rede == MESH_REDE_INTERNET ? 1 : 0];
+  lock();
+  order_nos();
+  const int n = s_order_rede_n[rede == MESH_REDE_INTERNET ? 1 : 0];
   destravar();
   return n;
 }
@@ -976,12 +976,12 @@ int tab5_mesh_num_nos_rede(uint8_t rede)
 bool tab5_mesh_no_rede(uint8_t rede, int idx, mesh_no_t* saida)
 {
   bool ok = false;
-  travar();
-  ordem_nos();
+  lock();
+  order_nos();
   const int r = rede == MESH_REDE_INTERNET ? 1 : 0;
-  if (idx >= 0 && idx < s_ordem_rede_n[r] && s_nos[s_ordem_rede[r][idx]].usado) {
-    *saida = s_nos[s_ordem_rede[r][idx]];
-    saida->idade_s = idade_do_no(*saida);
+  if (idx >= 0 && idx < s_order_rede_n[r] && s_nos[s_order_rede[r][idx]].usado) {
+    *saida = s_nos[s_order_rede[r][idx]];
+    saida->idade_s = idade_of_no(*saida);
     saida->favorito = fav_pos(saida->num) >= 0;
     ok = true;
   }
@@ -991,8 +991,8 @@ bool tab5_mesh_no_rede(uint8_t rede, int idx, mesh_no_t* saida)
 
 int tab5_mesh_num_msgs(void) { return s_n_msgs; }
 
-// NUNCA SATURA - ver o aviso grande junto de s_total_msgs. Existe SO para
-// quem precisa saber "chegou (ou saiu) mensagem desde a ultima vez que
+// NUNCA SATURA - ver o aviso grande junto of s_total_msgs. Existe SO para
+// quem precisa saber "chegou (ou exited) message since a ultima vez que
 // olhei" (comparacao direta, nao pintura_mudou_*): tab5_mesh_num_msgs()
 // parece servir para isso mas nao serve, trava em MESH_MAX_MSGS (8) para
 // sempre.
@@ -1001,78 +1001,78 @@ uint32_t tab5_mesh_total_msgs(void) { return s_total_msgs; }
 bool tab5_mesh_msg(int i, mesh_msg_t* saida)
 {
   if (i < 0 || i >= s_n_msgs) { return false; }
-  travar();
+  lock();
   *saida = s_msgs[i];
   destravar();
-  // Derivado na copia, igual ao idade_s dos nos: o estado muda o tempo todo e
-  // guardar na mensagem faria a copia envelhecer entre a leitura e o uso.
-  saida->envio = tab5_mesh_estado_envio(saida->id, &saida->erro);
+  // Derivado in copia, igual on idade_s dos nos: o estado muda o time todo e
+  // guardar in message faria a copia envelhecer entre a leitura e o uso.
+  saida->send_state = tab5_mesh_estado_send_state(saida->id, &saida->erro);
   return true;
 }
 
 // ---------------------------------------------------------------------------
 // Conversas e historico no cartao
 // ---------------------------------------------------------------------------
-// Nome do arquivo de uma conversa. Curto e sem acento de proposito: e nome de
-// arquivo em FAT, e o cartao ja nos ensinou que 8.3 morde (ver o caso do
-// satelites.csv que nao abria por falta de LFN).
+// Nome of arquivo of uma conversa. Curto e sem acento of proposito: e name of
+// arquivo em FAT, e o cartao ja nos ensinou que 8.3 morde (ver o caso of
+// satelites.csv que nao abria por falta of LFN).
 // ---------------------------------------------------------------------------
 // CACHE DE NOMES DOS NOS
 // ---------------------------------------------------------------------------
-// COMO O MESHTASTIC IDENTIFICA UM NO. O identificador e o "num" - um uint32
-// derivado dos ultimos 4 bytes do MAC do radio. Ele NAO muda: e ele que vai no
-// campo 1 do MeshPacket e e por ele que se endereca uma mensagem direta.
+// COMO O MESHTASTIC IDENTIFICA UM NO. O identificador e o "num" - one uint32
+// derivado dos ultimos 4 bytes of MAC of radio. Ele NAO muda: e ele que vai no
+// field 1 of MeshPacket e e por ele que se endereca uma message direta.
 //
-// O nome longo e o curto sao ETIQUETAS que a pessoa escolhe e pode trocar
-// quando quiser. Trocar o nome NAO cria outro no - o num continua o mesmo, e
-// para o sistema e o mesmo interlocutor com rotulo novo. Um no novo de verdade
-// e um num novo, e ai e outra conversa mesmo.
+// O name longo e o curto sao ETIQUETAS que a pessoa escolhe e pode switch
+// when quiser. Trocar o name NAO cria outro no - o num continua o mesmo, e
+// para o sistema e o mesmo interlocutor com rotulo novo. Um no novo of verdade
+// e one num novo, e ai e outra conversa mesmo.
 //
-// Por isso o arquivo da conversa sempre foi nomeado pelo NUM (no-A1B2C3D4.txt),
-// e isso estava certo desde o inicio. O que faltava era guardar a ETIQUETA: sem
+// Por isso o arquivo of conversa sempre foi nomeado pelo NUM (no-A1B2C3D4.txt),
+// e isso estava certo since o start. O que faltava era guardar a ETIQUETA: sem
 // o C6L plugado, s_nos esta vazio e a conversa nascia chamada "A1B2C3D4".
 //
-// Este cache resolve isso. Vive em nos.txt, uma linha por avistamento, e o
-// leitor fica com a ULTIMA de cada num - assim renomear e so acrescentar uma
-// linha, sem reescrever arquivo nenhum.
+// Este cache resolve isso. Vive em nos.txt, uma line por avistamento, e o
+// leitor stays com a ULTIMA of cada num - assim renomear e so acrescentar uma
+// line, sem reescrever arquivo nenhum.
 //
-// HISTORICO, NAO "AO VIVO" - de proposito DESACOPLADO de MESH_MAX_NOS (32,
-// o tamanho da tabela AO VIVO em s_nos - ver achar_no() e o despejo do mais
-// antigo). Um historico de nos que so cresce - MESH_MAX_NOS era pequeno demais para
-// isso TAMBEM (o despejo da tabela ao vivo resolve "quem esta ativo agora",
+// HISTORICO, NAO "AO VIVO" - of proposito DESACOPLADO of MESH_MAX_NOS (32,
+// o tamanho of tabela AO VIVO em s_nos - ver achar_no() e o despejo of mais
+// antigo). Um historico of nos que so cresce - MESH_MAX_NOS era pequeno demais para
+// isso TAMBEM (o despejo of tabela on vivo resolve "quem esta active now",
 // mas nao "quem ja vi alguma vez"). Cada entrada e so 4+24+1 bytes; 256
-// delas sao ~8KB - nada para um ESP32-P4 com PSRAM.
+// delas sao ~8KB - nada para one ESP32-P4 com PSRAM.
 //
 // SOBRE A BUSCA ANTES DE ACRESCENTAR (a duvida): sim, precisa
 // - e uma busca LINEAR, sem indice nenhum, exatamente como ja era com 32.
-// Ela so roda quando uma NodeInfo chega (nao a cada pacote - NodeInfo e
-// esporadica) e uma vez por linha ao carregar o arquivo no boot. Com 256
-// entradas isso e no maximo 256 comparacoes de inteiro - microssegundos,
+// Ela so roda when uma NodeInfo chega (nao a cada pacote - NodeInfo e
+// esporadica) e uma vez por line on carregar o arquivo no boot. Com 256
+// entries isso e no maximum 256 comparacoes of inteiro - microssegundos,
 // mesmo no pior caso. Nao compensa uma estrutura mais esperta (hash, arvore)
-// para um numero deste tamanho; so compensaria na casa dos milhares.
+// para one numero deste tamanho; so compensaria in casa dos milhares.
 #define MESH_ARQ_NOS "nos.txt"
-// 1024: o cache de nomes enchia com os nos da internet e, cheio, recusava
-// nome novo - inclusive o de um vizinho de radio. ~53 KB na PSRAM.
+// 1024: o cache of nomes enchia com os nos of internet e, cheio, recusava
+// name novo - inclusive o of one vizinho of radio. ~53 KB in PSRAM.
 #define MESH_MAX_CONHECIDOS 1024
 
-// CURTO E LONGO, os dois - a tabela de nos saia toda sem nome. Antes so o curto persistia aqui
-// (ver o aviso grande junto de lembrar_nome() mais abaixo).
-typedef struct { uint32_t num; char curto[MESH_NOME_CURTO]; char longo[MESH_NOME_LONGO]; bool sujo; } no_conhecido_t;
+// CURTO E LONGO, os dois - a tabela of nos saia toda sem name. Antes so o curto persistia aqui
+// (ver o aviso grande junto of lembrar_nome() mais abaixo).
+typedef struct { uint32_t num; char curto[MESH_NOME_CURTO]; char longo[MESH_NOME_LONGO]; bool dirty; } no_conhecido_t;
 EXT_RAM_BSS_ATTR static no_conhecido_t s_conhecidos[MESH_MAX_CONHECIDOS];
 static int s_n_conhecidos = 0;
 
 // O ARQUIVO JA FOI LIDO NESTA SESSAO. Antes a guarda era "s_n_conhecidos ==
-// 0": se o cartao nao montava na hora da leitura, a tabela ficava vazia, o
-// dump do no a enchia, e da primeira vez que o cartao voltava TODOS os nos
-// iam de novo para o fim do arquivo - que so crescia, com as mesmas linhas,
-// a cada boot assim. Agora ninguem grava antes de ler (descarregar_nomes).
+// 0": se o cartao nao montava in hora of leitura, a tabela ficava vazia, o
+// dump of no a enchia, e of primeira vez que o cartao voltava TODOS os nos
+// iam of novo para o end of arquivo - que so crescia, com as mesmas lines,
+// a cada boot assim. Agora ninguem grava antes of read (descarregar_nomes).
 static bool s_nomes_lidos = false;
 
 static void carregar_nomes(void);
 
-// SEM TRAVA: chamadas de dentro dela. Nulo (nao string vazia) quando nao ha
+// SEM TRAVA: chamadas of dentro dela. Nulo (nao string vazia) when nao ha
 // cache - "sem entrada" e "entrada vazia" sao a mesma coisa aqui, os dois
-// jeitos de dizer "nada para mostrar".
+// jeitos of dizer "nada para mostrar".
 static const char* curto_conhecido(uint32_t num)
 {
   for (int i = 0; i < s_n_conhecidos; ++i) {
@@ -1092,17 +1092,17 @@ static const char* longo_conhecido(uint32_t num)
 // O QUE AS FONTES DO SISTEMA DESENHAM. As fontes suaves cobrem ASCII e o
 // Latin-1 que o portugues usa (2 bytes em UTF-8, lider 0xC2/0xC3); emoji e
 // simbolos (3-4 bytes) viram caixinha. Copia so o desenhavel, sem espacos
-// nas pontas. "?" sozinho e o placeholder do Meshtastic para "ninguem
-// escolheu um curto" - vale como vazio.
-static void nome_legivel(const char* in, char* out, size_t tam)
+// nas pontas. "?" sozinho e o placeholder of Meshtastic para "ninguem
+// escolheu one curto" - vale como vazio.
+static void name_legivel(const char* in, char* out, size_t size)
 {
-  if (!tam) { return; }
+  if (!size) { return; }
   size_t o = 0;
   const unsigned char* p = (const unsigned char*)(in ? in : "");
-  while (*p && o + 1 < tam) {
+  while (*p && o + 1 < size) {
     if (*p >= 0x20 && *p <= 0x7e) { out[o++] = (char)*p++; continue; }
     if ((*p == 0xC2 || *p == 0xC3) && (p[1] & 0xC0) == 0x80) {
-      if (o + 2 >= tam) { break; }
+      if (o + 2 >= size) { break; }
       out[o++] = (char)p[0]; out[o++] = (char)p[1]; p += 2; continue;
     }
     // Sequencia que a fonte nao tem: pula ela inteira.
@@ -1121,13 +1121,13 @@ static void nome_legivel(const char* in, char* out, size_t tam)
 static bool curto_utilizavel(const char* s)
 {
   char t[MESH_NOME_CURTO * 2];
-  nome_legivel(s, t, sizeof(t));
+  name_legivel(s, t, sizeof(t));
   return t[0] != 0;
 }
 
-// SEM TRAVA: chamada de dentro dela (lembrar_nome, achar_ou_criar_conversa).
-// Ao vivo primeiro (mais fresco), depois o cache do cartao.
-static void nome_exibicao(uint32_t num, char* out, size_t out_tam)
+// SEM TRAVA: chamada of dentro dela (lembrar_nome, achar_ou_criar_conversa).
+// Ao vivo first (mais fresco), depois o cache of cartao.
+static void name_exibicao(uint32_t num, char* out, size_t out_size)
 {
   const char* curto = nullptr;
   const char* longo = nullptr;
@@ -1139,54 +1139,54 @@ static void nome_exibicao(uint32_t num, char* out, size_t out_tam)
     }
   }
   char t[MESH_NOME_LONGO];
-  nome_legivel(curto ? curto : curto_conhecido(num), t, sizeof(t));
-  if (!t[0]) { nome_legivel(longo ? longo : longo_conhecido(num), t, sizeof(t)); }
-  if (t[0]) { snprintf(out, out_tam, "%s", t); return; }
-  snprintf(out, out_tam, "!%08lx", (unsigned long)num);
+  name_legivel(curto ? curto : curto_conhecido(num), t, sizeof(t));
+  if (!t[0]) { name_legivel(longo ? longo : longo_conhecido(num), t, sizeof(t)); }
+  if (t[0]) { snprintf(out, out_size, "%s", t); return; }
+  snprintf(out, out_size, "!%08lx", (unsigned long)num);
 }
 
-void tab5_mesh_nome_exibicao(uint32_t num, char* out, size_t out_tam)
+void tab5_mesh_name_exibicao(uint32_t num, char* out, size_t out_size)
 {
-  travar();
-  nome_exibicao(num, out, out_tam);
+  lock();
+  name_exibicao(num, out, out_size);
   destravar();
 }
 
-// Ver o aviso completo em tab5_mesh.hpp. Wrapper fino sobre curto_conhecido()
+// Ver o aviso complete em tab5_mesh.hpp. Wrapper fino sobre curto_conhecido()
 // (privada deste arquivo) - existe so para expor "ha cache, sem hex" para
-// quem, diferente de tab5_mesh_nome_exibicao(), NAO quer o fallback de hex.
-bool tab5_mesh_nome_cache(uint32_t num, char* out, size_t out_tam)
+// quem, diferente of tab5_mesh_nome_exibicao(), NAO quer o fallback of hex.
+bool tab5_mesh_name_cache(uint32_t num, char* out, size_t out_size)
 {
   const char* cache = curto_conhecido(num);
   if (!cache) { return false; }
-  snprintf(out, out_tam, "%s", cache);
+  snprintf(out, out_size, "%s", cache);
   return true;
 }
 
-// Irma de tab5_mesh_nome_cache(), para o nome LONGO - ver o aviso grande no
+// Irma of tab5_mesh_nome_cache(), para o name LONGO - ver o aviso grande no
 // .hpp.
-bool tab5_mesh_nome_longo_cache(uint32_t num, char* out, size_t out_tam)
+bool tab5_mesh_name_longo_cache(uint32_t num, char* out, size_t out_size)
 {
   const char* cache = longo_conhecido(num);
   if (!cache) { return false; }
-  snprintf(out, out_tam, "%s", cache);
+  snprintf(out, out_size, "%s", cache);
   return true;
 }
 
-// Grava so quando MUDA. O node_info chega a cada apresentacao e a cada
-// telemetria; anotar sempre encheria o cartao com a mesma linha.
+// Grava so when MUDA. O node_info chega a cada apresentacao e a cada
+// telemetria; anotar sempre encheria o cartao com a mesma line.
 //
-// 'curto'/'longo': cada um NULO independentemente quando este NodeInfo nao
-// trouxe (ou trouxe algo inutilizavel) daquele campo - so atualiza o que
+// 'curto'/'longo': cada one NULO independentemente when este NodeInfo nao
+// trouxe (ou trouxe algo inutilizavel) daquele field - so atualiza o que
 // veio, nunca apaga o outro que ja estava no cache.
-static void lembrar_nome(uint32_t num, const char* curto, const char* longo)
+static void lembrar_name(uint32_t num, const char* curto, const char* longo)
 {
   const bool tem_curto = curto && curto[0];
   const bool tem_longo = longo && longo[0];
   if (num == 0 || (!tem_curto && !tem_longo)) { return; }
-  // OS DA INTERNET NAO VAO PARA O CACHE. Sao centenas, de passagem: gravavam o
-  // cartao de 15 em 15 s e tomavam as 1024 vagas dos nomes daqui. Enquanto
-  // estao na tabela o nome deles aparece igual (ela e consultada primeiro).
+  // OS DA INTERNET NAO VAO PARA O CACHE. Sao centenas, of passagem: gravavam o
+  // cartao of 15 em 15 s e tomavam as 1024 vagas dos nomes daqui. Enquanto
+  // estao in tabela o name deles aparece igual (ela e consultada first).
   if (s_rede_rx == MESH_REDE_INTERNET) { return; }
 
   int idx = -1;
@@ -1201,72 +1201,72 @@ static void lembrar_nome(uint32_t num, const char* curto, const char* longo)
     s_conhecidos[idx].longo[0] = 0;
   }
 
-  bool mudou = false;
+  bool changed = false;
   if (tem_curto && strcmp(s_conhecidos[idx].curto, curto) != 0) {
     snprintf(s_conhecidos[idx].curto, sizeof(s_conhecidos[idx].curto), "%s", curto);
-    mudou = true;
+    changed = true;
   }
   if (tem_longo && strcmp(s_conhecidos[idx].longo, longo) != 0) {
     snprintf(s_conhecidos[idx].longo, sizeof(s_conhecidos[idx].longo), "%s", longo);
-    mudou = true;
+    changed = true;
   }
-  if (!mudou) { return; }
+  if (!changed) { return; }
 
   // NAO GRAVA AGORA - so marca. Gravar aqui montava e desmontava o cartao uma
-  // vez POR NO, e o radio despeja a lista inteira de uma vez na apresentacao:
-  // no boot sairam oito montagens em um segundo, cada uma com o aviso do LDO
-  // do SDMMC atras. A escrita vale um lote, nao um evento.
-  s_conhecidos[idx].sujo = true;
+  // vez POR NO, e o radio despeja a lista inteira of uma vez in apresentacao:
+  // no boot sairam oito montagens em one segundo, cada uma com o aviso of LDO
+  // of SDMMC atras. A escrita vale one lote, nao one evento.
+  s_conhecidos[idx].dirty = true;
 
-  // A conversa que ja exista passa a usar o nome novo, pela MESMA regra da
+  // A conversa que ja exista passa a usar o name novo, pela MESMA regra of
   // exibicao (curto, longo, id). O ARQUIVO dela e nomeado pelo num, entao
   // renomear aqui nao desgruda o historico.
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (s_conv[i].usada && !s_conv[i].channel && s_conv[i].no == num) {
-      nome_exibicao(num, s_conv[i].name, sizeof(s_conv[i].name));
+      name_exibicao(num, s_conv[i].name, sizeof(s_conv[i].name));
     }
   }
 }
 
 // Descarrega os nomes pendentes. UMA montagem para todos.
 //
-// Chamada pela tarefa do mesh, espacada: o cartao e caro de montar e nome de no
-// nao e informacao urgente - se o aparelho reiniciar antes da descarga, o
-// proximo node_info reensina.
+// Chamada pela tarefa of mesh, espacada: o cartao e caro of montar e name of no
+// nao e informacao urgente - se o aparelho reiniciar antes of descarga, o
+// next node_info reensina.
 static void descarregar_nomes(void)
 {
   int pendentes = 0;
-  for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].sujo) { ++pendentes; } }
+  for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].dirty) { ++pendentes; } }
   if (pendentes == 0) { return; }
 
-  // Sem ter lido o arquivo, nao da para saber se o nome e novo: tenta ler
-  // agora; sem cartao, os pendentes esperam a proxima volta.
+  // Sem ter lido o arquivo, nao of para saber se o name e novo: tenta read
+  // now; sem cartao, os pendentes esperam a next iteration.
   if (!s_nomes_lidos) { carregar_nomes(); }
   if (!s_nomes_lidos) { return; }
   pendentes = 0;
-  for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].sujo) { ++pendentes; } }
+  for (int i = 0; i < s_n_conhecidos; ++i) { if (s_conhecidos[i].dirty) { ++pendentes; } }
   if (pendentes == 0) { return; }
 
   // FORMATO GANHOU UM CAMPO: "hex,curto,longo" - era so
-  // "hex,curto". carregar_nomes() (abaixo) le os dois formatos: uma linha
-  // antiga sem o segundo virgula so deixa o longo vazio, sem quebrar nada.
-  // Pelo gravador do sistema: entregar e na hora, gravar e em lote.
+  // "hex,curto". carregar_nomes() (abaixo) le os dois formatos: uma line
+  // antiga sem o segundo virgula so deixa o longo vazio, sem break nada.
+  // Pelo gravador of sistema: entregar e in hora, gravar e em lote.
   for (int i = 0; i < s_n_conhecidos; ++i) {
-    if (!s_conhecidos[i].sujo) { continue; }
-    char linha[96];
-    snprintf(linha, sizeof(linha), "%08lX,%s,%s\n", (unsigned long)s_conhecidos[i].num,
+    if (!s_conhecidos[i].dirty) { continue; }
+    char line[96];
+    snprintf(line, sizeof(line), "%08lX,%s,%s\n", (unsigned long)s_conhecidos[i].num,
              s_conhecidos[i].curto, s_conhecidos[i].longo);
-    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_NOS, linha);
-    s_conhecidos[i].sujo = false;
+    tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_NOS, line);
+    s_conhecidos[i].dirty = false;
   }
   ESP_LOGI(TAG, "%d nome(s) de no gravados", pendentes);
 }
 
-// Le o cache do cartao. Ultima linha de cada num vence.
+// Le o cache of cartao. Ultima line of cada num vence.
 //
 // DOIS FORMATOS aceitos - ver o aviso em descarregar_nomes(): "hex,curto"
-// (antigo) e "hex,curto,longo" (atual). A quebra de linha e removida ANTES
-// de procurar a segunda virgula - ela so pode estar no fim de verdade,
+// (antigo) e "hex,curto,longo" (current). A quebra of line e removida ANTES
+// of procurar a segunda virgula - ela so pode estar no end of verdade,
 // nao importa quantas virgulas vierem antes.
 static void carregar_nomes(void)
 {
@@ -1274,20 +1274,20 @@ static void carregar_nomes(void)
   FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_NOS, "r");
   if (!f) { s_nomes_lidos = true; tab5_sd_unmount(); return; }   // ainda nao existe
 
-  // Quem ja estava na tabela antes da leitura veio do no ao vivo.
-  EXT_RAM_BSS_ATTR static bool ao_vivo[MESH_MAX_CONHECIDOS];
-  for (int i = 0; i < MESH_MAX_CONHECIDOS; ++i) { ao_vivo[i] = (i < s_n_conhecidos); }
+  // Quem ja estava in tabela antes of leitura veio of no on vivo.
+  EXT_RAM_BSS_ATTR static bool on_vivo[MESH_MAX_CONHECIDOS];
+  for (int i = 0; i < MESH_MAX_CONHECIDOS; ++i) { on_vivo[i] = (i < s_n_conhecidos); }
 
-  int linhas = 0;
-  char linha[96];
-  while (fgets(linha, sizeof(linha), f)) {
-    char* resto = strchr(linha, ',');
+  int lines = 0;
+  char line[96];
+  while (fgets(line, sizeof(line), f)) {
+    char* resto = strchr(line, ',');
     if (!resto) { continue; }
-    *resto++ = 0;   // linha = so o hex agora
-    ++linhas;
+    *resto++ = 0;   // line = so o hex now
+    ++lines;
 
-    char* fim = strpbrk(resto, "\r\n");
-    if (fim) { *fim = 0; }   // resto = "curto" ou "curto,longo", sem quebra
+    char* end = strpbrk(resto, "\r\n");
+    if (end) { *end = 0; }   // resto = "curto" ou "curto,longo", sem quebra
 
     char* curto = resto;
     char* longo = strchr(resto, ',');
@@ -1295,17 +1295,17 @@ static void carregar_nomes(void)
 
     if (!curto[0] && (!longo || !longo[0])) { continue; }
 
-    const uint32_t num = (uint32_t)strtoul(linha, nullptr, 16);
+    const uint32_t num = (uint32_t)strtoul(line, nullptr, 16);
     if (num == 0) { continue; }
 
     int idx = -1;
     for (int i = 0; i < s_n_conhecidos; ++i) {
       if (s_conhecidos[i].num == num) { idx = i; break; }
     }
-    // O no ao vivo ja ensinou o nome antes desta leitura: ele vence, e so
-    // precisa ir para o arquivo se for diferente da ULTIMA linha dele la.
-    if (idx >= 0 && ao_vivo[idx]) {
-      s_conhecidos[idx].sujo = strcmp(s_conhecidos[idx].curto, curto) != 0
+    // O no on vivo ja ensinou o name antes desta leitura: ele vence, e so
+    // precisa ir para o arquivo se for diferente of ULTIMA line dele la.
+    if (idx >= 0 && on_vivo[idx]) {
+      s_conhecidos[idx].dirty = strcmp(s_conhecidos[idx].curto, curto) != 0
                             || strcmp(s_conhecidos[idx].longo, longo ? longo : "") != 0;
       continue;
     }
@@ -1315,7 +1315,7 @@ static void carregar_nomes(void)
       s_conhecidos[idx].num = num;
       s_conhecidos[idx].curto[0] = 0;
       s_conhecidos[idx].longo[0] = 0;
-      s_conhecidos[idx].sujo = false;
+      s_conhecidos[idx].dirty = false;
     }
     if (curto[0])         { snprintf(s_conhecidos[idx].curto, sizeof(s_conhecidos[idx].curto), "%s", curto); }
     if (longo && longo[0]) { snprintf(s_conhecidos[idx].longo, sizeof(s_conhecidos[idx].longo), "%s", longo); }
@@ -1323,14 +1323,14 @@ static void carregar_nomes(void)
   fclose(f);
   s_nomes_lidos = true;
 
-  // COMPACTA. O arquivo e "so acrescentar" (renomear = uma linha nova), entao
-  // cresce com linhas que a leitura acima ja descartou; e arquivos gravados
-  // antes da guarda s_nomes_lidos tem o mesmo no repetido dezenas de vezes.
-  // Com sobra demais, reescreve com uma linha por no - e ja leva junto o que
-  // estava pendente.
-  if (linhas > s_n_conhecidos + 32) {
-    // O arquivo novo inteiro na PSRAM e UMA troca pela porta do sistema
-    // (tab5_sd_replace) - nunca meio arquivo.
+  // COMPACTA. O arquivo e "so acrescentar" (renomear = uma line nova), entao
+  // cresce com lines que a leitura acima ja descartou; e arquivos gravados
+  // antes of guarda s_nomes_lidos tem o mesmo no repetido dezenas of vezes.
+  // Com sobra demais, reescreve com uma line por no - e ja leva junto o que
+  // estava pending.
+  if (lines > s_n_conhecidos + 32) {
+    // O arquivo novo inteiro in PSRAM e UMA troca pela porta of sistema
+    // (tab5_sd_replace) - nunca middle arquivo.
     const size_t por = 8 + 3 + MESH_NOME_CURTO + MESH_NOME_LONGO;
     const size_t cap = (size_t)s_n_conhecidos * por + 1;
     char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
@@ -1341,8 +1341,8 @@ static void carregar_nomes(void)
                               s_conhecidos[i].curto, s_conhecidos[i].longo);
       }
       if (k < cap && tab5_sd_replace(MESH_PASTA, MESH_ARQ_NOS, txt, k)) {
-        for (int i = 0; i < s_n_conhecidos; ++i) { s_conhecidos[i].sujo = false; }
-        ESP_LOGI(TAG, "cartao: nos.txt compactado de %d para %d linha(s)", linhas, s_n_conhecidos);
+        for (int i = 0; i < s_n_conhecidos; ++i) { s_conhecidos[i].dirty = false; }
+        ESP_LOGI(TAG, "cartao: nos.txt compactado de %d para %d linha(s)", lines, s_n_conhecidos);
       }
       heap_caps_free(txt);
     }
@@ -1354,63 +1354,63 @@ static void carregar_nomes(void)
 // ---------------------------------------------------------------------------
 // CONVERSAS APAGADAS - A FLAG QUE FALTAVA.
 // ---------------------------------------------------------------------------
-// O BUG: apagar uma conversa (tab5_mesh_esquecer_conversa) sempre so mexeu na
-// RAM, de proposito - "o cartao nao e tocado" era a regra, para o historico
+// O BUG: erase uma conversa (tab5_mesh_esquecer_conversa) sempre so mexeu in
+// RAM, of proposito - "o cartao nao e touched" era a regra, para o historico
 // sobreviver caso voces voltassem a se falar. So que tab5_mesh_carregar_do_
-// cartao() RELE A PASTA INTEIRA sempre que roda (abrir o app, sair do
-// repouso), e o arquivo no-XXXXXXXX.txt continuava la - entao a conversa
-// "apagada" voltava sozinha na proxima varredura. Nao era a mensagem
-// reaparecendo, era a PASTA sendo lida nova de novo sem lembrar da decisao.
+// cartao() RELE A PASTA INTEIRA sempre que roda (open o app, exit of
+// sleep), e o arquivo no-XXXXXXXX.txt continuava la - entao a conversa
+// "apagada" voltava sozinha in next varredura. Nao era a message
+// reaparecendo, era a PASTA sendo lida nova of novo sem lembrar of decisao.
 //
-// A CORRECAO E A FLAG QUE FOI PEDIDA: um arquivo pequeno, apagadas.txt, uma
-// linha por numero de no escondido. tab5_mesh_carregar_do_cartao() para de
-// recriar a conversa de quem esta nesta lista - o historico continua no
-// cartao (apagar so o REGISTRO, nao o passado, segue sendo a regra), so que
-// agora ele fica invisivel de proposito, nao por acidente.
+// A CORRECAO E A FLAG QUE FOI PEDIDA: one arquivo pequeno, apagadas.txt, uma
+// line por numero of no escondido. tab5_mesh_carregar_do_cartao() para of
+// recriar a conversa of quem esta nesta lista - o historico continua no
+// cartao (erase so o REGISTRO, nao o passado, segue sendo a regra), so que
+// now ele stays invisivel of proposito, nao por acidente.
 //
-// UM NO SAI DA LISTA SOZINHO quando voces voltam a se falar de verdade - toque
-// deliberado em "conversar com este no" (tab5_mesh_conversa_com) ou mensagem
+// UM NO SAI DA LISTA SOZINHO when voces voltam a se falar of verdade - touch
+// deliberado em "conversar com este no" (tab5_mesh_conversa_com) ou message
 // nova chegando (guardar_msg). Reler o cartao NAO conta como "voltar a se
-// falar"; so conteudo novo conta. UM CANAL sai igual - toque em "conversar com
-// este canal" (tab5_mesh_conversa_do_canal) ou mensagem nova nele.
+// falar"; so content novo conta. UM CANAL exit igual - touch em "conversar com
+// este canal" (tab5_mesh_conversa_do_canal) ou message nova nele.
 //
 // CANAL PASSOU A ENTRAR AQUI - ate entao so no direto podia ser
-// apagado ("canal nao se apaga, e devolver false e mais honesto que fingir",
-// dizia o comentario velho de tab5_mesh_esquecer_conversa). O pedido de
+// apagado ("canal nao se apaga, e return false e mais honesto que fingir",
+// dizia o comentario velho of tab5_mesh_esquecer_conversa). O request of
 // oferecer "canais disponiveis" para reabrir depois exigia justamente a
 // mesma flag que ja existia para no - so precisava aprender a guardar QUAL
-// TIPO de chave e essa, ja que indice de canal (0..7) e numero de no (sempre
-// um valor grande, derivado de MAC) nao podem se confundir no MESMO campo.
+// TIPO of chave e essa, ja que indice of canal (0..7) e numero of no (sempre
+// one valor grande, derivado of MAC) nao podem se confundir no MESMO field.
 typedef struct { bool channel; uint32_t key; } apagado_t;
 #define MESH_ARQ_APAGADAS "apagadas.txt"
 
-#define MESH_MAX_APAGADOS 64   // conversas escondidas; nada a ver com a tabela de nos
+#define MESH_MAX_APAGADOS 64   // conversas escondidas; nada a ver com a tabela of nos
 static apagado_t s_apagados[MESH_MAX_APAGADOS];
 static int       s_n_apagados = 0;
 static bool      s_apagados_carregado = false;
 
-// FORMATO DO ARQUIVO: uma linha por entrada.
-//   no direto:  "%08lX"   (como sempre foi - RETROCOMPATIVEL de proposito,
+// FORMATO DO ARQUIVO: uma line por entrada.
+//   no direto:  "%08lX"   (como sempre foi - RETROCOMPATIVEL of proposito,
 //               nenhum arquivo apagadas.txt ja gravado precisa mudar)
 //   canal:      "K%u"     ('K' nunca e digito hexadecimal (0-9A-F), entao
-//               nunca se confunde com um numero de no legitimo lido do
+//               nunca se confunde com one numero of no legitimo lido of
 //               formato antigo)
 static void carregar_apagados(void)
 {
-  // Sem cartao NAO conta como carregado: a lista da RAM nao pode virar o
-  // arquivo (desmarcar_apagada reescreve). Tenta de novo no proximo uso.
+  // Sem cartao NAO conta como carregado: a lista of RAM nao pode virar o
+  // arquivo (desmarcar_apagada reescreve). Tenta of novo no next uso.
   if (!tab5_sd_mount()) { return; }
   s_apagados_carregado = true;   // com o cartao: uma leitura por sessao, mesmo se o arquivo faltar
   // O ARQUIVO E A VERDADE: o que foi marcado antes desta leitura ja esta nele
-  // (tab5_sd_open aplica o diario e o pendente antes de abrir).
+  // (tab5_sd_open aplica o diario e o pending antes of open).
   s_n_apagados = 0;
   FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_APAGADAS, "r");
   if (!f) { tab5_sd_unmount(); return; }
 
-  char linha[16];
-  while (fgets(linha, sizeof(linha), f) && s_n_apagados < MESH_MAX_APAGADOS) {
-    if (linha[0] == 'K') {
-      const uint32_t idx = (uint32_t)strtoul(linha + 1, nullptr, 10);
+  char line[16];
+  while (fgets(line, sizeof(line), f) && s_n_apagados < MESH_MAX_APAGADOS) {
+    if (line[0] == 'K') {
+      const uint32_t idx = (uint32_t)strtoul(line + 1, nullptr, 10);
       if (idx < MESH_MAX_CANAIS || idx == MESH_CANAL_INTERNET) {
         s_apagados[s_n_apagados].channel = true;
         s_apagados[s_n_apagados].key = idx;
@@ -1418,7 +1418,7 @@ static void carregar_apagados(void)
       }
       continue;
     }
-    const uint32_t num = (uint32_t)strtoul(linha, nullptr, 16);
+    const uint32_t num = (uint32_t)strtoul(line, nullptr, 16);
     if (num != 0) {
       s_apagados[s_n_apagados].channel = false;
       s_apagados[s_n_apagados].key = num;
@@ -1430,7 +1430,7 @@ static void carregar_apagados(void)
   ESP_LOGI(TAG, "cartao: %d conversa(s) apagada(s) - ficam escondidas", s_n_apagados);
 }
 
-// SEM TRAVA: chamada de dentro dela.
+// SEM TRAVA: chamada of dentro dela.
 static bool esta_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
@@ -1440,9 +1440,9 @@ static bool esta_apagada(bool canal, uint32_t chave)
   return false;
 }
 
-// Marca uma conversa como apagada: RAM primeiro (vale na hora, mesmo sem
-// cartao), depois grava a linha - a linha extra no arquivo, sem reescrever
-// tudo, e o mesmo truque de nos.txt.
+// Marca uma conversa como apagada: RAM first (vale in hora, mesmo sem
+// cartao), depois grava a line - a line extra no arquivo, sem reescrever
+// everything, e o mesmo truque of nos.txt.
 static void marcar_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
@@ -1453,20 +1453,20 @@ static void marcar_apagada(bool canal, uint32_t chave)
     ++s_n_apagados;
   }
 
-  char linha[16];
-  if (canal) { snprintf(linha, sizeof(linha), "K%u\n", (unsigned)chave); }
-  else       { snprintf(linha, sizeof(linha), "%08lX\n", (unsigned long)chave); }
-  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_APAGADAS, linha);
+  char line[16];
+  if (canal) { snprintf(line, sizeof(line), "K%u\n", (unsigned)chave); }
+  else       { snprintf(line, sizeof(line), "%08lX\n", (unsigned long)chave); }
+  tab5_sd_enqueue_append(MESH_PASTA, MESH_ARQ_APAGADAS, line);
 }
 
-// Tira uma conversa da lista de apagados - chamado quando voces voltam a se
-// falar de verdade (ver o comentario grande acima). Reescreve o arquivo
-// inteiro: e raro (so acontece ao reatar algo que voce tinha apagado), e a
+// Tira uma conversa of lista of apagados - chamado when voces voltam a se
+// falar of verdade (ver o comentario grande acima). Reescreve o arquivo
+// inteiro: e raro (so acontece on reatar algo que voce tinha apagado), e a
 // lista e pequena.
 static void desmarcar_apagada(bool canal, uint32_t chave)
 {
   if (!s_apagados_carregado) { carregar_apagados(); }
-  if (!s_apagados_carregado) { return; }   // sem a lista do cartao nao se reescreve o arquivo
+  if (!s_apagados_carregado) { return; }   // sem a lista of cartao nao se reescreve o arquivo
   int achou = -1;
   for (int i = 0; i < s_n_apagados; ++i) {
     if (s_apagados[i].channel == canal && s_apagados[i].key == chave) { achou = i; break; }
@@ -1476,9 +1476,9 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
   for (int i = achou; i < s_n_apagados - 1; ++i) { s_apagados[i] = s_apagados[i+1]; }
   --s_n_apagados;
 
-  // Reescreve do zero pela porta do sistema: o substituir grava antes as
-  // linhas de "apagada" que ainda estavam para entrar, e com o cartao
-  // emprestado ao computador vai para o diario.
+  // Reescreve of zero pela porta of sistema: o substituir grava antes as
+  // lines of "apagada" que ainda estavam para entrar, e com o cartao
+  // emprestado on computador vai para o diario.
   char txt[MESH_MAX_APAGADOS * 12 + 1];
   size_t k = 0;
   for (int i = 0; i < s_n_apagados; ++i) {
@@ -1488,14 +1488,14 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
   tab5_sd_replace(MESH_PASTA, MESH_ARQ_APAGADAS, txt, k);
 }
 
-static void arquivo_da_conversa(const mesh_conversa_t* c, char* out, size_t tam)
+static void arquivo_of_conversa(const mesh_conversa_t* c, char* out, size_t size)
 {
-  if (c->channel && mesh_canal_internet(c->idx)) { snprintf(out, tam, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
-  else if (c->channel) { snprintf(out, tam, "canal-%u.txt", (unsigned)c->idx); }
-  else          { snprintf(out, tam, "no-%08lX.txt", (unsigned long)c->no); }
+  if (c->channel && mesh_canal_internet(c->idx)) { snprintf(out, size, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
+  else if (c->channel) { snprintf(out, size, "canal-%u.txt", (unsigned)c->idx); }
+  else          { snprintf(out, size, "no-%08lX.txt", (unsigned long)c->no); }
 }
 
-static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
+static int achar_ou_create_conversa(bool canal, uint8_t idx, uint32_t no)
 {
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (!s_conv[i].usada) { continue; }
@@ -1506,26 +1506,26 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
     if (s_conv[i].usada) { continue; }
     memset(&s_conv[i], 0, sizeof(s_conv[i]));
     s_conv_seq[i] = 0;
-    ++s_conv_ver;   // a ordem da coluna mudou
+    ++s_conv_ver;   // a order of coluna changed
     s_conv[i].usada = true;
     s_conv[i].channel = canal;
     s_conv[i].idx = idx;
     s_conv[i].no  = no;
-    if (const nao_lida_guardada_t* g = guardada_de(canal, idx, no, false)) { s_conv[i].nao_lidas = g->n; }
+    if (const nao_lida_guardada_t* g = guardada_of(canal, idx, no, false)) { s_conv[i].nao_lidas = g->n; }
     if (canal) {
-      // Nome REAL, se o radio ja nos contou (FromRadio campo 10). O rotulo
+      // Nome REAL, se o radio ja nos contou (FromRadio field 10). O rotulo
       // inventado abaixo e so o que resta enquanto a configuracao nao chegou.
       if (mesh_canal_internet(idx)) {
         snprintf(s_conv[i].name, sizeof(s_conv[i].name), "LongFast Internet");
-      } else if (idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) {
-        snprintf(s_conv[i].name, sizeof(s_conv[i].name), "%s", s_canal_nome[idx]);
+      } else if (idx < MESH_MAX_CANAIS && s_canal_name[idx][0]) {
+        snprintf(s_conv[i].name, sizeof(s_conv[i].name), "%s", s_canal_name[idx]);
       } else {
         snprintf(s_conv[i].name, sizeof(s_conv[i].name),
                  idx == 0 ? "LongFast" : "Canal %u", (unsigned)idx);
       }
     } else {
-      // Nome do no - curto, longo, e o id so em ultimo caso (nome_exibicao).
-      nome_exibicao(no, s_conv[i].name, sizeof(s_conv[i].name));
+      // Nome of no - curto, longo, e o id so em ultimo caso (nome_exibicao).
+      name_exibicao(no, s_conv[i].name, sizeof(s_conv[i].name));
     }
     return i;
   }
@@ -1535,55 +1535,55 @@ static int achar_ou_criar_conversa(bool canal, uint8_t idx, uint32_t no)
 // ---------------------------------------------------------------------------
 // GRAVACAO DAS MENSAGENS
 // ---------------------------------------------------------------------------
-// O Mesh tinha tarefa e queue PROPRIAS de gravacao ("mesh_grava",
-// apertar enviar travava a tela montando o cartao). A ideia era
-// certa e virou do SISTEMA: tab5_sd_enqueue_append (hal/tab5_sd.hpp) copia a linha e
-// volta na hora, e a tarefa "cartao" grava em lote. A mensagem vai como
-// URGENTE: gravada em milissegundos, nao no lote de 5 s.
-// Acrescenta ao arquivo da conversa. Formato de UMA linha, com o texto POR
-// ULTIMO para que virgula dentro da mensagem nao quebre a leitura:
-//   M,<quando>,<de>,<snr>,<rssi>,<texto>
+// O Mesh tinha tarefa e queue PROPRIAS of gravacao ("mesh_grava",
+// apertar send travava a screen montando o cartao). A ideia era
+// certa e virou of SISTEMA: tab5_sd_enqueue_append (hal/tab5_sd.hpp) copia a line e
+// iteration in hora, e a tarefa "cartao" grava em lote. A message vai como
+// URGENTE: gravada em milissegundos, nao no lote of 5 s.
+// Acrescenta on arquivo of conversa. Formato of UMA line, com o text POR
+// ULTIMO para que virgula dentro of message nao quebre a leitura:
+//   M,<when>,<of>,<snr>,<rssi>,<text>
 //
-// NAO FAZ MAIS E/S AQUI - ver o aviso grande acima, junto de laco_gravar().
-// Isto roda com s_trava preso (chamado de dentro de guardar_msg()) e as
-// vezes na tarefa de INTERFACE - tem que ser rapido incondicionalmente.
+// NAO FAZ MAIS E/S AQUI - ver o aviso grande acima, junto of laco_gravar().
+// Isto roda com s_trava preso (chamado of dentro of guardar_msg()) e as
+// vezes in tarefa of INTERFACE - tem que ser rapido incondicionalmente.
 static void gravar_msg(int ci, const mesh_msg_t* m)
 {
   if (ci < 0) { return; }
   char arquivo[32];
-  arquivo_da_conversa(&s_conv[ci], arquivo, sizeof(arquivo));
+  arquivo_of_conversa(&s_conv[ci], arquivo, sizeof(arquivo));
   // "M4" e nao "M3": o registro ganhou os saltos - etiqueta nova
-  // em vez de campo a mais, e o leitor sabe o que esperar antes de ler.
-  char linha[sizeof(((mesh_msg_t*)0)->texto) + 96];
-  snprintf(linha, sizeof(linha), "M4,%lu,%08lX,%.1f,%ld,%d,%u,%08lX,%s\n",
-           (unsigned long)m->quando, (unsigned long)m->de,
+  // em vez of field a mais, e o leitor sabe o que wait antes of read.
+  char line[sizeof(((mesh_msg_t*)0)->text) + 96];
+  snprintf(line, sizeof(line), "M4,%lu,%08lX,%.1f,%ld,%d,%u,%08lX,%s\n",
+           (unsigned long)m->when, (unsigned long)m->of,
            m->snr, (long)m->rssi, (int)m->via_mqtt, (unsigned)m->saltos,
-           (unsigned long)m->id, m->texto);
-  if (!tab5_sd_enqueue_append(MESH_PASTA, arquivo, linha, nullptr, true)) {
+           (unsigned long)m->id, m->text);
+  if (!tab5_sd_enqueue_append(MESH_PASTA, arquivo, line, nullptr, true)) {
     ESP_LOGW(TAG, "gravador cheio - mensagem NAO foi salva no cartao");
   }
 }
 
 // COMECAR A FALAR COM ALGUEM QUE AINDA NAO FALOU CONOSCO.
 //
-// Ate aqui uma conversa direta so nascia quando a mensagem CHEGAVA
-// (achar_ou_criar_conversa no caminho de recepcao). Ou seja: dava para
+// Ate aqui uma conversa direta so nascia when a message CHEGAVA
+// (achar_ou_criar_conversa no caminho of recepcao). Ou seja: dava para
 // responder, nunca para puxar assunto. Esta funcao abre o outro sentido, a
-// partir da lista de nos.
+// partir of lista of nos.
 //
-// Devolve o indice VISIVEL - o mesmo que a coluna de conversas usa - e nao o
-// interno, porque quem chama e a tela e e com esse que ela sabe trabalhar. Os
-// dois divergem assim que uma conversa e liberada no meio do vetor.
+// Devolve o indice VISIVEL - o mesmo que a coluna of conversas usa - e nao o
+// interno, porque quem chama e a screen e e com esse que ela sabe trabalhar. Os
+// dois divergem assim que uma conversa e liberada no middle of vetor.
 // O NOSSO NUMERO SOBREVIVE AO DESLIGAMENTO.
 //
-// Ele so chegava pelo my_info do radio. Sem o C6L plugado valia 0 - e como a
-// tela decide o lado do balao por (m->de == meu_numero), TODA mensagem do
+// Ele so chegava pelo my_info of radio. Sem o C6L plugado valia 0 - e como a
+// screen decide o lado of bubble por (m->of == meu_numero), TODA message of
 // arquivo aparecia como recebida, inclusive as que voce mandou. O arquivo
 // abria contando a conversa errada.
 //
-// Fica na NVS do proprio mesh, e nao em ajustes: ajustes guarda o que a PESSOA
+// Fica in NVS of proprio mesh, e nao em ajustes: ajustes guarda o que a PESSOA
 // escolheu, e isto e coisa que o radio contou. Misturar os dois faria o modulo
-// de preferencias saber de coisas que nao sao preferencia.
+// of preferences saber of coisas que nao sao preferencia.
 
 static void lembrar_meu_numero(uint32_t num)
 {
@@ -1604,31 +1604,31 @@ static uint32_t recordar_meu_numero(void)
   return v;
 }
 
-bool tab5_mesh_servico_ativo(void) { return s_servico_ativo; }
+bool tab5_mesh_servico_active(void) { return s_servico_active; }
 
-// AS CONVERSAS QUE ESTAO NO CARTAO, sem precisar do radio.
+// AS CONVERSAS QUE ESTAO NO CARTAO, sem precisar of radio.
 //
-// O historico sempre esteve gravado, mas a LISTA de conversas so existia na
-// memoria - e ela so era povoada por mensagem chegando. Sem o C6L plugado, o
+// O historico sempre esteve gravado, mas a LISTA of conversas so existia in
+// memoria - e ela so era povoada por message chegando. Sem o C6L plugado, o
 // app abria dizendo "sem conversas" com o cartao cheio delas. O arquivo estava
-// la; faltava alguem ler o indice.
+// la; faltava alguem read o indice.
 //
-// A pasta e o proprio indice: cada conversa e um arquivo, e o nome dele carrega
-// a chave (canal-3.txt, no-A1B2C3D4.txt). Nao precisa de catalogo a parte, que
-// seria mais um estado para ficar dessincronizado do que descreve.
+// A pasta e o proprio indice: cada conversa e one arquivo, e o name dele carrega
+// a chave (canal-3.txt, no-A1B2C3D4.txt). Nao precisa of catalogo a parte, que
+// seria mais one estado para ficar dessincronizado of que descreve.
 //
-// Serve TAMBEM com o radio no ar: conversas antigas passam a aparecer na coluna
-// desde a abertura, em vez de so quando alguem volta a falar. Renomear e
-// seguro - o nome do canal chega depois no dump de configuracao e sobrescreve
-// o rotulo inventado, porque o arquivo e nomeado pelo INDICE e nao pelo nome.
-int tab5_mesh_carregar_do_cartao(void)
+// Serve TAMBEM com o radio no ar: conversas antigas passam a aparecer in coluna
+// since a abertura, em vez of so when alguem iteration a falar. Renomear e
+// seguro - o name of canal chega depois no dump of configuracao e sobrescreve
+// o rotulo inventado, porque o arquivo e nomeado pelo INDICE e nao pelo name.
+int tab5_mesh_carregar_of_cartao(void)
 {
-  // Sem radio, o numero vem da NVS. E o que permite ao arquivo saber quais
+  // Sem radio, o numero vem of NVS. E o que permite on arquivo saber quais
   // mensagens sao suas.
   if (s_meu_num == 0) { s_meu_num = recordar_meu_numero(); }
 
-  // Nomes ANTES das conversas: e o cache que da nome a elas quando o radio nao
-  // esta plugado. Na ordem inversa, toda conversa nasceria chamada pelo numero.
+  // Nomes ANTES das conversas: e o cache que of name a elas when o radio nao
+  // esta plugado. Na order inversa, toda conversa nasceria chamada pelo numero.
   if (!s_nomes_lidos) { carregar_nomes(); }
 
   if (!tab5_sd_mount()) { return 0; }
@@ -1644,7 +1644,7 @@ int tab5_mesh_carregar_do_cartao(void)
 
   int achadas = 0;
   struct dirent* e;
-  travar();
+  lock();
   recordar_canais();
   while ((e = readdir(dir)) != NULL) {
     const char* n = e->d_name;
@@ -1653,31 +1653,31 @@ int tab5_mesh_carregar_do_cartao(void)
     if (strncmp(n, "canal-", 6) == 0) {
       const unsigned long idx = strtoul(n + 6, nullptr, 10);
       // !esta_apagada(true, idx) ACRESCENTADO - faltava aqui, e
-      // era a SEGUNDA causa (independente da config do radio) de um canal
-      // apagado voltar sozinho: esta varredura roda ao abrir o app e nao
+      // era a SEGUNDA causa (independente of config of radio) of one canal
+      // apagado voltar sozinho: esta varredura roda on open o app e nao
       // sabia nada sobre "apagada", so olhava se o arquivo existia no
       // cartao. Mesma logica que "no-" ja usava, so nunca tinha sido
       // estendida para canal.
       // Canal DESABILITADO no no (configuracao conhecida, ver
-      // recordar_canais): o arquivo fica no cartao, a conversa nao volta.
-      const bool desligado = s_canais_conhecidos && idx < MESH_MAX_CANAIS && !s_canal_ativo[idx];
-      if (idx < MESH_MAX_CANAIS && !desligado && !esta_apagada(true, (uint8_t)idx)
-       && achar_ou_criar_conversa(true, (uint8_t)idx, 0) >= 0) { ++achadas; }
+      // recordar_canais): o arquivo stays no cartao, a conversa nao iteration.
+      const bool disabled = s_canais_conhecidos && idx < MESH_MAX_CANAIS && !s_canal_active[idx];
+      if (idx < MESH_MAX_CANAIS && !disabled && !esta_apagada(true, (uint8_t)idx)
+       && achar_ou_create_conversa(true, (uint8_t)idx, 0) >= 0) { ++achadas; }
     }
-    else if (strncmp(n, "internet-", 9) == 0 || strncmp(n, "eua-", 4) == 0) {   // segundo nome: historico antigo
-      // A conversa da internet, com historico no cartao: volta mesmo com a rede
+    else if (strncmp(n, "internet-", 9) == 0 || strncmp(n, "eua-", 4) == 0) {   // segundo name: historico antigo
+      // A conversa of internet, com historico no cartao: iteration mesmo com a rede
       // desligada (so leitura), como as outras.
       if (!esta_apagada(true, MESH_CANAL_INTERNET)
-       && achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0) >= 0) { ++achadas; }
+       && achar_ou_create_conversa(true, MESH_CANAL_INTERNET, 0) >= 0) { ++achadas; }
     }
     else if (strncmp(n, "no-", 3) == 0) {
       // Hexadecimal, como foi escrito. Zero nao e no - e o que o strtoul
-      // devolve quando o nome nao presta, entao serve de peneira tambem.
+      // devolve when o name nao presta, entao serve of peneira tambem.
       const uint32_t num = (uint32_t)strtoul(n + 3, nullptr, 16);
-      // Apagada de proposito: nao recriar so porque o arquivo ainda existe no
+      // Apagada of proposito: nao recriar so porque o arquivo ainda existe no
       // cartao (ver o comentario grande em carregar_apagados, acima). O
-      // historico continua salvo - so nao volta a aparecer sozinho.
-      if (num != 0 && !esta_apagada(false, num) && achar_ou_criar_conversa(false, 0, num) >= 0) { ++achadas; }
+      // historico continua salvo - so nao iteration a aparecer sozinho.
+      if (num != 0 && !esta_apagada(false, num) && achar_ou_create_conversa(false, 0, num) >= 0) { ++achadas; }
     }
   }
   destravar();
@@ -1690,39 +1690,39 @@ int tab5_mesh_carregar_do_cartao(void)
 
 int tab5_mesh_conversa_com(uint32_t no)
 {
-  // Numero zero nao e no; e o preenchimento de quem nao sabe. E conversa com o proprio no
+  // Numero zero nao e no; e o preenchimento of quem nao sabe. E conversa com o proprio no
   // mesmo nao existe no protocolo - o radio nao entrega a si proprio.
   if (no == 0) { return -1; }
 
-  travar();
+  lock();
   if (no == s_meu_num) { destravar(); return -1; }
 
-  const int interno = achar_ou_criar_conversa(false, 0, no);
-  const int visivel = (interno >= 0) ? visivel_de(interno) : -1;
+  const int interno = achar_ou_create_conversa(false, 0, no);
+  const int visivel = (interno >= 0) ? visivel_of(interno) : -1;
   destravar();
 
-  // Toque deliberado em "conversar com este no": e a volta a se falar que
-  // desfaz um apagar anterior (ver o comentario grande acima da flag).
+  // Toque deliberado em "conversar com este no": e a iteration a se falar que
+  // desfaz one erase anterior (ver o comentario grande acima of flag).
   if (interno >= 0) { desmarcar_apagada(false, no); }
   return visivel;
 }
 
-// Mesmo papel de tab5_mesh_conversa_com(), para CANAL - criado
-// junto da opcao de apagar canal, para "canais disponiveis" poder reabrir um
-// que foi escondido (ver o aviso grande da flag de apagados, e
-// tab5_mesh_num_canais_disponiveis()/tab5_mesh_canal_disponivel() no fim
+// Mesmo papel of tab5_mesh_conversa_com(), para CANAL - criado
+// junto of opcao of erase canal, para "canais disponiveis" poder reabrir one
+// que foi escondido (ver o aviso grande of flag of apagados, e
+// tab5_mesh_num_canais_disponiveis()/tab5_mesh_canal_disponivel() no end
 // deste arquivo).
-int tab5_mesh_conversa_do_canal(uint8_t idx)
+int tab5_mesh_conversa_of_canal(uint8_t idx)
 {
   if (idx >= MESH_MAX_CANAIS && idx != MESH_CANAL_INTERNET) { return -1; }
 
-  travar();
-  const int interno = achar_ou_criar_conversa(true, idx, 0);
-  const int visivel = (interno >= 0) ? visivel_de(interno) : -1;
+  lock();
+  const int interno = achar_ou_create_conversa(true, idx, 0);
+  const int visivel = (interno >= 0) ? visivel_of(interno) : -1;
   destravar();
 
-  // Toque deliberado em "conversar com este canal": desfaz um apagar
-  // anterior, mesmo raciocinio de conversa_com() para no.
+  // Toque deliberado em "conversar com este canal": desfaz one erase
+  // anterior, mesmo raciocinio of conversa_com() para no.
   if (interno >= 0) { desmarcar_apagada(true, idx); }
   return visivel;
 }
@@ -1730,20 +1730,20 @@ int tab5_mesh_conversa_do_canal(uint8_t idx)
 // ---------------------------------------------------------------------------
 // A ORDEM DA COLUNA
 // ---------------------------------------------------------------------------
-// Canais primeiro, pelo indice; depois as diretas, mais recente em cima. O
-// vetor s_conv e um conjunto de vagas, nao uma ordem: uma conversa nova
-// ocupa a primeira vaga livre, que pode ficar ANTES da conversa aberta. Com o
+// Canais first, pelo indice; depois as diretas, mais recente em top. O
+// vetor s_conv e one conjunto of vagas, nao uma order: uma conversa nova
+// ocupa a primeira vaga livre, que pode ficar ANTES of conversa open. Com o
 // indice visivel sendo "a n-esima vaga usada", isso deslocava a conversa
-// aberta uma casa - o app passava a desenhar o historico de uma e a enviar
-// para outra. Agora a ordem e explicita e a mudanca dela e anunciada
+// open uma casa - o app passava a draw o historico of uma e a send
+// para outra. Agora a order e explicita e a mudanca dela e anunciada
 // (s_conv_ver), para o app reencontrar a sua pela chave.
 //
-// SEM TRAVA: chamadas de dentro dela. Insercao direta: sao no maximo 12.
+// SEM TRAVA: chamadas of dentro dela. Insercao direta: sao no maximum 12.
 static bool vem_antes(int a, int b)
 {
   const mesh_conversa_t& x = s_conv[a];
   const mesh_conversa_t& y = s_conv[b];
-  // A internet embaixo de tudo, depois das diretas: e abaixo do traco na coluna.
+  // A internet embaixo of everything, depois das diretas: e abaixo of traco in coluna.
   const bool ex = x.channel && mesh_canal_internet(x.idx), ey = y.channel && mesh_canal_internet(y.idx);
   if (ex != ey) { return ey; }
   if (x.channel != y.channel) { return x.channel; }
@@ -1752,7 +1752,7 @@ static bool vem_antes(int a, int b)
   return a < b;
 }
 
-static int ordem_conversas(int out[MESH_MAX_CONVERSAS])
+static int order_conversas(int out[MESH_MAX_CONVERSAS])
 {
   int n = 0;
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
@@ -1764,17 +1764,17 @@ static int ordem_conversas(int out[MESH_MAX_CONVERSAS])
   return n;
 }
 
-static int interno_de(int visivel)
+static int interno_of(int visivel)
 {
   int o[MESH_MAX_CONVERSAS];
-  const int n = ordem_conversas(o);
+  const int n = order_conversas(o);
   return (visivel >= 0 && visivel < n) ? o[visivel] : -1;
 }
 
-static int visivel_de(int interno)
+static int visivel_of(int interno)
 {
   int o[MESH_MAX_CONVERSAS];
-  const int n = ordem_conversas(o);
+  const int n = order_conversas(o);
   for (int k = 0; k < n; ++k) { if (o[k] == interno) { return k; } }
   return -1;
 }
@@ -1784,27 +1784,27 @@ uint32_t tab5_mesh_conversas_versao(void) { return s_conv_ver; }
 int tab5_mesh_conversa_indice(bool canal, uint8_t idx, uint32_t no)
 {
   int v = -1;
-  travar();
+  lock();
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (!s_conv[i].usada || s_conv[i].channel != canal) { continue; }
-    if (canal ? (s_conv[i].idx == idx) : (s_conv[i].no == no)) { v = visivel_de(i); break; }
+    if (canal ? (s_conv[i].idx == idx) : (s_conv[i].no == no)) { v = visivel_of(i); break; }
   }
   destravar();
   return v;
 }
 
 // ---------------------------------------------------------------------------
-// OS CANAIS DO NO - ativos, com nome, e lembrados entre um boot e outro
+// OS CANAIS DO NO - ativos, com name, e lembrados entre one boot e outro
 // ---------------------------------------------------------------------------
-// A configuracao dos canais so chega no dump do radio. Sem guarda-la, com o no
-// fora (so consulta, ou modo internet) nao havia como saber que um canal
+// A configuracao dos canais so chega no dump of radio. Sem guarda-la, com o no
+// fora (so consulta, ou modo internet) nao havia como saber que one canal
 // tinha sido DESABILITADO: o arquivo canal-N.txt continuava no cartao e a
-// conversa voltava na varredura da pasta. Fica na NVS do proprio mesh, ao
-// lado do nosso numero - e informacao que o radio contou, nao preferencia.
+// conversa voltava in varredura of pasta. Fica in NVS of proprio mesh, on
+// lado of nosso numero - e informacao que o radio contou, nao preferencia.
 //
-// Gravada em LOTE (s_canais_sujos), no fim do dump ou na volta de 15 s da
-// tarefa: o dump traz os 8 canais em sequencia e cada um seria uma escrita.
-typedef struct { uint8_t ativo; char name[MESH_NOME_CONVERSA]; } canal_salvo_t;
+// Gravada em LOTE (s_canais_sujos), no end of dump ou in iteration of 15 s of
+// tarefa: o dump traz os 8 canais em sequencia e cada one seria uma escrita.
+typedef struct { uint8_t active; char name[MESH_NOME_CONVERSA]; } canal_salvo_t;
 #define MESH_NVS_CANAIS "canais"
 
 static void recordar_canais(void)
@@ -1817,9 +1817,9 @@ static void recordar_canais(void)
   size_t n = sizeof(tab);
   if (nvs_get_blob(h, MESH_NVS_CANAIS, tab, &n) == ESP_OK && n == sizeof(tab)) {
     for (int i = 0; i < MESH_MAX_CANAIS; ++i) {
-      s_canal_ativo[i] = tab[i].ativo != 0;
+      s_canal_active[i] = tab[i].active != 0;
       tab[i].name[sizeof(tab[i].name) - 1] = 0;
-      snprintf(s_canal_nome[i], sizeof(s_canal_nome[i]), "%s", tab[i].ativo ? tab[i].name : "");
+      snprintf(s_canal_name[i], sizeof(s_canal_name[i]), "%s", tab[i].active ? tab[i].name : "");
     }
     s_canais_conhecidos = true;
   }
@@ -1828,17 +1828,17 @@ static void recordar_canais(void)
 
 // A COPIA sob a trava, a GRAVACAO fora dela: a NVS grava flash (o cache
 // para, ms), e com a trava presa o radio esperava junto para guardar o
-// proximo quadro. Roda na carona da tarefa "cartao" (ver mesh_na_carona).
+// next frame. Roda in carona of tarefa "cartao" (ver mesh_na_carona).
 static void salvar_canais(void)
 {
   canal_salvo_t tab[MESH_MAX_CANAIS];
-  travar();
+  lock();
   if (!s_canais_sujos) { destravar(); return; }
   s_canais_sujos = false;
   memset(tab, 0, sizeof(tab));
   for (int i = 0; i < MESH_MAX_CANAIS; ++i) {
-    tab[i].ativo = s_canal_ativo[i] ? 1 : 0;
-    snprintf(tab[i].name, sizeof(tab[i].name), "%s", s_canal_nome[i]);
+    tab[i].active = s_canal_active[i] ? 1 : 0;
+    snprintf(tab[i].name, sizeof(tab[i].name), "%s", s_canal_name[i]);
   }
   destravar();
   nvs_handle_t h;
@@ -1848,94 +1848,94 @@ static void salvar_canais(void)
   nvs_close(h);
 }
 
-// Nome de um canal para mostrar. Nome vazio no Meshtastic quer dizer "o nome
-// do preset de modem" - LongFast no padrao de fabrica.
-static void nome_do_canal(int idx, char* out, size_t tam)
+// Nome of one canal para mostrar. Nome vazio no Meshtastic quer dizer "o name
+// of preset of modem" - LongFast no default of fabrica.
+static void name_of_canal(int idx, char* out, size_t size)
 {
-  if (idx == MESH_CANAL_INTERNET) { snprintf(out, tam, "LongFast Internet"); }
-  else if (idx >= 0 && idx < MESH_MAX_CANAIS && s_canal_nome[idx][0]) { snprintf(out, tam, "%s", s_canal_nome[idx]); }
-  else if (idx == 0) { snprintf(out, tam, "LongFast"); }
-  else               { snprintf(out, tam, "Canal %d", idx); }
+  if (idx == MESH_CANAL_INTERNET) { snprintf(out, size, "LongFast Internet"); }
+  else if (idx >= 0 && idx < MESH_MAX_CANAIS && s_canal_name[idx][0]) { snprintf(out, size, "%s", s_canal_name[idx]); }
+  else if (idx == 0) { snprintf(out, size, "LongFast"); }
+  else               { snprintf(out, size, "Canal %d", idx); }
 }
 
-// Some com a conversa de um canal da coluna, SEM marcar como apagada: quem a
-// tirou foi a configuracao do no, nao voce. Reativando o canal no no, ela
-// volta sozinha no proximo dump, com o historico do cartao.
-static void esconder_conversa_canal(int idx)
+// Some com a conversa of one canal of coluna, SEM marcar como apagada: quem a
+// tirou foi a configuracao of no, nao voce. Reativando o canal no no, ela
+// iteration sozinha no next dump, com o historico of cartao.
+static void hide_conversa_canal(int idx)
 {
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (s_conv[i].usada && s_conv[i].channel && s_conv[i].idx == idx) {
       memset(&s_conv[i], 0, sizeof(s_conv[i]));
       s_conv_seq[i] = 0;
       ++s_conv_ver;
-      publicar_notif();   // as nao lidas dela saem do total
+      publicar_notif();   // as nao lidas dela saem of total
     }
   }
 }
 
-// Um canal da configuracao (FromRadio campo 10), JA com os zeros do proto3
+// Um canal of configuracao (FromRadio field 10), JA com os zeros of proto3
 // tratados (ver o leitor). Com a trava tomada.
-static void aplicar_canal(int idx, int papel, const char* nome_radio, const uint8_t* psk, size_t n_psk)
+static void aplicar_canal(int idx, int papel, const char* name_radio, const uint8_t* psk, size_t n_psk)
 {
-  recordar_canais();   // antes de comparar: a NVS nao pode sobrescrever o que chegou agora
-  const bool ativo = (papel != 0);
-  char nome[MESH_NOME_CONVERSA] = "";
-  if (ativo) {
-    if (nome_radio[0]) { snprintf(nome, sizeof(nome), "%s", nome_radio); }
-    else if (idx == 0) { snprintf(nome, sizeof(nome), "LongFast"); }
-    else               { snprintf(nome, sizeof(nome), "Canal %d", idx); }
+  recordar_canais();   // antes of comparar: a NVS nao pode sobrescrever o que chegou now
+  const bool active = (papel != 0);
+  char name[MESH_NOME_CONVERSA] = "";
+  if (active) {
+    if (name_radio[0]) { snprintf(name, sizeof(name), "%s", name_radio); }
+    else if (idx == 0) { snprintf(name, sizeof(name), "LongFast"); }
+    else               { snprintf(name, sizeof(name), "Canal %d", idx); }
   }
-  mesh_mqtt_aprender_canal(idx, papel, nome, ativo ? psk : nullptr, ativo ? n_psk : 0);
+  mesh_mqtt_aprender_canal(idx, papel, name, active ? psk : nullptr, active ? n_psk : 0);
 
-  if (s_canal_ativo[idx] != ativo || strcmp(s_canal_nome[idx], nome) != 0 || !s_canais_conhecidos) {
+  if (s_canal_active[idx] != active || strcmp(s_canal_name[idx], name) != 0 || !s_canais_conhecidos) {
     s_canais_sujos = true;
   }
-  s_canal_ativo[idx] = ativo;
-  snprintf(s_canal_nome[idx], sizeof(s_canal_nome[idx]), "%s", nome);
+  s_canal_active[idx] = active;
+  snprintf(s_canal_name[idx], sizeof(s_canal_name[idx]), "%s", name);
   s_canais_conhecidos = true;
 
-  if (!ativo) {
-    // DESABILITADO NO NO: sai da coluna. Era o caso do canal desligado no
+  if (!active) {
+    // DESABILITADO NO NO: exit of coluna. Era o caso of canal disabled no
     // cliente web que continuava aparecendo aqui.
-    esconder_conversa_canal(idx);
+    hide_conversa_canal(idx);
     return;
   }
-  ESP_LOGI(TAG, "canal %d: \"%s\"", idx, nome);
+  ESP_LOGI(TAG, "canal %d: \"%s\"", idx, name);
 
   // CANAL EXISTE, ENTAO A CONVERSA EXISTE - salvo se voce a apagou. Sem isso
-  // um canal criado no celular ficava invisivel ate alguem falar nele.
-  if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_criar_conversa(true, (uint8_t)idx, 0); }
+  // one canal criado no celular ficava invisivel ate alguem falar nele.
+  if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_create_conversa(true, (uint8_t)idx, 0); }
   // Renomeia a que ja exista. O arquivo e pelo INDICE (canal-0.txt), entao
   // renomear nao desgruda o historico.
   for (int k = 0; k < MESH_MAX_CONVERSAS; ++k) {
     if (s_conv[k].usada && s_conv[k].channel && s_conv[k].idx == idx) {
-      snprintf(s_conv[k].name, sizeof(s_conv[k].name), "%s", nome);
+      snprintf(s_conv[k].name, sizeof(s_conv[k].name), "%s", name);
     }
   }
 }
 
-// As conversas dos canais ativos (sem as apagadas), ou so o primario quando
-// nenhuma configuracao e conhecida ainda. Com a trava tomada.
-static void criar_conversas_dos_canais(void)
+// As conversas dos canais ativos (sem as apagadas), ou so o primario when
+// none configuracao e conhecida ainda. Com a trava tomada.
+static void create_conversas_dos_canais(void)
 {
   recordar_canais();
   bool algum = false;
   for (int idx = 0; idx < MESH_MAX_CANAIS; ++idx) {
-    if (!s_canais_conhecidos || !s_canal_ativo[idx]) { continue; }
+    if (!s_canais_conhecidos || !s_canal_active[idx]) { continue; }
     algum = true;
-    if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_criar_conversa(true, (uint8_t)idx, 0); }
+    if (!esta_apagada(true, (uint8_t)idx)) { achar_ou_create_conversa(true, (uint8_t)idx, 0); }
   }
-  if (!algum && !esta_apagada(true, 0)) { achar_ou_criar_conversa(true, 0, 0); }
-  if (settings_mesh_public_network() && !esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
+  if (!algum && !esta_apagada(true, 0)) { achar_ou_create_conversa(true, 0, 0); }
+  if (settings_mesh_public_network() && !esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_create_conversa(true, MESH_CANAL_INTERNET, 0); }
 }
 
 // Indices dos canais a OFERECER: os ativos; sem nenhum conhecido, o primario.
-// O da internet vem por ultimo, com a rede ligada.
-static int lista_canais(uint8_t out[MESH_MAX_CANAIS + 1])
+// O of internet vem por ultimo, com a rede enabled.
+static int list_canais(uint8_t out[MESH_MAX_CANAIS + 1])
 {
   int n = 0;
   for (int idx = 0; idx < MESH_MAX_CANAIS; ++idx) {
-    if (s_canais_conhecidos && s_canal_ativo[idx]) { out[n++] = (uint8_t)idx; }
+    if (s_canais_conhecidos && s_canal_active[idx]) { out[n++] = (uint8_t)idx; }
   }
   if (n == 0) { out[n++] = 0; }
   if (settings_mesh_public_network()) { out[n++] = MESH_CANAL_INTERNET; }
@@ -1945,24 +1945,24 @@ static int lista_canais(uint8_t out[MESH_MAX_CANAIS + 1])
 int tab5_mesh_num_canais(void)
 {
   uint8_t l[MESH_MAX_CANAIS + 1];
-  travar();
+  lock();
   recordar_canais();
-  const int n = lista_canais(l);
+  const int n = list_canais(l);
   destravar();
   return n;
 }
 
-bool tab5_mesh_canal(int i, uint8_t* idx_saida, char* nome, size_t tam, bool* visivel)
+bool tab5_mesh_canal(int i, uint8_t* idx_saida, char* name, size_t size, bool* visivel)
 {
   uint8_t l[MESH_MAX_CANAIS + 1];
   bool ok = false;
-  travar();
+  lock();
   recordar_canais();
-  const int n = lista_canais(l);
+  const int n = list_canais(l);
   if (i >= 0 && i < n) {
     const uint8_t idx = l[i];
     if (idx_saida) { *idx_saida = idx; }
-    if (nome)      { nome_do_canal(idx, nome, tam); }
+    if (name)      { name_of_canal(idx, name, size); }
     if (visivel) {
       *visivel = false;
       for (int k = 0; k < MESH_MAX_CONVERSAS; ++k) {
@@ -1977,37 +1977,37 @@ bool tab5_mesh_canal(int i, uint8_t* idx_saida, char* nome, size_t tam, bool* vi
 
 // APAGAR UMA CONVERSA - CANAL TAMBEM.
 //
-// Nasceu de um efeito colateral do "tocar no no para falar com ele": bastava
+// Nasceu of one efeito colateral of "touch no no para falar com ele": bastava
 // TOCAR para a conversa existir, e ela ficava la vazia para sempre. Criar sem
-// oferecer como desfazer e um caminho so de ida.
+// oferecer como desfazer e one caminho so of ida.
 //
-// CANAL NAO SE APAGAVA - "devolver false e mais honesto que
-// fingir", dizia o comentario velho aqui, porque nao havia flag nenhuma que
-// impedisse o canal de voltar sozinho na proxima mensagem ou na proxima
+// CANAL NAO SE APAGAVA - "return false e mais honesto que
+// fingir", dizia o comentario velho aqui, porque nao havia flag none que
+// impedisse o canal of voltar sozinho in next message ou in next
 // config. Agora ha (a mesma "apagados" que ja servia no direto, extendida
-// para guardar tambem indice de canal - ver o aviso grande junto dela) e os
-// dois pontos que recriavam a conversa sozinhos (a varredura do cartao e o
-// parser da config, ver os avisos la) ja checam essa flag. Falta so o "voltar
-// a falar de proposito" - tab5_mesh_conversa_do_canal() cuida disso.
+// para guardar tambem indice of canal - ver o aviso grande junto dela) e os
+// dois pontos que recriavam a conversa sozinhos (a varredura of cartao e o
+// parser of config, ver os notices la) ja checam essa flag. Falta so o "voltar
+// a falar of proposito" - tab5_mesh_conversa_do_canal() cuida disso.
 //
-// O CARTAO NAO E TOCADO, de proposito. O que se apaga e o registro em memoria,
+// O CARTAO NAO E TOCADO, of proposito. O que se apaga e o registro em memoria,
 // nao o historico. Se voces voltarem a se falar, a conversa renasce com o que
-// ja tinha sido dito - que e o que se espera de uma lista, e nao de um
+// ja tinha sido dito - que e o que se espera of uma lista, e nao of one
 // expurgo. Uma conversa vazia, que e o caso que motivou isto, nao tem nada no
 // cartao mesmo.
 bool tab5_mesh_esquecer_conversa(int idx)
 {
   bool ok = false, canal_apagado = false;
   uint32_t chave_apagada = 0;
-  travar();
-  const int i = interno_de(idx);
+  lock();
+  const int i = interno_of(idx);
   if (i >= 0) {
-    // As nao lidas dela saem do total sozinhas: publicar_notif() reconta.
-    // Guardado antes do memset apagar os proprios campos.
+    // As nao lidas dela saem of total sozinhas: publicar_notif() reconta.
+    // Guardado antes of memset erase os proprios campos.
     canal_apagado = s_conv[i].channel;
     chave_apagada = canal_apagado ? s_conv[i].idx : s_conv[i].no;
-    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
-    memset(&s_conv[i], 0, sizeof(s_conv[i]));   // usada volta a false
+    if (nao_lida_guardada_t* g = guardada_of(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
+    memset(&s_conv[i], 0, sizeof(s_conv[i]));   // usada iteration a false
     s_conv_seq[i] = 0;
     ++s_conv_ver;
     ok = true;
@@ -2015,8 +2015,8 @@ bool tab5_mesh_esquecer_conversa(int idx)
   if (ok) { publicar_notif(); }
   destravar();
 
-  // Fora da trava: e I/O de cartao (fopen/fclose), nao deve segurar o mutex
-  // que o resto do servico (recepcao, envio) tambem disputa. Canal-0 e chave
+  // Fora of trava: e I/O of cartao (fopen/fclose), nao deve hold o mutex
+  // que o resto of servico (recepcao, send_state) tambem disputa. Canal-0 e chave
   // valida (LongFast e o canal 0), entao so no direto tem "zero = invalido".
   if (ok && (canal_apagado || chave_apagada != 0)) {
     marcar_apagada(canal_apagado, chave_apagada);
@@ -2027,7 +2027,7 @@ bool tab5_mesh_esquecer_conversa(int idx)
 int tab5_mesh_num_conversas(void)
 {
   int n = 0;
-  travar();
+  lock();
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) { if (s_conv[i].usada) { ++n; } }
   destravar();
   return n;
@@ -2036,13 +2036,13 @@ int tab5_mesh_num_conversas(void)
 bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
 {
   bool ok = false;
-  travar();
-  const int i = interno_de(idx);
+  lock();
+  const int i = interno_of(idx);
   if (i >= 0) {
     *saida = s_conv[i];
-    // A segunda linha, derivada agora (ver mesh_conversa_t.sub): o nome
-    // longo de quem e a conversa direta, se ele disser algo que o nome da
-    // primeira linha ainda nao disse.
+    // A segunda line, derivada now (ver mesh_conversa_t.sub): o name
+    // longo of quem e a conversa direta, se ele disser algo que o name of
+    // primeira line ainda nao disse.
     saida->sub[0] = 0;
     if (saida->channel) {
       if (mesh_canal_internet(saida->idx)) { snprintf(saida->sub, sizeof(saida->sub), "rede internet"); }
@@ -2052,7 +2052,7 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
       for (int k = 0; k < MESH_MAX_NOS; ++k) {
         if (s_nos[k].usado && s_nos[k].num == saida->no) { if (s_nos[k].longo[0]) { longo = s_nos[k].longo; } break; }
       }
-      nome_legivel(longo ? longo : longo_conhecido(saida->no), saida->sub, sizeof(saida->sub));
+      name_legivel(longo ? longo : longo_conhecido(saida->no), saida->sub, sizeof(saida->sub));
       if (!strcmp(saida->sub, saida->name)) { saida->sub[0] = 0; }
     }
     ok = true;
@@ -2061,184 +2061,184 @@ bool tab5_mesh_conversa(int idx, mesh_conversa_t* saida)
   return ok;
 }
 
-// Um lugar so para publicar, chamado de todos os pontos que mexem nos
-// contadores. Espalhar a publicacao pelos pontos de alteracao seria repetir a
-// regra de gravidade em cinco lugares - e esquecer num deles.
+// Um lugar so para publicar, chamado of todos os pontos que mexem nos
+// contadores. Espalhar a publicacao pelos pontos of alteracao seria repetir a
+// regra of gravidade em cinco lugares - e esquecer num deles.
 //
-// SEM TRAVA: quem chama ja esta dentro dela. Tomar de novo travaria o mutex
+// SEM TRAVA: quem chama ja esta dentro dela. Tomar of novo travaria o mutex
 // contra si mesmo (nao e recursivo).
 static void publicar_notif(void)
 {
   // O TOTAL E DERIVADO, NUNCA MANTIDO A PARTE. Antes eram tres
-  // contadores mexidos por aritmetica em quatro lugares (+1 ao chegar, -N ao
-  // ler/apagar, zerar ao abrir o app) - e zerar o total ao abrir o app SEM
-  // zerar as conversas os descolava: dali em diante, ler uma conversa antiga
-  // subtraia mais do que o total tinha, o piso em zero engolia a diferenca e
-  // uma mensagem NOVA de outra conversa sumia da barra. Somando as conversas
-  // aqui, a barra e as bolinhas de cada conversa sao a mesma verdade.
+  // contadores mexidos por aritmetica em quatro lugares (+1 on chegar, -N on
+  // read/erase, reset on open o app) - e reset o total on open o app SEM
+  // reset as conversas os descolava: dali em diante, read uma conversa antiga
+  // subtraia mais of que o total tinha, o piso em zero engolia a diferenca e
+  // uma message NOVA of outra conversa sumia of barra. Somando as conversas
+  // aqui, a barra e as bolinhas of cada conversa sao a mesma verdade.
   s_nao_lidas = 0;
   s_nao_lidas_dir = 0;
   for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
     if (!s_conv[i].usada) { continue; }
     // OS DA INTERNET NAO APITAM. O LongFast publico fala o dia inteiro: a bolinha
-    // da conversa conta, a barra de status e o bipe ficam com o que e daqui.
+    // of conversa conta, a barra of status e o bipe ficam com o que e daqui.
     if (s_conv[i].channel && mesh_canal_internet(s_conv[i].idx)) { continue; }
     s_nao_lidas += s_conv[i].nao_lidas;
     if (!s_conv[i].channel) { s_nao_lidas_dir += s_conv[i].nao_lidas; }
   }
   if (s_notif < 0) { return; }
-  char resumo[NOTIF_RESUMO];
+  char summary[NOTIF_RESUMO];
   if (s_nao_lidas_dir > 0) {
-    snprintf(resumo, sizeof(resumo), "%d direta%s", s_nao_lidas_dir,
+    snprintf(summary, sizeof(summary), "%d direta%s", s_nao_lidas_dir,
              s_nao_lidas_dir > 1 ? "s" : "");
   } else {
     // QUAL CANAL, e nao so "quantas mensagens" - "1 no canal" nao dizia nada
-    // quando ha mais de um canal na lista (LongFast, BR...). Sabendo o NOME
-    // do unico canal com novidade, a barra de status ja diz onde olhar sem
-    // precisar abrir o app so para descobrir.
+    // when ha mais of one canal in lista (LongFast, BR...). Sabendo o NOME
+    // of unico canal com novidade, a barra of status ja diz onde olhar sem
+    // precisar open o app so para descobrir.
     //
     // CHAMADA SEMPRE COM O MUTEX JA TOMADO pelo chamador (ver os quatro
     // pontos que chamam publicar_notif) - por isso le s_conv[] direto, sem
-    // travar() de novo (destravaria duas vezes o mesmo lugar - deadlock).
-    const char* nome_unico = nullptr;
+    // lock() of novo (destravaria duas vezes o mesmo lugar - deadlock).
+    const char* name_unico = nullptr;
     int canais_com_novidade = 0;
     for (int i = 0; i < MESH_MAX_CONVERSAS; ++i) {
       if (s_conv[i].usada && s_conv[i].channel && !mesh_canal_internet(s_conv[i].idx) && s_conv[i].nao_lidas > 0) {
         ++canais_com_novidade;
-        nome_unico = s_conv[i].name;
+        name_unico = s_conv[i].name;
       }
     }
-    if (canais_com_novidade == 1 && nome_unico && nome_unico[0]) {
-      snprintf(resumo, sizeof(resumo), "%d em %s", s_nao_lidas, nome_unico);
+    if (canais_com_novidade == 1 && name_unico && name_unico[0]) {
+      snprintf(summary, sizeof(summary), "%d em %s", s_nao_lidas, name_unico);
     } else if (canais_com_novidade > 1) {
-      snprintf(resumo, sizeof(resumo), "%d em %d canais", s_nao_lidas, canais_com_novidade);
+      snprintf(summary, sizeof(summary), "%d em %d canais", s_nao_lidas, canais_com_novidade);
     } else {
-      // Rede de seguranca: s_nao_lidas>0 sem nenhum canal marcado nao deveria
-      // acontecer, mas sem isto a barra ficaria muda em vez de generica.
-      snprintf(resumo, sizeof(resumo), "%d no canal", s_nao_lidas);
+      // Rede of seguranca: s_nao_lidas>0 sem nenhum canal marcado nao deveria
+      // acontecer, mas sem isto a barra ficaria muda em vez of generica.
+      snprintf(summary, sizeof(summary), "%d no canal", s_nao_lidas);
     }
   }
-  // Direta e ATENCAO: e endereçada a voce. Trafego de canal e INFO - vale
-  // saber, nao exige nada.
-  notif_publicar(s_notif, s_nao_lidas,
-                 s_nao_lidas_dir > 0 ? NOTIF_ATENCAO : NOTIF_INFO, resumo);
+  // Direta e ATENCAO: e endereçada a voce. Trafego of canal e INFO - vale
+  // saber, nao requires nada.
+  notification_publicar(s_notif, s_nao_lidas,
+                 s_nao_lidas_dir > 0 ? NOTIF_ATENCAO : NOTIF_INFO, summary);
 }
 
 void tab5_mesh_marcar_conversa_lida(int idx)
 {
-  travar();
-  const int i = interno_de(idx);
+  lock();
+  const int i = interno_of(idx);
   // O total e as diretas saem sozinhos: publicar_notif() reconta.
   if (i >= 0) {
     s_conv[i].nao_lidas = 0;
-    // Lida de verdade: a guardada some junto, para nao voltar no proximo reinicio.
-    if (nao_lida_guardada_t* g = guardada_de(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
+    // Lida of verdade: a guardada some junto, para nao voltar no next reinicio.
+    if (nao_lida_guardada_t* g = guardada_of(s_conv[i].channel, s_conv[i].idx, s_conv[i].no, false)) { g->usada = false; }
   }
   publicar_notif();
   destravar();
 }
 
-// Le as ULTIMAS 'max' mensagens do arquivo. Le o arquivo inteiro mantendo uma
-// janela circular em vez de tentar posicionar no fim: linha tem tamanho
+// Le as ULTIMAS 'max' mensagens of arquivo. Le o arquivo inteiro mantendo uma
+// window circular em vez of tentar position no end: line tem tamanho
 // variavel, entao nao ha como saltar direto - e o arquivo e pequeno.
 int tab5_mesh_historico(int conversa, mesh_msg_t* saida, int max)
 {
   mesh_conversa_t c;
   if (!tab5_mesh_conversa(conversa, &c)) { return 0; }
-  return tab5_mesh_historico_de(c.channel, c.idx, c.no, saida, max);
+  return tab5_mesh_historico_of(c.channel, c.idx, c.no, saida, max);
 }
 
-int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* saida, int max)
+int tab5_mesh_historico_of(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* saida, int max)
 {
   mesh_conversa_t c = { };
   c.channel = canal; c.idx = idx; c.no = no;
   if (!tab5_sd_mount()) { return 0; }
 
-  char nome[32];
-  arquivo_da_conversa(&c, nome, sizeof(nome));
+  char name[32];
+  arquivo_of_conversa(&c, name, sizeof(name));
 
-  // Volta a usar o servico: quem sabe distinguir "ainda nao existe" de "deu
+  // Volta a usar o servico: quem sabe distinguir "ainda nao existe" of "deu
   // errado" e o tab5_sd, nao cada app. Conversa sem historico devolve 0
   // mensagens sem alarme no log.
-  FILE* f = tab5_sd_open(MESH_PASTA, nome, "r");
+  FILE* f = tab5_sd_open(MESH_PASTA, name, "r");
   if (!f) { tab5_sd_unmount(); return 0; }
 
-  // Desfechos carregados UMA VEZ, antes do loop. Ver o comentario da tabela.
+  // Desfechos carregados UMA VEZ, antes of loop. Ver o comentario of tabela.
   static desfecho_t desf[MESH_DESFECHOS];
   const int n_desf = carregar_desfechos(desf, MESH_DESFECHOS);
 
-  int n = 0, primeiro = 0, voltas = 0;
-  // TEM QUE CABER O PREFIXO (~60 bytes: "M4,quando,de,snr,rssi,vmqtt,saltos,
+  int n = 0, first = 0, voltas = 0;
+  // TEM QUE CABER O PREFIXO (~60 bytes: "M4,when,of,snr,rssi,vmqtt,saltos,
   // id,") MAIS O TEXTO INTEIRO (ate MESH_TEXTO-1=237 bytes, ver o aviso la)
-  // MAIS a quebra de linha - senao esta funcao vira o MESMO tipo de
-  // truncamento que a leitura ao vivo tinha (MESH_TEXTO pequeno demais),
-  // so que ao reler do cartao em vez de ao receber.
-  char linha[MESH_TEXTO + 80];
-  while (fgets(linha, sizeof(linha), f)) {
-    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao segurar o core
-    const bool fmt_m4 = (strncmp(linha, "M4,", 3) == 0);
-    const bool fmt_m3 = !fmt_m4 && (strncmp(linha, "M3,", 3) == 0);
-    const bool fmt_m2 = !fmt_m4 && !fmt_m3 && (strncmp(linha, "M2,", 3) == 0);
-    if (!fmt_m4 && !fmt_m3 && !fmt_m2 && strncmp(linha, "M,", 2) != 0) { continue; }
+  // MAIS a quebra of line - senao esta funcao vira o MESMO tipo of
+  // truncamento que a leitura on vivo tinha (MESH_TEXTO pequeno demais),
+  // so que on reler of cartao em vez of on receber.
+  char line[MESH_TEXTO + 80];
+  while (fgets(line, sizeof(line), f)) {
+    if ((++voltas % 128) == 0) { vTaskDelay(1); }   // nao hold o core
+    const bool fmt_m4 = (strncmp(line, "M4,", 3) == 0);
+    const bool fmt_m3 = !fmt_m4 && (strncmp(line, "M3,", 3) == 0);
+    const bool fmt_m2 = !fmt_m4 && !fmt_m3 && (strncmp(line, "M2,", 3) == 0);
+    if (!fmt_m4 && !fmt_m3 && !fmt_m2 && strncmp(line, "M,", 2) != 0) { continue; }
 
     mesh_msg_t m; memset(&m, 0, sizeof(m));
-    unsigned long quando = 0, de = 0, id = 0; float snr = 0; long rssi = 0;
+    unsigned long when = 0, of = 0, id = 0; float snr = 0; long rssi = 0;
     int vmqtt = 0;
     unsigned saltos = MESH_SALTOS_DESCONHECIDO;
-    // %n devolve onde o texto comeca: tudo dali ate o fim da linha e a mensagem,
+    // %n devolve onde o text comeca: everything dali ate o end of line e a message,
     // inclusive virgulas.
     int pos = 0;
     if (fmt_m4) {
-      if (sscanf(linha, "M4,%lu,%8lX,%f,%ld,%d,%u,%8lX,%n",
-                 &quando, &de, &snr, &rssi, &vmqtt, &saltos, &id, &pos) < 7) { continue; }
+      if (sscanf(line, "M4,%lu,%8lX,%f,%ld,%d,%u,%8lX,%n",
+                 &when, &of, &snr, &rssi, &vmqtt, &saltos, &id, &pos) < 7) { continue; }
     } else if (fmt_m3) {
-      // M3 tem via_mqtt mas nao saltos (campo chegou logo depois, mesma leva
-      // ) - fica MESH_SALTOS_DESCONHECIDO, o sentinela de
-      // "nao da para saber", nunca um numero inventado.
-      if (sscanf(linha, "M3,%lu,%8lX,%f,%ld,%d,%8lX,%n",
-                 &quando, &de, &snr, &rssi, &vmqtt, &id, &pos) < 6) { continue; }
+      // M3 tem via_mqtt mas nao saltos (field chegou logo depois, mesma leva
+      // ) - stays MESH_SALTOS_DESCONHECIDO, o sentinela of
+      // "nao of para saber", nunca one numero inventado.
+      if (sscanf(line, "M3,%lu,%8lX,%f,%ld,%d,%8lX,%n",
+                 &when, &of, &snr, &rssi, &vmqtt, &id, &pos) < 6) { continue; }
     } else if (fmt_m2) {
-      // M2 nao tem via_mqtt nem saltos - via_mqtt fica false, que e a
-      // suposicao mais segura: mensagem antiga muito provavelmente veio pelo
-      // radio mesmo, e um valor errado aqui so troca um icone, nunca perde
-      // texto nem confunde entrega.
-      if (sscanf(linha, "M2,%lu,%8lX,%f,%ld,%8lX,%n",
-                 &quando, &de, &snr, &rssi, &id, &pos) < 5) { continue; }
+      // M2 nao tem via_mqtt nem saltos - via_mqtt stays false, que e a
+      // suposicao mais segura: message antiga muito provavelmente veio pelo
+      // radio mesmo, e one valor errado aqui so troca one icon, nunca perde
+      // text nem confunde entrega.
+      if (sscanf(line, "M2,%lu,%8lX,%f,%ld,%8lX,%n",
+                 &when, &of, &snr, &rssi, &id, &pos) < 5) { continue; }
     } else {
-      // Formato antigo, sem id. A mensagem aparece igual; so nao ha marca de
+      // Formato antigo, sem id. A message aparece igual; so nao ha marca of
       // entrega - e nao ha mesmo, porque o estado morreu no reinicio.
-      if (sscanf(linha, "M,%lu,%8lX,%f,%ld,%n",
-                 &quando, &de, &snr, &rssi, &pos) < 4) { continue; }
+      if (sscanf(line, "M,%lu,%8lX,%f,%ld,%n",
+                 &when, &of, &snr, &rssi, &pos) < 4) { continue; }
     }
-    m.quando = (uint32_t)quando; m.de = (uint32_t)de; m.snr = snr; m.rssi = (int32_t)rssi;
+    m.when = (uint32_t)when; m.of = (uint32_t)of; m.snr = snr; m.rssi = (int32_t)rssi;
     m.via_mqtt = (vmqtt != 0);
     m.saltos = (uint8_t)saltos;
     m.id = (uint32_t)id;
-    // ANEL PRIMEIRO, CARTAO DEPOIS. O anel tem o estado ao vivo, inclusive o
-    // ENVIANDO que nunca vai para o cartao; o cartao tem os desfechos de todos
-    // os envios que ja sairam do anel ou de antes do ultimo reinicio.
-    m.envio = tab5_mesh_estado_envio(m.id, &m.erro);
-    if (m.envio == MESH_ENVIO_NA) { m.envio = buscar_desfecho(desf, n_desf, m.id, &m.erro); }
+    // ANEL PRIMEIRO, CARTAO DEPOIS. O anel tem o estado on vivo, inclusive o
+    // ENVIANDO que nunca vai para o cartao; o cartao tem os desfechos of todos
+    // os envios que ja sairam of anel ou of antes of ultimo reinicio.
+    m.send_state = tab5_mesh_estado_send_state(m.id, &m.erro);
+    if (m.send_state == MESH_ENVIO_NA) { m.send_state = buscar_desfecho(desf, n_desf, m.id, &m.erro); }
     const uint32_t corrigido = buscar_carimbo(desf, n_desf, m.id);
-    if (corrigido) { m.quando = corrigido; }
-    snprintf(m.texto, sizeof(m.texto), "%s", linha + pos);
-    m.texto[strcspn(m.texto, "\r\n")] = 0;
+    if (corrigido) { m.when = corrigido; }
+    snprintf(m.text, sizeof(m.text), "%s", line + pos);
+    m.text[strcspn(m.text, "\r\n")] = 0;
 
-    saida[(primeiro + n) % max] = m;
-    if (n < max) { ++n; } else { primeiro = (primeiro + 1) % max; }
+    saida[(first + n) % max] = m;
+    if (n < max) { ++n; } else { first = (first + 1) % max; }
   }
   fclose(f);
   tab5_sd_unmount();
 
-  // Desenrola a janela para a ordem cronologica.
-  if (primeiro != 0 && n == max) {
+  // Desenrola a window para a order cronologica.
+  if (first != 0 && n == max) {
     mesh_msg_t tmp[1];
     for (int i = 0; i < n; ++i) {
-      // rotacao simples: barata para dezenas de itens
+      // rotation simples: barata para dezenas of items
       tmp[0] = saida[0];
       for (int k = 0; k < n - 1; ++k) { saida[k] = saida[k+1]; }
       saida[n-1] = tmp[0];
-      if (--primeiro == 0) { break; }
+      if (--first == 0) { break; }
     }
   }
   return n;
@@ -2246,24 +2246,24 @@ int tab5_mesh_historico_de(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
 
 // ---------------------------------------------------------------------------
 
-// Acha ou cria a entrada do no. A tabela e pequena e a busca linear: com 32
-// entradas isso e mais rapido que qualquer indice, e nao ha alocacao.
+// Acha ou cria a entrada of no. A tabela e pequena e a busca linear: com 32
+// entries isso e mais rapido que qualquer indice, e nao ha alocacao.
 static mesh_no_t* achar_no(uint32_t num)
 {
-  // O nosso no e sempre daqui - a confirmacao de um envio pela internet chega
-  // "de nos" pela fila de la.
+  // O nosso no e sempre daqui - a confirmacao of one send_state pela internet chega
+  // "of nos" pela fila of la.
   const uint8_t rede = (s_meu_num && num == s_meu_num) ? MESH_REDE_NO : s_rede_rx;
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
     if (s_nos[i].usado && s_nos[i].num == num) {
-      // Ouvido aqui tambem: e daqui (um no local que aparece no servidor
+      // Ouvido aqui tambem: e daqui (one no local que aparece no servidor
       // publico continua sendo local). O contrario nao rebaixa.
       if (rede == MESH_REDE_NO && s_nos[i].rede != MESH_REDE_NO) { s_nos[i].rede = MESH_REDE_NO; ++s_nos_ver; }
       return &s_nos[i];
     }
   }
-  // TETO DA INTERNET. O LongFast publico tem milhares de nos; sem teto eles
-  // empurrariam os daqui para fora da tabela. Cheio o teto, o novo no remoto
-  // toma a vaga do remoto ouvido ha mais tempo (favorito nunca sai).
+  // TETO DA INTERNET. O LongFast publico tem milhares of nos; sem teto eles
+  // empurrariam os daqui para fora of tabela. Cheio o teto, o novo no remoto
+  // toma a vaga of remoto ouvido ha mais time (favorito nunca exit).
   if (rede == MESH_REDE_INTERNET) {
     int n_internet = 0, velho = -1;
     int64_t maior = -1;
@@ -2272,7 +2272,7 @@ static mesh_no_t* achar_no(uint32_t num)
       if (!c.usado || c.rede != MESH_REDE_INTERNET) { continue; }
       ++n_internet;
       if (fav_pos(c.num) >= 0) { continue; }
-      int64_t idade = idade_do_no(c);
+      int64_t idade = idade_of_no(c);
       if (idade < 0) { idade = INT64_MAX / 2; }
       if (idade > maior) { maior = idade; velho = i; }
     }
@@ -2294,12 +2294,12 @@ static mesh_no_t* achar_no(uint32_t num)
       s_nos[i].usado = true;
       s_nos[i].num = num;
       s_nos[i].snr = -128.0f;
-      // SALTOS COMECA DESCONHECIDO, nao 0 (nos apareciam sem nome e sem
+      // SALTOS COMECA DESCONHECIDO, nao 0 (nos apareciam sem name e sem
       // saltos). memset zera para 0, que e
-      // EXATAMENTE o valor de "vizinho direto" - um no que so foi criado por
+      // EXATAMENTE o valor of "vizinho direto" - one no que so foi criado por
       // achar_no() (visto num pacote, mas ainda sem NodeInfo) mostraria "0
-      // saltos" como se fosse confirmado, quando na verdade e so "ainda nao
-      // sei". So ler_node_info() (NodeInfo, campo 9) escreve um saltos de
+      // saltos" como se fosse confirmado, when in verdade e so "ainda nao
+      // sei". So ler_node_info() (NodeInfo, field 9) escreve one saltos of
       // verdade; ate la, o sentinela evita a mentira por omissao.
       s_nos[i].saltos = MESH_SALTOS_DESCONHECIDO;
       s_nos[i].rede = rede;
@@ -2309,25 +2309,25 @@ static mesh_no_t* achar_no(uint32_t num)
   }
 
   // TABELA CHEIA - isto devolvia nullptr e o no NOVO era
-  // ignorado para sempre: quem enchesse as vagas primeiro (nem sempre os
-  // nos mais relevantes - so os primeiros ouvidos desde o boot) trancava a
+  // ignorado para sempre: quem enchesse as vagas first (nem sempre os
+  // nos mais relevantes - so os primeiros ouvidos since o boot) trancava a
   // tabela, e ninguem mais entrava, nem gente conversando via MQTT que nunca
   // tinha aparecido antes. A tabela nunca trocava nos antigos por novos.
   //
-  // A SAIDA: despejar alguem (criterio logo abaixo). Isso e seguro porque mesh_no_t e so um CACHE
-  // de metadados ao vivo (nome, bateria, posicao) - o historico de mensagens
-  // mora no cartao, indexado pelo NUMERO do no, e sobrevive intacto ao no
-  // sair da tabela. Se o no despejado voltar a falar, ele reaparece na
-  // proxima NodeInfo, como um no "novo" comum.
-  // QUEM SAI, em tres passadas - a primeira que achar candidato decide:
-  //   0 - os da INTERNET (via_mqtt) nao fixos: sao muitos, voltam no proximo
+  // A SAIDA: despejar alguem (criterio logo abaixo). Isso e seguro porque mesh_no_t e so one CACHE
+  // of metadados on vivo (name, battery, position) - o historico of mensagens
+  // mora no cartao, indexado pelo NUMERO of no, e sobrevive intacto on no
+  // exit of tabela. Se o no despejado voltar a falar, ele reaparece in
+  // next NodeInfo, como one no "novo" comum.
+  // QUEM SAI, em tres passes - a primeira que achar candidato decide:
+  //   0 - os of INTERNET (via_mqtt) nao fixos: sao muitos, voltam no next
   //       pacote e nao sao alcancaveis sem a internet;
   //   1 - qualquer nao fixo;
-  //   2 - qualquer um (tabela inteira de fixos - raro com 256).
-  // O nosso nunca. Dentro da passada, o de MAIOR idade - pela idade completa
-  // (avistamento nosso OU last_heard do radio), e nao so pelo avistamento:
-  // no do dump tem avistamento 0 e era despejado primeiro mesmo tendo sido
-  // ouvido ha um minuto, enquanto o resto do dump girava numa vaga so.
+  //   2 - qualquer one (tabela inteira of fixos - raro com 256).
+  // O nosso nunca. Dentro of pass, o of MAIOR idade - pela idade complete
+  // (avistamento nosso OU last_heard of radio), e nao so pelo avistamento:
+  // no of dump tem avistamento 0 e era despejado first mesmo tendo sido
+  // ouvido ha one minuto, enquanto o resto of dump girava numa vaga so.
   int mais_velho = -1;
   int64_t maior = -1;
   for (int pass = 0; pass < 3 && mais_velho < 0; ++pass) {
@@ -2336,15 +2336,15 @@ static mesh_no_t* achar_no(uint32_t num)
       if (c.num == s_meu_num || fav_pos(c.num) >= 0) { continue; }   // nem o nosso nem favorito
       if (pass == 0 && (c.fixado || !c.via_mqtt)) { continue; }
       if (pass == 1 && c.fixado) { continue; }
-      int64_t idade = idade_do_no(c);
-      if (idade < 0) { idade = INT64_MAX / 2; }   // nunca ouvido: o mais velho de todos
+      int64_t idade = idade_of_no(c);
+      if (idade < 0) { idade = INT64_MAX / 2; }   // nunca ouvido: o mais velho of todos
       if (idade > maior) { maior = idade; mais_velho = i; }
     }
   }
   if (mais_velho < 0) { mais_velho = 0; }
-  // SEM LOG AQUI DE PROPOSITO (poluia o log). Isto e estado normal de regime (a tabela FICA cheia numa malha com
-  // mais de 32 nos, e cada despejo e esperado, nao um erro) - so a CONTAGEM
-  // fica guardada, para consultar quando precisar em vez de aparecer sozinha
+  // SEM LOG AQUI DE PROPOSITO (poluia o log). Isto e estado normal of regime (a tabela FICA cheia numa malha com
+  // mais of 32 nos, e cada despejo e esperado, nao one erro) - so a CONTAGEM
+  // stays guardada, para consultar when precisar em vez of aparecer sozinha
   // toda hora. Ver tab5_mesh_despejos() e o comando "mesh" no console.
   ++s_despejos;
   ++s_nos_ver;
@@ -2352,7 +2352,7 @@ static mesh_no_t* achar_no(uint32_t num)
   s_nos[mais_velho].usado = true;
   s_nos[mais_velho].num = num;
   s_nos[mais_velho].snr = -128.0f;
-  s_nos[mais_velho].saltos = MESH_SALTOS_DESCONHECIDO;   // ver o aviso no ramo de cima
+  s_nos[mais_velho].saltos = MESH_SALTOS_DESCONHECIDO;   // ver o aviso no ramo of top
   s_nos[mais_velho].rede = rede;
   return &s_nos[mais_velho];
 }
@@ -2360,30 +2360,30 @@ static mesh_no_t* achar_no(uint32_t num)
 // ---------------------------------------------------------------------------
 // A NODEDB DO TAB5, NO CARTAO
 // ---------------------------------------------------------------------------
-// O rádio guarda no maximo MAX_NUM_NODES (100 no C6L ate a 2.7, 120 na 2.8):
-// constante do firmware dele. A tabela daqui tem 256 vagas e aprende tambem
-// pelo trafego ao vivo - e, guardada no cartao, sobrevive ao reinicio: o Tab5
-// passa a conhecer mais nos do que o radio consegue lembrar.
+// O rádio guarda no maximum MAX_NUM_NODES (100 no C6L ate a 2.7, 120 in 2.8):
+// constante of firmware dele. A tabela daqui tem 256 vagas e aprende tambem
+// pelo trafego on vivo - e, guardada no cartao, sobrevive on reinicio: o Tab5
+// passa a conhecer mais nos of que o radio consegue lembrar.
 //
-// Binario com cabecalho (magia, versao, tamanho do registro): se mesh_no_t
-// mudar de forma numa versao nova, o arquivo velho e ignorado em vez de lido
-// torto. Gravado a cada 10 min se a tabela mudou, e ao parar o servico.
+// Binario com cabecalho (magia, versao, tamanho of registro): se mesh_no_t
+// mudar of forma numa versao nova, o arquivo velho e ignorado em vez of lido
+// torto. Gravado a cada 10 min se a tabela changed, e on stop o servico.
 //
-// Ao carregar, o que e "desta sessao" volta zerado: avistamento local, SNR e o
-// lugar fixo no topo. Um no ouvido ontem nao esta "no ar" hoje; ele volta ao
-// topo quando for ouvido de novo.
+// Ao carregar, o que e "desta sessao" iteration zerado: avistamento local, SNR e o
+// lugar fixo no topo. Um no ouvido ontem nao esta "no ar" hoje; ele iteration on
+// topo when for ouvido of novo.
 #define MESH_ARQ_NODEDB "nodedb.bin"
-typedef struct { char magia[4]; uint16_t versao; uint16_t tam; uint32_t n; } nodedb_cab_t;
-// A COPIA SO EXISTE ENQUANTO GRAVA OU LE (31 KB de PSRAM): era um vetor fixo,
-// usado duas vezes por boot e de 10 em 10 minutos.
+typedef struct { char magia[4]; uint16_t versao; uint16_t size; uint32_t n; } nodedb_cab_t;
+// A COPIA SO EXISTE ENQUANTO GRAVA OU LE (31 KB of PSRAM): era one vetor fixo,
+// usado duas vezes por boot e of 10 em 10 minutos.
 static mesh_no_t* nodedb_copia(void)
 {
   return (mesh_no_t*)heap_caps_malloc(sizeof(mesh_no_t) * MESH_MAX_NOS, MALLOC_CAP_SPIRAM);
 }
 static uint32_t s_nodedb_ver_salva = 0;
-// A NodeDB do cartao foi lida nesta subida do servico (ou, com o cartao
+// A NodeDB of cartao foi lida nesta subida of servico (ou, com o cartao
 // presente, nao existia). So entao a tabela pode substitui-la - uma tabela que
-// comecou vazia por falta de cartao apagaria os nos guardados.
+// comecou vazia por falta of cartao apagaria os nos guardados.
 static bool s_nodedb_lida = false;
 
 static void salvar_nodedb(void)
@@ -2391,23 +2391,23 @@ static void salvar_nodedb(void)
   mesh_no_t* s_nodedb_copia = nodedb_copia();
   if (!s_nodedb_copia) { return; }
   int n = 0;
-  travar();
+  lock();
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
     if (s_nos[i].usado && s_nos[i].num != 0) { s_nodedb_copia[n++] = s_nos[i]; }
   }
   const uint32_t ver = s_nos_ver;
   destravar();
   if (n == 0 || !s_nodedb_lida) { heap_caps_free(s_nodedb_copia); return; }
-  // Cabecalho e tabela num bloco so, e UMA troca pela porta do sistema: um
-  // reinicio no meio deixa a NodeDB antiga inteira, nunca meia - e com o
-  // cartao emprestado ao computador ela vai para o diario.
-  const size_t tam = sizeof(nodedb_cab_t) + sizeof(mesh_no_t) * (size_t)n;
-  uint8_t* bloco = (uint8_t*)heap_caps_malloc(tam, MALLOC_CAP_SPIRAM);
+  // Cabecalho e tabela num bloco so, e UMA troca pela porta of sistema: one
+  // reinicio no middle deixa a NodeDB antiga inteira, nunca meia - e com o
+  // cartao emprestado on computador ela vai para o diario.
+  const size_t size = sizeof(nodedb_cab_t) + sizeof(mesh_no_t) * (size_t)n;
+  uint8_t* bloco = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
   if (bloco) {
     const nodedb_cab_t cab = { { 'M', 'N', 'D', 'B' }, 1, (uint16_t)sizeof(mesh_no_t), (uint32_t)n };
     memcpy(bloco, &cab, sizeof(cab));
     memcpy(bloco + sizeof(cab), s_nodedb_copia, sizeof(mesh_no_t) * (size_t)n);
-    if (tab5_sd_replace(MESH_PASTA, MESH_ARQ_NODEDB, bloco, tam)) {
+    if (tab5_sd_replace(MESH_PASTA, MESH_ARQ_NODEDB, bloco, size)) {
       s_nodedb_ver_salva = ver;
       ESP_LOGI(TAG, "cartao: %d no(s) na NodeDB do Tab5", n);
     }
@@ -2416,14 +2416,14 @@ static void salvar_nodedb(void)
   heap_caps_free(s_nodedb_copia);
 }
 
-// Com a tabela vazia (logo depois do memset do iniciar). Le o cartao SEM a
+// Com a tabela vazia (logo depois of memset of start). Le o cartao SEM a
 // trava (E/S lenta) para a copia, e so a passagem para a tabela e travada - a
-// tela pode estar lendo a tabela ao mesmo tempo.
+// screen pode estar lendo a tabela on mesmo time.
 static void carregar_nodedb(void)
 {
   s_nodedb_lida = false;
   if (!tab5_sd_mount()) { return; }
-  s_nodedb_lida = true;   // com o cartao: ou le, ou o arquivo nao existe (o primeiro salvar cria)
+  s_nodedb_lida = true;   // com o cartao: ou le, ou o arquivo nao existe (o first salvar cria)
   FILE* f = tab5_sd_open(MESH_PASTA, MESH_ARQ_NODEDB, "rb");
   if (!f) { tab5_sd_unmount(); return; }
   mesh_no_t* s_nodedb_copia = nodedb_copia();
@@ -2431,7 +2431,7 @@ static void carregar_nodedb(void)
   nodedb_cab_t cab;
   int lidos = 0;
   if (fread(&cab, sizeof(cab), 1, f) == 1 && !memcmp(cab.magia, "MNDB", 4)
-   && cab.versao == 1 && cab.tam == sizeof(mesh_no_t)) {
+   && cab.versao == 1 && cab.size == sizeof(mesh_no_t)) {
     const int total = (cab.n < MESH_MAX_NOS) ? (int)cab.n : MESH_MAX_NOS;
     lidos = (int)fread(s_nodedb_copia, sizeof(mesh_no_t), (size_t)total, f);
   } else {
@@ -2441,7 +2441,7 @@ static void carregar_nodedb(void)
   tab5_sd_unmount();
 
   int n = 0;
-  travar();
+  lock();
   for (int i = 0; i < lidos && n < MESH_MAX_NOS; ++i) {
     mesh_no_t no = s_nodedb_copia[i];
     if (no.num == 0) { continue; }
@@ -2460,9 +2460,9 @@ static void carregar_nodedb(void)
   ESP_LOGI(TAG, "cartao: %d no(s) lembrado(s) da NodeDB do Tab5", n);
 }
 
-// Ver o aviso completo em tab5_mesh.hpp. So LEITURA - nunca cria entrada
-// (diferente de achar_no): perguntar "qual o enlace deste no" nao pode ter o
-// efeito colateral de inventar um no na tabela.
+// Ver o aviso complete em tab5_mesh.hpp. So LEITURA - nunca cria entrada
+// (diferente of achar_no): perguntar "qual o enlace deste no" nao pode ter o
+// efeito colateral of inventar one no in tabela.
 bool tab5_mesh_no_enlace(uint32_t num, bool* via_mqtt, uint8_t* saltos)
 {
   for (int i = 0; i < MESH_MAX_NOS; ++i) {
@@ -2478,18 +2478,18 @@ bool tab5_mesh_no_enlace(uint32_t num, bool* via_mqtt, uint8_t* saltos)
 // ---------------------------------------------------------------------------
 // Interpretacao das mensagens que interessam
 // ---------------------------------------------------------------------------
-// DeviceMetrics: 1=bateria 2=tensao 3=uso_canal 4=airtime 5=uptime
+// DeviceMetrics: 1=battery 2=tensao 3=uso_canal 4=airtime 5=uptime
 //
-// 'nosso' distingue a telemetria do NOSSO no da telemetria que chega da malha.
+// 'nosso' distingue a telemetria of NOSSO no of telemetria que chega of malha.
 // Sem essa distincao (foi o bug) qualquer no vizinho sobrescrevia
 // a nossa saude: aparecia "uptime 1136229s" - 13 dias - num C6L que tinha
-// reiniciado 35 vezes. Bateria e tensao SEMPRE vao para o no dono da metrica;
-// so os indicadores de saude e que sao exclusivos do nosso.
-static void ler_metrics(pb_leitor_t l, mesh_no_t* no, bool nosso)
+// reiniciado 35 vezes. Bateria e tensao SEMPRE vao para o no dono of metrica;
+// so os indicadores of saude e que sao exclusivos of nosso.
+static void read_metrics(pb_leitor_t l, mesh_no_t* no, bool nosso)
 {
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l, &v); if (no) no->bateria = (uint8_t)v; }
+  while (pb_next_field(&l, &n, &t)) {
+    if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l, &v); if (no) no->battery = (uint8_t)v; }
     else if (n == 2 && t == 5) { float f; pb_float(&l, &f); if (no) no->tensao = f; }
     else if (n == 3 && t == 5) { float f; pb_float(&l, &f); if (nosso) s_saude.uso_canal = f; }
     else if (n == 4 && t == 5) { float f; pb_float(&l, &f); if (nosso) s_saude.airtime_tx = f; }
@@ -2499,15 +2499,15 @@ static void ler_metrics(pb_leitor_t l, mesh_no_t* no, bool nosso)
   if (nosso) { s_saude.tem_metricas = true; }
 }
 
-// LocalStats - a saude da malha vista pelo NOSSO no, e so por ele.
-//   1=uptime 2=uso_canal 3=airtime 4..6=contadores de pacote
+// LocalStats - a saude of malha vista pelo NOSSO no, e so por ele.
+//   1=uptime 2=uso_canal 3=airtime 4..6=contadores of pacote
 //   7=nos_online 8=nos_total
-// Versoes mais novas acrescentam campos (piso de ruido, por exemplo); o pb_pular()
+// Versoes mais novas acrescentam campos (piso of ruido, por exemplo); o pb_pular()
 // cuida deles sem a gente precisar saber quais sao.
-static void ler_local_stats(pb_leitor_t l)
+static void read_local_stats(pb_leitor_t l)
 {
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
+  while (pb_next_field(&l, &n, &t)) {
     if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l,&v); s_saude.uptime_s   = (uint32_t)v; }
     else if (n == 2 && t == 5) { float f; pb_float(&l,&f);     s_saude.uso_canal  = f; }
     else if (n == 3 && t == 5) { float f; pb_float(&l,&f);     s_saude.airtime_tx = f; }
@@ -2522,43 +2522,43 @@ static void ler_local_stats(pb_leitor_t l)
   s_saude.tem_local = true;
   // SEM LOG AQUI. Os
   // valores ja ficam em s_saude, consultaveis sob demanda pelo comando "mesh"
-  // do console (imprime canal/airtime/uptime/nos) sempre que precisar olhar.
+  // of console (imprime canal/airtime/uptime/nos) sempre que precisar olhar.
 }
 
 // HardwareModel (mesh.proto) - TABELA COMPLETA, gerada, nao mais adivinhada.
 //
-// A versao anterior desta funcao era um switch com uma duzia de modelos
-// escolhidos a mao, com o argumento de que copiar a lista oficial inteira
-// "envelheceria e mentiria". O argumento nao se sustentou no primeiro uso de
+// A versao anterior desta funcao era one switch com uma duzia of modelos
+// escolhidos a mao, com o argumento of que copiar a lista oficial inteira
+// "envelheceria e mentiria". O argumento nao se sustentou no first uso of
 // verdade: uma malha real trouxe "modelo 110", "modelo 88",
 // "modelo 81" - nos genuinos que a tabela adivinhada simplesmente nao previa,
 // entre eles o 111 = M5Stack C6L, o proprio radio que este sistema usa.
 //
-// A correcao nao e adivinhar mais - e parar de adivinhar. TAB5_MESH_HW_NOMES
-// (tab5_mesh_hw_dados.cpp) e gerada pelo generate_hw.py direto do enum oficial
-// do Meshtastic; "envelhece e mente" deixa de ser risco porque reexportar e
-// um comando, nao uma memoria de quais numeros existem.
-const char* mesh_hw_nome(uint8_t hw)
+// A correcao nao e adivinhar mais - e stop of adivinhar. TAB5_MESH_HW_NOMES
+// (tab5_mesh_hw_dados.cpp) e gerada pelo generate_hw.py direto of enum oficial
+// of Meshtastic; "envelhece e mente" deixa of ser risco porque reexportar e
+// one comando, nao uma memoria of quais numeros existem.
+const char* mesh_hw_name(uint8_t hw)
 {
-  return TAB5_MESH_HW_NOMES[hw];   // hw e uint8_t: sempre dentro da tabela
+  return TAB5_MESH_HW_NOMES[hw];   // hw e uint8_t: sempre dentro of tabela
 }
 
 // User: 1=id 2=nome_longo 3=nome_curto 4=macaddr 5=hw_model
 //
-// O 'id' e o 'macaddr' sao o que faltava: nome longo e
+// O 'id' e o 'macaddr' sao o que faltava: name longo e
 // curto sao ETIQUETAS que quem renomeia no celular troca a vontade, e por elas
-// nao da para saber com que APARELHO se esta falando. O id ("!a1b2c3d4") e
-// derivado do MAC e acompanha o radio para sempre.
-static void ler_user(pb_leitor_t l, mesh_no_t* no)
+// nao of para saber com que APARELHO se esta falando. O id ("!a1b2c3d4") e
+// derivado of MAC e acompanha o radio para sempre.
+static void read_user(pb_leitor_t l, mesh_no_t* no)
 {
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 2) { pb_texto(&l, no->id,    sizeof(no->id)); }
-    else if (n == 2 && t == 2) { pb_texto(&l, no->longo, sizeof(no->longo)); }
-    else if (n == 3 && t == 2) { pb_texto(&l, no->curto, sizeof(no->curto)); }
+  while (pb_next_field(&l, &n, &t)) {
+    if      (n == 1 && t == 2) { pb_text(&l, no->id,    sizeof(no->id)); }
+    else if (n == 2 && t == 2) { pb_text(&l, no->longo, sizeof(no->longo)); }
+    else if (n == 3 && t == 2) { pb_text(&l, no->curto, sizeof(no->curto)); }
     else if (n == 4 && t == 2) {
-      // macaddr e 'bytes', nao texto - nao da para usar ler_texto (ele
-      // terminaria a string no primeiro byte 0x00 do endereco).
+      // macaddr e 'bytes', nao text - nao of para usar ler_texto (ele
+      // terminaria a string no first byte 0x00 of endereco).
       uint64_t k;
       if (!pb_varint(&l, &k)) { break; }
       if (k > pb_restam(&l)) { break; }
@@ -2571,10 +2571,10 @@ static void ler_user(pb_leitor_t l, mesh_no_t* no)
 }
 
 // Position: 1=lat_i 2=lon_i (sfixed32)
-static void ler_position(pb_leitor_t l, mesh_no_t* no)
+static void read_position(pb_leitor_t l, mesh_no_t* no)
 {
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
+  while (pb_next_field(&l, &n, &t)) {
     if      (n == 1 && t == 5) { uint32_t v; pb_fixo32(&l, &v); no->lat_i = (int32_t)v; no->tem_pos = true; }
     else if (n == 2 && t == 5) { uint32_t v; pb_fixo32(&l, &v); no->lon_i = (int32_t)v; }
     else if (!pb_pular(&l, t)) { break; }
@@ -2582,13 +2582,13 @@ static void ler_position(pb_leitor_t l, mesh_no_t* no)
 }
 
 // NodeInfo: 1=num 2=user 3=position 4=snr 5=last_heard 6=device_metrics 9=hops
-static void ler_node_info(pb_leitor_t l)
+static void read_node_info(pb_leitor_t l)
 {
   bool fav_radio = false;   // is_favorite: proto3, ausente = false
   uint32_t num = 0;
   mesh_no_t* no = nullptr;
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
+  while (pb_next_field(&l, &n, &t)) {
     if (n == 1 && t == 0) {
       uint64_t v; pb_varint(&l, &v); num = (uint32_t)v;
       no = achar_no(num);
@@ -2598,66 +2598,66 @@ static void ler_node_info(pb_leitor_t l)
     else if (n == 2 && t == 2) {
       pb_leitor_t s;
       if (pb_sub(&l,&s)) {
-        // O User do NOSSO no, cru: o set_owner o reenvia inteiro (tab5_mesh_admin).
-        if (num == s_meu_num && s_meu_num) { mesh_admin_guardar_user(s.p, (size_t)(s.fim - s.p)); }
-        ler_user(s, no);
+        // O User of NOSSO no, cru: o set_owner o reenvia inteiro (tab5_mesh_admin).
+        if (num == s_meu_num && s_meu_num) { mesh_admin_guardar_user(s.p, (size_t)(s.end - s.p)); }
+        read_user(s, no);
       }
     }
-    else if (n == 3 && t == 2) { pb_leitor_t s; if (pb_sub(&l,&s)) ler_position(s, no); }
+    else if (n == 3 && t == 2) { pb_leitor_t s; if (pb_sub(&l,&s)) read_position(s, no); }
     else if (n == 4 && t == 5) { pb_float(&l, &no->snr); }
     else if (n == 5 && t == 5) { pb_fixo32(&l, &no->visto_em); marcar_epoch(no->visto_em); }
-    else if (n == 6 && t == 2) { pb_leitor_t s; if (pb_sub(&l,&s)) ler_metrics(s, no, num == s_meu_num); }
+    else if (n == 6 && t == 2) { pb_leitor_t s; if (pb_sub(&l,&s)) read_metrics(s, no, num == s_meu_num); }
     // via_mqtt: o no chegou pela INTERNET, nao pelo radio. Muda o significado
-    // de tudo que se ve dele - o SNR nao e dele, e nao da para alcanca-lo por
-    // RF. Merece aparecer na lista.
+    // of everything que se ve dele - o SNR nao e dele, e nao of para alcanca-lo por
+    // RF. Merece aparecer in lista.
     else if (n == 8 && t == 0) { uint64_t v; pb_varint(&l,&v); no->via_mqtt = (v != 0); }
     else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); no->saltos = (uint8_t)v; }
     else if (n == 10 && t == 0) { uint64_t v; pb_varint(&l,&v); fav_radio = (v != 0); }
     else if (!pb_pular(&l, t)) { break; }
   }
 
-  // Guarda a etiqueta para quando o radio nao estiver aqui. Renomear no
-  // aplicativo do celular chega por este mesmo caminho, com o MESMO num - e o
-  // cache se atualiza sozinho, sem virar um interlocutor novo.
+  // Guarda a etiqueta para when o radio nao estiver aqui. Renomear no
+  // aplicativo of celular chega por este mesmo caminho, com o MESMO num - e o
+  // cache se atualiza sozinho, sem virar one interlocutor novo.
   //
   // OS DOIS AGORA, curto E longo - so o curto usavel entrava
   // aqui (era o unico que tab5_mesh_nome_exibicao() promete mostrar). Mas a
-  // tabela de nos (montar_linha(), app_mesh.cpp) sempre mostrou o longo
-  // tambem, e SO da entrada ao vivo - sem cache, ficava "(sem nome)" ate
-  // ESTA SESSAO ver uma NodeInfo daquele no de novo, o que e raro (a maioria
-  // dos nos e aprendida por telemetria/posicao/texto, nunca por NodeInfo).
-  // Ver o aviso grande junto de tab5_mesh_nome_longo_cache() no .hpp.
+  // tabela of nos (montar_linha(), app_mesh.cpp) sempre mostrou o longo
+  // tambem, e SO of entrada on vivo - sem cache, ficava "(sem name)" ate
+  // ESTA SESSAO ver uma NodeInfo daquele no of novo, o que e raro (a maioria
+  // dos nos e aprendida por telemetria/position/text, nunca por NodeInfo).
+  // Ver o aviso grande junto of tab5_mesh_nome_longo_cache() no .hpp.
   if (no) {
-    lembrar_nome(num, curto_utilizavel(no->curto) ? no->curto : nullptr,
+    lembrar_name(num, curto_utilizavel(no->curto) ? no->curto : nullptr,
                        no->longo[0] ? no->longo : nullptr);
     fixar_se_pelo_ar(no);
-    fav_do_radio(num, fav_radio);
+    fav_of_radio(num, fav_radio);
     ++s_nos_ver;
   }
-  sistema_avisar(AVISO_MESH_NOS);
+  system_notify(AVISO_MESH_NOS);
 }
 
-// ANEL DE IDS JA VISTOS - dedup PROPRIO, separado do s_msgs.
+// ANEL DE IDS JA VISTOS - dedup PROPRIO, separado of s_msgs.
 //
-// Ate aqui, a deteccao de eco olhava dentro de s_msgs[MESH_MAX_MSGS] - e
+// Ate aqui, a deteccao of eco olhava dentro of s_msgs[MESH_MAX_MSGS] - e
 // MESH_MAX_MSGS e 8. Nasceu para o caso simples (voce manda, o radio devolve
 // o mesmo pacote segundos depois) e nesse caso 8 sempre bastou: dificilmente
-// chegam 8 mensagens de OUTRAS pessoas no intervalo entre o envio e o eco.
+// chegam 8 mensagens of OUTRAS pessoas no intervalo entre o send_state e o eco.
 //
 // COM MQTT ISSO MUDA. O mesmo pacote pode chegar DUAS vezes por caminhos com
 // atraso bem diferente - uma copia pelo LoRA local, outra via broker MQTT
-// (uplink de outro no, ou o proprio downlink de volta) - e o atraso entre as
+// (uplink of outro no, ou o proprio downlink of iteration) - e o atraso entre as
 // duas nao e mais "alguns segundos previsiveis", e "o que a internet e a queue
-// do broker demorarem". Numa malha com ponte ativa, o trafego tambem fica mais
-// denso. As duas coisas juntas empurram a segunda copia para FORA da janela de
-// 8 mensagens, e ela passa a entrar como se fosse nova - a mesma mensagem
-// duas vezes na conversa.
+// of broker demorarem". Numa malha com ponte active, o trafego tambem stays mais
+// denso. As duas coisas juntas empurram a segunda copia para FORA of window of
+// 8 mensagens, e ela passa a entrar como se fosse nova - a mesma message
+// duas vezes in conversa.
 //
-// A correcao e um anel SO PARA ISSO, independente do que aparece na tela: 256
-// ids, 1 KB (na PSRAM, como o resto do .bss do servico), nada alem de um
-// uint32_t cada. Eram 64; com o LongFast da internet passando pelo mesmo anel, a
-// janela de um texto daqui encolhia - a copia atrasada pela ponte entrava de
-// novo. Nao guarda conteudo - so "este id ja passou por aqui".
+// A correcao e one anel SO PARA ISSO, independente of que aparece in screen: 256
+// ids, 1 KB (in PSRAM, como o resto of .bss of servico), nada alem of one
+// uint32_t cada. Eram 64; com o LongFast of internet passando pelo mesmo anel, a
+// window of one text daqui encolhia - a copia atrasada pela ponte entrava of
+// novo. Nao guarda content - so "este id ja passou por aqui".
 #define MESH_DEDUP_N 256
 static uint32_t s_ids_vistos[MESH_DEDUP_N];
 static int      s_prox_id_visto = 0;
@@ -2678,25 +2678,25 @@ static void marcar_id_visto(uint32_t id)
   s_prox_id_visto = (s_prox_id_visto + 1) % MESH_DEDUP_N;
 }
 
-static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* txt,
-                        uint32_t quando, float snr, int32_t rssi, uint32_t id,
+static void guardar_msg(uint32_t of, uint32_t para, uint8_t canal, const char* txt,
+                        uint32_t when, float snr, int32_t rssi, uint32_t id,
                         bool via_mqtt, uint8_t saltos)
 {
   // ECO DA PROPRIA MENSAGEM, E DUPLICATA POR PONTE MQTT: as duas descartam
-  // pelo mesmo id, ver o comentario do anel logo acima.
+  // pelo mesmo id, ver o comentario of anel logo acima.
   //
-  // Ao enviar, guardamos a mensagem aqui na hora. Segundos depois o radio
-  // DEVOLVE o mesmo pacote como recebido (from = nosso numero) - e antes de
-  // lermos o campo 6 do MeshPacket ele chegava com id 0, virava uma SEGUNDA
-  // copia, e era essa copia que a tela mostrava. Sem id, sem marca de entrega:
+  // Ao send, guardamos a message aqui in hora. Segundos depois o radio
+  // DEVOLVE o mesmo pacote como recebido (from = nosso numero) - e antes of
+  // lermos o field 6 of MeshPacket ele chegava com id 0, virava uma SEGUNDA
+  // copia, e era essa copia que a screen mostrava. Sem id, sem marca of entrega:
   // era por isso que o tique verde e o triangulo vermelho nunca apareciam nas
   // mensagens enviadas.
   //
-  // O id do pacote e o mesmo que mandamos, entao ele identifica o eco sem
-  // ambiguidade. Vale tambem para mensagem enviada pelo CELULAR atraves do
+  // O id of pacote e o mesmo que mandamos, entao ele identifica o eco sem
+  // ambiguidade. Vale tambem para message enviada pelo CELULAR atraves of
   // C6L: chega uma vez so, com o id que o radio deu a ela.
   // DA INTERNET: so canal (a direta viria cifrada com PKI, que nao abrimos), e
-  // sempre na conversa "LongFast Internet".
+  // sempre in conversa "LongFast Internet".
   if (s_rede_rx == MESH_REDE_INTERNET) {
     if (para != 0xFFFFFFFFu) { return; }
     canal = MESH_CANAL_INTERNET;
@@ -2704,19 +2704,19 @@ static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* t
   if (id_ja_visto(id)) { return; }
   marcar_id_visto(id);
 
-  // Empurra as antigas para o fim: indice 0 e sempre a mais recente, que e
-  // como a tela quer ler.
+  // Empurra as antigas para o end: indice 0 e sempre a mais recente, que e
+  // como a screen quer read.
   if (s_n_msgs < MESH_MAX_MSGS) { s_n_msgs++; }
   for (int i = s_n_msgs - 1; i > 0; --i) { s_msgs[i] = s_msgs[i-1]; }
   memset(&s_msgs[0], 0, sizeof(s_msgs[0]));
-  s_msgs[0].de = de;
+  s_msgs[0].of = of;
   s_msgs[0].para = para;
   s_msgs[0].channel = canal;
-  // 0xFFFFFFFF e o endereco de difusao do Meshtastic. Qualquer outro valor
-  // igual ao nosso numero significa mensagem enderecada A VOCE.
+  // 0xFFFFFFFF e o endereco of difusao of Meshtastic. Qualquer outro valor
+  // igual on nosso numero significa message enderecada A VOCE.
   s_msgs[0].direta = (para != 0xFFFFFFFFu) && (para == s_meu_num);
-  snprintf(s_msgs[0].texto, sizeof(s_msgs[0].texto), "%s", txt);
-  s_msgs[0].quando = quando;
+  snprintf(s_msgs[0].text, sizeof(s_msgs[0].text), "%s", txt);
+  s_msgs[0].when = when;
   s_msgs[0].snr = snr;
   s_msgs[0].rssi = rssi;
   s_msgs[0].via_mqtt = via_mqtt;
@@ -2724,136 +2724,136 @@ static void guardar_msg(uint32_t de, uint32_t para, uint8_t canal, const char* t
   s_msgs[0].id = id;
 
   // MENSAGEM NOSSA NAO E "NAO LIDA". Parece obvio e nao era: o contador subia
-  // para tudo, e o tab5_mesh_enviar corrigia DEPOIS decrementando s_nao_lidas -
+  // para everything, e o tab5_mesh_enviar corrigia DEPOIS decrementando s_nao_lidas -
   // mas esquecia o contador DA CONVERSA. Resultado: mandar no LongFast deixava
-  // um "1" na conversa que voce estava olhando.
+  // one "1" in conversa que voce estava olhando.
   //
-  // A decisao tem que morar aqui, onde se sabe de quem e a mensagem, e nao
-  // num remendo do lado de quem envia.
-  const bool minha = (de == s_meu_num);
+  // A decisao tem que morar aqui, onde se sabe of quem e a message, e nao
+  // num remendo of lado of quem envia.
+  const bool minha = (of == s_meu_num);
 
   // ACOMPANHA TAMBEM O QUE SAIU DO CELULAR.
   //
-  // Ate agora so entrava no anel o que o Tab5 mandava - entao mensagem enviada
-  // pelo app do celular atraves do C6L aparecia na conversa SEM marca nenhuma,
+  // Ate now so entrava no anel o que o Tab5 mandava - entao message enviada
+  // pelo app of celular atraves of C6L aparecia in conversa SEM marca none,
   // e voce ficava sem saber se chegou.
   //
-  // Mas o ACK dela CHEGA ATE NOS: o C6L repassa todo o trafego de FromRadio
-  // para cada cliente conectado, e nos somos um. A gente so o descartava por
-  // nao ter o id na tabela. Registrando aqui, o mesmo Routing que marca as
+  // Mas o ACK dela CHEGA ATE NOS: o C6L repassa todo o trafego of FromRadio
+  // para cada cliente conectado, e nos somos one. A gente so o descartava por
+  // nao ter o id in tabela. Registrando aqui, o mesmo Routing que marca as
   // nossas passa a marcar as dela.
   //
-  // A condicao e "veio do nosso no e tem id": e a definicao de "mensagem que
-  // este radio transmitiu", tenha sido esta tela ou o celular a pedir.
+  // A condicao e "veio of nosso no e tem id": e a definicao of "message que
+  // este radio transmitiu", tenha sido esta screen ou o celular a request.
   //
-  // SO TRAFEGO AO VIVO. Durante o dump o no pode reentregar uma mensagem nossa
+  // SO TRAFEGO AO VIVO. Durante o dump o no pode reentregar uma message nossa
   // antiga: anotada aqui ela virava ENVIANDO e, 60 s depois, "sem resposta" -
-  // gravado no envios.txt POR CIMA do desfecho verdadeiro que ela ja tinha.
-  if (minha && id != 0 && trafego_ao_vivo()) { anotar_envio(id, para); }
+  // gravado no envios.txt POR CIMA of desfecho verdadeiro que ela ja tinha.
+  if (minha && id != 0 && trafego_on_vivo()) { anotar_send_state(id, para); }
 
   // A CONVERSA E SEMPRE "O OUTRO LADO".
   //
-  // Difusao vai para o canal. Direta vai para o no do OUTRO - que e o
-  // remetente quando recebemos, e o DESTINATARIO quando somos nos que
-  // enviamos. Sem essa distincao, mensagem direta enviada por nos caia na
-  // conversa do canal, porque o teste de "direta" olhava so o destinatario.
+  // Difusao vai para o canal. Direta vai para o no of OUTRO - que e o
+  // remetente when recebemos, e o DESTINATARIO when somos nos que
+  // enviamos. Sem essa distincao, message direta enviada por nos caia in
+  // conversa of canal, porque o teste of "direta" olhava so o destinatario.
   const bool difusao = (para == 0xFFFFFFFFu);
-  const uint32_t outro = (de == s_meu_num) ? para : de;
-  const int ci = difusao ? achar_ou_criar_conversa(true, canal, 0)
-                         : achar_ou_criar_conversa(false, 0, outro);
+  const uint32_t outro = (of == s_meu_num) ? para : of;
+  const int ci = difusao ? achar_ou_create_conversa(true, canal, 0)
+                         : achar_ou_create_conversa(false, 0, outro);
   if (ci >= 0) {
     if (!minha) { s_conv[ci].nao_lidas++; }
-    s_conv[ci].ultima_em = quando;
+    s_conv[ci].ultima_em = when;
     // Sobe para o topo das diretas. Canal tem lugar fixo (pelo indice).
     if (!difusao) { s_conv_seq[ci] = ++s_seq; ++s_conv_ver; }
     gravar_msg(ci, &s_msgs[0]);
   }
 
-  // Mensagem de verdade (enviada ou recebida) e a volta a se falar que desfaz
-  // um apagar anterior - ver o comentario grande na flag, acima. VALE PARA OS
-  // DOIS (canal tambem se apaga agora): a linha de cima ja
-  // recria a conversa do canal incondicionalmente (e deveria - uma mensagem
-  // de verdade e o proprio sinal de "voltou"), mas SEM desmarcar aqui a flag
-  // continuaria escrita no cartao e o canal sumiria nao no proximo boot.
+  // Mensagem of verdade (enviada ou recebida) e a iteration a se falar que desfaz
+  // one erase anterior - ver o comentario grande in flag, acima. VALE PARA OS
+  // DOIS (canal tambem se apaga now): a line of top ja
+  // recria a conversa of canal incondicionalmente (e deveria - uma message
+  // of verdade e o proprio sinal of "voltou"), mas SEM desmarcar aqui a flag
+  // continuaria escrita no cartao e o canal sumiria nao no next boot.
   if (difusao) { desmarcar_apagada(true, canal); }
   else         { desmarcar_apagada(false, outro); }
 
   // O CONTADOR SOBE SO DEPOIS DE A LINHA ESTAR NO GRAVADOR (gravar_msg, acima).
-  // A tela le este numero sem trava: subindo antes, ela podia pedir a releitura
-  // do cartao com a linha ainda nem entregue - e nada mais a fazia reler
-  // depois. Este NUNCA satura - ver o aviso grande junto da declaracao.
+  // A screen le este numero sem trava: subindo antes, ela podia request a releitura
+  // of cartao com a line ainda nem entregue - e nada mais a fazia reler
+  // depois. Este NUNCA satura - ver o aviso grande junto of declaracao.
   ++s_total_msgs;
 
   publicar_notif();
-  // O ID VAI NO LOG: mensagem repetida que passa por aqui ja passou pelo
-  // descarte por id (id_ja_visto). Com o id a vista, da para saber de cara se
-  // a repeticao e da REDE (id novo - o remetente ou uma ponte reenviou) ou
+  // O ID VAI NO LOG: message repetida que passa por aqui ja passou pelo
+  // descarte por id (id_ja_visto). Com o id a vista, of para saber of cara se
+  // a repeticao e of REDE (id novo - o remetente ou uma ponte reenviou) ou
   // nossa (id igual - o descarte falhou). E a origem: radio ou internet.
   ESP_LOGI(TAG, "mensagem %s de %08lX (id %08lX, %s%s): %s",
-           s_msgs[0].direta ? "DIRETA" : "de canal", (unsigned long)de, (unsigned long)id,
+           s_msgs[0].direta ? "DIRETA" : "de canal", (unsigned long)of, (unsigned long)id,
            via_mqtt ? "internet" : "radio", s_rede_rx == MESH_REDE_INTERNET ? " publica" : "", txt);
 
-  sistema_avisar(AVISO_MESH_MSG);
+  system_notify(AVISO_MESH_MSG);
 }
 
-// "OS NOS MUDARAM" PARA A TELA. Da internet, no maximo um por segundo: la chegam
-// dezenas de pacotes por segundo, e cada aviso fazia a pagina de nos e a
-// coluna se conferirem de novo. A tabela muda na hora; so o aviso espera.
-static void avisar_nos(void)
+// "OS NOS MUDARAM" PARA A TELA. Da internet, no maximum one por segundo: la chegam
+// dezenas of pacotes por segundo, e cada aviso fazia a pagina of nos e a
+// coluna se conferirem of novo. A tabela muda in hora; so o aviso espera.
+static void notify_nos(void)
 {
-  // E na rede do no ate 4 por segundo: a ponte MQTT tambem chega em rajada.
+  // E in rede of no ate 4 por segundo: a ponte MQTT tambem chega em rajada.
   static uint32_t ultimo_ms[2] = { 0, 0 };
   const int k = (s_rede_rx == MESH_REDE_INTERNET) ? 1 : 0;
   const uint32_t t = tab5_now_ms();
   if (t - ultimo_ms[k] < (k ? 1000u : 250u)) { return; }
   ultimo_ms[k] = t;
-  sistema_avisar(AVISO_MESH_NOS);
+  system_notify(AVISO_MESH_NOS);
 }
 
-// Data (dentro do MeshPacket): 1=portnum 2=payload
+// Data (dentro of MeshPacket): 1=portnum 2=payload
 #define PORT_TEXTO      1
 #define PORT_POSICAO    3
 #define PORT_NODEINFO   4
 #define PORT_ROTEAMENTO 5
 #define PORT_TELEMETRIA 67
 
-static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
-                     uint32_t quando, float snr, int32_t rssi, uint32_t id,
+static void read_data(pb_leitor_t l, uint32_t of, uint32_t para, uint8_t canal,
+                     uint32_t when, float snr, int32_t rssi, uint32_t id,
                      bool via_mqtt, uint8_t saltos, bool transp_mqtt)
 {
   int porta = 0;
-  uint32_t pedido = 0;                 // request_id: de qual pacote NOSSO isto fala
+  uint32_t request = 0;                 // request_id: of qual pacote NOSSO isto fala
   const uint8_t* pay = nullptr; size_t pay_n = 0;
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
+  while (pb_next_field(&l, &n, &t)) {
     if      (n == 1 && t == 0) { uint64_t v; pb_varint(&l,&v); porta = (int)v; }
     else if (n == 2 && t == 2) {
       uint64_t k; if (!pb_varint(&l,&k)) break;
       if (k > pb_restam(&l)) break;              // ver pb_restam(): somar no ponteiro estoura
       pay = l.p; pay_n = (size_t)k; l.p += (size_t)k;
     }
-    else if (n == 6 && t == 5) { pb_fixo32(&l, &pedido); }   // request_id
+    else if (n == 6 && t == 5) { pb_fixo32(&l, &request); }   // request_id
     else if (!pb_pular(&l, t)) { break; }
   }
 
   // A CONFIRMACAO NAO TEM CORPO OBRIGATORIO.
   //
-  // Um ACK e um Routing com error_reason AUSENTE - e campo ausente em protobuf
+  // Um ACK e one Routing com error_reason AUSENTE - e field ausente em protobuf
   // nao ocupa byte nenhum, entao o payload vem VAZIO. Testar "if (!pay) return"
-  // antes daqui, como o codigo fazia, descartaria justamente o caso de sucesso
-  // e so o erro apareceria na tela.
+  // antes daqui, como o code fazia, descartaria justamente o caso of sucesso
+  // e so o erro apareceria in screen.
   if (porta == PORT_ROTEAMENTO) {
-    if (pedido == 0) { return; }
+    if (request == 0) { return; }
     int erro = 0;
     if (pay) {
       pb_leitor_t rl = { pay, pay + pay_n };
       int rn, rt;
-      while (pb_proximo_campo(&rl, &rn, &rt)) {
+      while (pb_next_field(&rl, &rn, &rt)) {
         if (rn == 3 && rt == 0) { uint64_t v; pb_varint(&rl,&v); erro = (int)v; }
         else if (!pb_pular(&rl, rt)) { break; }
       }
     }
-    marcar_envio(pedido, erro, de, transp_mqtt);
+    marcar_send_state(request, erro, of, transp_mqtt);
     return;
   }
 
@@ -2861,30 +2861,30 @@ static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
 
   // A APRESENTACAO DE UM NO, AO VIVO (NODEINFO_APP, payload = User).
   //
-  // O FromRadio.node_info so vem no DUMP de configuracao - o no NAO o reenvia
-  // quando um vizinho se apresenta depois; ele repassa o PACOTE, e o cliente
-  // e quem le o User de dentro dele. Sem ler esta porta, todo no que
-  // aparecesse depois do dump (e TODO no no modo internet, que nao tem dump
-  // de verdade) ficava sem nome, sem modelo e sem MAC ate o proximo reinicio
-  // do radio - e a conversa com ele aparecia pelo id em hexa.
+  // O FromRadio.node_info so vem no DUMP of configuracao - o no NAO o reenvia
+  // when one vizinho se apresenta depois; ele repassa o PACOTE, e o cliente
+  // e quem le o User of dentro dele. Sem read esta porta, todo no que
+  // aparecesse depois of dump (e TODO no no modo internet, que nao tem dump
+  // of verdade) ficava sem name, sem modelo e sem MAC ate o next reinicio
+  // of radio - e a conversa com ele aparecia pelo id em hexa.
   if (porta == PORT_NODEINFO) {
-    mesh_no_t* no = achar_no(de);
-    if (de == s_meu_num && s_meu_num) { mesh_admin_guardar_user(pay, pay_n); }
+    mesh_no_t* no = achar_no(of);
+    if (of == s_meu_num && s_meu_num) { mesh_admin_guardar_user(pay, pay_n); }
     if (no) {
-      ler_user(pb_leitor_t{ pay, pay + pay_n }, no);
-      lembrar_nome(de, curto_utilizavel(no->curto) ? no->curto : nullptr,
+      read_user(pb_leitor_t{ pay, pay + pay_n }, no);
+      lembrar_name(of, curto_utilizavel(no->curto) ? no->curto : nullptr,
                    no->longo[0] ? no->longo : nullptr);
       ++s_nos_ver;
-      avisar_nos();
+      notify_nos();
     }
     return;
   }
 
-  // POSICAO AO VIVO (POSITION_APP, payload = Position). Mesmo motivo: sem
-  // isto a posicao de um no so era a do dump, e envelhecia para sempre.
+  // POSICAO AO VIVO (POSITION_APP, payload = Position). Mesmo reason: sem
+  // isto a position of one no so era a of dump, e envelhecia para sempre.
   if (porta == PORT_POSICAO) {
-    mesh_no_t* no = achar_no(de);
-    if (no) { ler_position(pb_leitor_t{ pay, pay + pay_n }, no); }
+    mesh_no_t* no = achar_no(of);
+    if (no) { read_position(pb_leitor_t{ pay, pay + pay_n }, no); }
     return;
   }
 
@@ -2892,32 +2892,32 @@ static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
     char txt[MESH_TEXTO];
     size_t c = (pay_n < sizeof(txt) - 1) ? pay_n : sizeof(txt) - 1;
     memcpy(txt, pay, c); txt[c] = 0;
-    // QUEBRA DE LINHA VIRA ESPACO. O historico no cartao e uma mensagem por
-    // linha: um "\n" no meio (comum no que vem da ponte do Telegram) cortava a
-    // mensagem ali, e o resto virava uma linha sem "M4," que a leitura pula.
+    // QUEBRA DE LINHA VIRA ESPACO. O historico no cartao e uma message por
+    // line: one "\n" no middle (comum no que vem of ponte of Telegram) cortava a
+    // message ali, e o resto virava uma line sem "M4," que a leitura pula.
     for (size_t k = 0; k < c; ++k) { if (txt[k] == '\n' || txt[k] == '\r' || txt[k] == '\t') { txt[k] = ' '; } }
-    s_c_texto++;
+    s_c_text++;
     // SEM LOG AQUI. O
-    // via_mqtt/saltos DESTE pacote (antes de qualquer fallback da tela) fica
-    // gravado em s_msgs[0] normalmente - de "mesh" no console consegue ler
-    // a mensagem mais recente com tab5_mesh_msg(0, ...) e ver os dois campos
-    // crus, sob demanda, sem precisar de log automatico nenhum.
-    guardar_msg(de, para, canal, txt, quando, snr, rssi, id, via_mqtt, saltos);
+    // via_mqtt/saltos DESTE pacote (antes of qualquer fallback of screen) stays
+    // gravado em s_msgs[0] normalmente - of "mesh" no console consegue read
+    // a message mais recente com tab5_mesh_msg(0, ...) e ver os dois campos
+    // crus, sob demanda, sem precisar of log automatico nenhum.
+    guardar_msg(of, para, canal, txt, when, snr, rssi, id, via_mqtt, saltos);
   }
   else if (porta == PORT_TELEMETRIA) {
     // Telemetry: 2=device_metrics, 6=local_stats. As outras variantes
-    // (ambiente, qualidade do ar, energia) ficam para quando houver no com
+    // (ambiente, qualidade of ar, energia) ficam para when houver no com
     // sensor - pular e seguro e nao custa nada.
     s_c_telemetria++;
     pb_leitor_t tl = { pay, pay + pay_n };
     int tn, tt;
-    while (pb_proximo_campo(&tl, &tn, &tt)) {
-      s_ultima_variante = tn;    // qual variante de Telemetry veio por ultimo
+    while (pb_next_field(&tl, &tn, &tt)) {
+      s_ultima_variante = tn;    // qual variante of Telemetry veio por ultimo
       // Campo 1 = time: a hora em que o NOSSO no gerou a telemetria.
-      if      (tn == 1 && tt == 5) { uint32_t v = 0; pb_fixo32(&tl, &v); if (de == s_meu_num) { marcar_hora_viva(v); } }
-      else if (tn == 2 && tt == 2) { pb_leitor_t s; if (pb_sub(&tl,&s)) ler_metrics(s, achar_no(de), de == s_meu_num); }
-      // LocalStats so faz sentido do proprio no: e a visao DELE da malha.
-      else if (tn == 6 && tt == 2 && de == s_meu_num) { s_c_localstats++; pb_leitor_t s; if (pb_sub(&tl,&s)) ler_local_stats(s); }
+      if      (tn == 1 && tt == 5) { uint32_t v = 0; pb_fixo32(&tl, &v); if (of == s_meu_num) { marcar_hora_alive(v); } }
+      else if (tn == 2 && tt == 2) { pb_leitor_t s; if (pb_sub(&tl,&s)) read_metrics(s, achar_no(of), of == s_meu_num); }
+      // LocalStats so faz sentido of proprio no: e a visao DELE of malha.
+      else if (tn == 6 && tt == 2 && of == s_meu_num) { s_c_localstats++; pb_leitor_t s; if (pb_sub(&tl,&s)) read_local_stats(s); }
       else if (!pb_pular(&tl, tt)) { break; }
     }
   }
@@ -2925,185 +2925,185 @@ static void ler_data(pb_leitor_t l, uint32_t de, uint32_t para, uint8_t canal,
 
 // MeshPacket: 1=from 2=to 3=channel 4=decoded 6=id 7=rx_time 8=rx_snr
 // 9=hop_limit 12=rx_rssi 13=via_mqtt (bool, varint) 14=hop_start - os dois
-// ultimos lidos para a tela distinguir mensagem ouvida no ar
-// (com o numero de saltos) de mensagem que entrou pela ponte MQTT.
-static void ler_packet(pb_leitor_t l)
+// ultimos lidos para a screen distinguir message ouvida no ar
+// (com o numero of saltos) of message que entrou pela ponte MQTT.
+static void read_packet(pb_leitor_t l)
 {
-  uint32_t de = 0, quando = 0, para = 0xFFFFFFFFu, id = 0;
+  uint32_t of = 0, when = 0, para = 0xFFFFFFFFu, id = 0;
   uint8_t canal = 0;
   float snr = 0; int32_t rssi = 0;
   bool via_mqtt = false;
-  // hop_limit: quanto SOBROU do orcamento de saltos quando o pacote chegou
+  // hop_limit: quanto SOBROU of orcamento of saltos when o pacote chegou
   // aqui. hop_start: o orcamento ORIGINAL que o remetente armou - viaja
   // junto, sem mudar, pacote a pacote. A diferenca e quantos repetidores ele
-  // passou. Zero em hop_start e o valor de fabrica do protobuf (campo
-  // ausente) - firmware antigo nao manda, entao a conta fica indefinida.
+  // passou. Zero em hop_start e o valor of fabrica of protobuf (field
+  // ausente) - firmware antigo nao manda, entao a conta stays indefinida.
   uint32_t hop_limit = 0, hop_start = 0;
   // transport_mechanism (21): por onde o pacote entrou no radio. So o MQTT (5)
   // interessa aqui - ver "O IMPLICITO DO MQTT" em marcar_envio().
   bool transp_mqtt = false;
-  pb_leitor_t dados = { nullptr, nullptr };
+  pb_leitor_t data = { nullptr, nullptr };
   int n, t;
-  while (pb_proximo_campo(&l, &n, &t)) {
-    if      (n == 1 && t == 5) { pb_fixo32(&l, &de); }
+  while (pb_next_field(&l, &n, &t)) {
+    if      (n == 1 && t == 5) { pb_fixo32(&l, &of); }
     else if (n == 2 && t == 5) { pb_fixo32(&l, &para); }
     else if (n == 3 && t == 0) { uint64_t v; pb_varint(&l,&v); canal = (uint8_t)v; }
-    else if (n == 6 && t == 5) { pb_fixo32(&l, &id); }       // id do pacote
-    else if (n == 7 && t == 5) { pb_fixo32(&l, &quando); }
+    else if (n == 6 && t == 5) { pb_fixo32(&l, &id); }       // id of pacote
+    else if (n == 7 && t == 5) { pb_fixo32(&l, &when); }
     else if (n == 8 && t == 5) { pb_float(&l, &snr); }
     else if (n == 9 && t == 0) { uint64_t v; pb_varint(&l,&v); hop_limit = (uint32_t)v; }
     else if (n == 12 && t == 0){ uint64_t v; pb_varint(&l,&v); rssi = (int32_t)v; }
-    // CAMPOS 14 E 15, conferidos contra o mesh.pb.h do firmware do C6L
+    // CAMPOS 14 E 15, conferidos contra o mesh.pb.h of firmware of C6L
     // via_mqtt = 14, hop_start = 15. Ate aqui eram lidos 13 e 14
     // - o 13 e o 'delayed' (obsoleto, sempre 0) e o 14 era o via_mqtt tomado
     // por hop_start. Resultado: MQTT nunca era reconhecido pelo pacote e o
-    // numero de saltos saia errado ou "--" (dai o fallback pelo NodeInfo).
+    // numero of saltos saia errado ou "--" (dai o fallback pelo NodeInfo).
     else if (n == 14 && t == 0){ uint64_t v; pb_varint(&l,&v); via_mqtt = (v != 0); }
     else if (n == 15 && t == 0){ uint64_t v; pb_varint(&l,&v); hop_start = (uint32_t)v; }
     else if (n == 21 && t == 0){ uint64_t v; pb_varint(&l,&v); transp_mqtt = (v == 5); }
-    else if (n == 4 && t == 2) { if (!pb_sub(&l, &dados)) break; }
+    else if (n == 4 && t == 2) { if (!pb_sub(&l, &data)) break; }
     else if (!pb_pular(&l, t)) { break; }
   }
   // ZERO SIGNIFICA "EU". O Meshtastic usa from=0 em pacote gerado localmente -
-  // aparece como "fr=0x00000000" no log do proprio radio. Sem traduzir isso:
-  //   - o LocalStats era descartado (o filtro exigia de == meu numero), e os
-  //     contadores de nos ficavam em 0/0;
-  //   - e um no fantasma de numero 0 entrava na tabela.
-  if (de == 0) { de = s_meu_num; }
+  // aparece como "fr=0x00000000" no log of proprio radio. Sem traduzir isso:
+  //   - o LocalStats era descartado (o filtro exigia of == meu numero), e os
+  //     contadores of nos ficavam em 0/0;
+  //   - e one no fantasma of numero 0 entrava in tabela.
+  if (of == 0) { of = s_meu_num; }
 
-  // SALTOS = hop_start - hop_limit, so quando hop_start veio preenchido (>0).
-  // hop_start == 0 e o padrao de fabrica do protobuf (campo ausente,
-  // firmware antigo) - nesse caso a conta fica indefinida, e o sentinela diz
-  // isso em vez de inventar um "0 saltos" que seria mentira.
+  // SALTOS = hop_start - hop_limit, so when hop_start veio preenchido (>0).
+  // hop_start == 0 e o default of fabrica of protobuf (field ausente,
+  // firmware antigo) - nesse caso a conta stays indefinida, e o sentinela diz
+  // isso em vez of inventar one "0 saltos" que seria mentira.
   uint8_t saltos = MESH_SALTOS_DESCONHECIDO;
   if (hop_start > 0 && hop_start >= hop_limit) {
     saltos = (uint8_t)(hop_start - hop_limit);
   }
 
-  // Interpretado no fim porque os metadados (quem, quando, com que sinal) podem
-  // vir DEPOIS do bloco de dados na serializacao.
-  if (dados.p) { ler_data(dados, de, para, canal, quando, snr, rssi, id, via_mqtt, saltos, transp_mqtt); }
+  // Interpretado no end porque os metadados (quem, when, com que sinal) podem
+  // vir DEPOIS of bloco of data in serializacao.
+  if (data.p) { read_data(data, of, para, canal, when, snr, rssi, id, via_mqtt, saltos, transp_mqtt); }
 
-  marcar_epoch(quando);
-  marcar_hora_viva(quando);
+  marcar_epoch(when);
+  marcar_hora_alive(when);
 
-  if (de != 0) {
-    mesh_no_t* no = achar_no(de);
+  if (of != 0) {
+    mesh_no_t* no = achar_no(of);
     if (no) {
       if (snr != 0) { no->snr = snr; }
-      // SALTOS/VIA_MQTT TAMBEM AQUI - a tela mostrava pouco mais que o ID,
+      // SALTOS/VIA_MQTT TAMBEM AQUI - a screen mostrava pouco mais que o ID,
       // comparada com o cliente web. Os dois numeros ja eram calculados ALI EM CIMA para TODO
       // pacote (ver 'saltos'/'via_mqtt' no comeco desta funcao) e ja iam
-      // para a MENSAGEM (ler_data) - so nunca tinham sido aplicados ao NO.
-      // A tabela de nos so aprendia essa coluna quando um NodeInfo chegava
-      // (campo 9/8, ler_node_info() mais acima) - um pacote raro (rajada no
-      // dump inicial, depois so de vez em quando), enquanto QUALQUER
-      // pacote - mensagem, telemetria, posicao - ja carrega hop_start/
-      // hop_limit/via_mqtt na propria borda (MeshPacket). O "Desconhecido"
-      // ficava sozinho ate o proximo NodeInfo, mesmo com dezenas de outros
-      // pacotes do mesmo no passando por aqui antes disso.
+      // para a MENSAGEM (ler_data) - so nunca tinham sido aplicados on NO.
+      // A tabela of nos so aprendia essa coluna when one NodeInfo chegava
+      // (field 9/8, ler_node_info() mais acima) - one pacote raro (rajada no
+      // dump inicial, depois so of vez em when), enquanto QUALQUER
+      // pacote - message, telemetria, position - ja carrega hop_start/
+      // hop_limit/via_mqtt in propria borda (MeshPacket). O "Desconhecido"
+      // ficava sozinho ate o next NodeInfo, mesmo com dezenas of outros
+      // pacotes of mesmo no passando por aqui antes disso.
       //
-      // So sobrescreve saltos quando ESTE pacote realmente trouxe hop_start
-      // (saltos != DESCONHECIDO) - um pacote sem essa info nao deve apagar
-      // um valor bom que outro pacote ja tinha ensinado. via_mqtt e sempre o
-      // caminho MAIS RECENTE (um no pode ser ouvido direto numa hora e via
-      // ponte na outra), entao sobrescreve sem guarda.
+      // So sobrescreve saltos when ESTE pacote realmente trouxe hop_start
+      // (saltos != DESCONHECIDO) - one pacote sem essa info nao deve erase
+      // one valor bom que outro pacote ja tinha ensinado. via_mqtt e sempre o
+      // caminho MAIS RECENTE (one no pode ser ouvido direto numa hora e via
+      // ponte in outra), entao sobrescreve sem guarda.
       if (saltos != MESH_SALTOS_DESCONHECIDO) { no->saltos = saltos; }
       no->via_mqtt = via_mqtt;
-      // AVISTAMENTO AO VIVO. Marcado aqui e nao no ler_node_info de proposito:
-      // o node_info chega em rajada no dump de configuracao, para TODOS os nos
-      // de uma vez, e carimbar todos ali faria a malha inteira parecer ter sido
-      // ouvida agora. Pacote e diferente - ele so chega quando o no falou.
+      // AVISTAMENTO AO VIVO. Marcado aqui e nao no ler_node_info of proposito:
+      // o node_info chega em rajada no dump of configuracao, para TODOS os nos
+      // of uma vez, e carimbar todos ali faria a malha inteira parecer ter sido
+      // ouvida now. Pacote e diferente - ele so chega when o no falou.
       no->visto_local_ms = tab5_now_ms();
-      if (quando >= EPOCH_MINIMO) { no->visto_em = quando; }
-      fixar_se_pelo_ar(no);   // ouvido pelo ar agora: ganha o lugar no topo e a protecao do despejo
+      if (when >= EPOCH_MINIMO) { no->visto_em = when; }
+      fixar_se_pelo_ar(no);   // ouvido pelo ar now: ganha o lugar no topo e a protecao of despejo
       ++s_nos_ver;
     }
   }
-  avisar_nos();
+  notify_nos();
 }
 
-// LocalStats vem como telemetria do proprio no: 1=uptime 2=uso 3=airtime
+// LocalStats vem como telemetria of proprio no: 1=uptime 2=uso 3=airtime
 // 4..=contagens, 8=nos_online, 9=nos_total, 10=piso_ruido (varia com a versao;
 // pulamos o que nao reconhecemos).
-static void ler_from_radio(const uint8_t* buf, size_t n)
+static void read_from_radio(const uint8_t* buf, size_t n)
 {
   pb_leitor_t l = { buf, buf + n };
   int f, t;
 
-  // LOOP, e nao um unico campo. O FromRadio nao e so a variante: ele tem
-  // "uint32 id = 1" FORA do oneof, e protobuf serializa em ordem de numero de
-  // campo. Quando o radio preenche esse id - e ele preenche em alguns caminhos
-  // do firmware - o primeiro campo do frame e o 1, nenhum ramo abaixo casa, e
+  // LOOP, e nao one unico field. O FromRadio nao e so a variante: ele tem
+  // "uint32 id = 1" FORA of oneof, e protobuf serializa em order of numero of
+  // field. Quando o radio preenche esse id - e ele preenche em alguns caminhos
+  // of firmware - o first field of frame e o 1, nenhum ramo abaixo casa, e
   // a MENSAGEM INTEIRA ERA DESCARTADA em silencio.
   //
-  // Ler so o primeiro campo era apostar que o id viria sempre zerado (e campo
+  // Ler so o first field era apostar que o id viria sempre zerado (e field
   // zerado o nanopb omite). A aposta funciona quase sempre, que e a pior
-  // especie de erro: some do teste e aparece no uso.
-  while (pb_proximo_campo(&l, &f, &t))
+  // especie of erro: some of teste e aparece no uso.
+  while (pb_next_field(&l, &f, &t))
   {
-  // CAMPO 2, nao 1. O campo 1 do FromRadio e "id"; o pacote e o 2.
+  // CAMPO 2, nao 1. O field 1 of FromRadio e "id"; o pacote e o 2.
   // Conferido no protobuf oficial (meshtastic.protobuf.mesh_pb2).
-  // Com o numero errado, TODO pacote chegava e era descartado como campo
+  // Com o numero errado, TODO pacote chegava e era descartado como field
   // desconhecido - o contador dizia "0 pacotes" com o enlace perfeito.
-  if (f == 2 && t == 2) { s_c_pacotes++; pb_leitor_t s; if (pb_sub(&l,&s)) ler_packet(s); }
+  if (f == 2 && t == 2) { s_c_pacotes++; pb_leitor_t s; if (pb_sub(&l,&s)) read_packet(s); }
   else if (f == 3 && t == 2) {           // my_info
     pb_leitor_t s;
     if (pb_sub(&l,&s)) {
-      mesh_admin_guardar_my_info(s.p, (size_t)(s.fim - s.p));   // reboot_count, nodedb_count
+      mesh_admin_guardar_my_info(s.p, (size_t)(s.end - s.p));   // reboot_count, nodedb_count
       int n2, t2;
-      while (pb_proximo_campo(&s, &n2, &t2)) {
+      while (pb_next_field(&s, &n2, &t2)) {
         if (n2 == 1 && t2 == 0) {
           uint64_t v; pb_varint(&s,&v);
           const uint32_t novo = (uint32_t)v;
-          // So escreve quando MUDA: a NVS tem ciclos de escrita finitos e o
+          // So escreve when MUDA: a NVS tem ciclos of escrita finitos e o
           // my_info chega a cada apresentacao.
           if (novo != 0 && novo != s_meu_num) { lembrar_meu_numero(novo); }
           s_meu_num = novo;
         }
-        else if (n2 == 8 && t2 == 0) {   // reboot_count: o diario de reinicios compara com o anterior
+        else if (n2 == 8 && t2 == 0) {   // reboot_count: o diario of reinicios compara com o anterior
           uint64_t v; pb_varint(&s, &v);
-          // s_ultimo_quadro_ms ainda e o do quadro ANTERIOR (so atualiza depois
-          // de ler_from_radio): zero = primeiro contato desta sessao.
-          mesh_diario_contador((uint32_t)v, s_saude.uptime_s, s_ultimo_quadro_ms != 0, mesh_admin_gravando());
+          // s_ultimo_quadro_ms ainda e o of frame ANTERIOR (so atualiza depois
+          // of ler_from_radio): zero = first contato desta sessao.
+          mesh_diario_contador((uint32_t)v, s_saude.uptime_s, s_ultimo_frame_ms != 0, mesh_admin_gravando());
         }
         else if (!pb_pular(&s, t2)) { break; }
       }
     }
   }
-  else if (f == 4 && t == 2) { s_c_nodeinfo++; pb_leitor_t s; if (pb_sub(&l,&s)) ler_node_info(s); }
+  else if (f == 4 && t == 2) { s_c_nodeinfo++; pb_leitor_t s; if (pb_sub(&l,&s)) read_node_info(s); }
   else if (f == 11 && t == 2) {          // queueStatus: 1=res 4=mesh_packet_id
-    // Falha IMEDIATA, antes de o pacote sair pelo radio: a queue de transmissao
-    // nao aceitou. Sem isto o envio ficaria "enviando" ate o prazo estourar,
-    // quando o radio ja tinha dito que nem tentou.
+    // Falha IMEDIATA, antes of o pacote exit pelo radio: a queue of transmissao
+    // nao aceitou. Sem isto o send_state ficaria "enviando" ate o prazo estourar,
+    // when o radio ja tinha dito que nem tentou.
     pb_leitor_t s;
     if (pb_sub(&l,&s)) {
       int32_t res = 0; uint32_t pid = 0;
       int n2, t2;
-      while (pb_proximo_campo(&s, &n2, &t2)) {
+      while (pb_next_field(&s, &n2, &t2)) {
         if      (n2 == 1 && t2 == 0) { uint64_t v; pb_varint(&s,&v); res = (int32_t)v; }
         // mesh_packet_id e UINT32 (varint), nao fixed32 - conferido no
         // mesh.pb.h. Lido como fixed32 ele nunca casava, e a
-        // recusa da queue do radio nunca marcava o envio como falho.
+        // recusa of queue of radio nunca marcava o send_state como falho.
         else if (n2 == 4 && t2 == 0) { uint64_t v; pb_varint(&s, &v); pid = (uint32_t)v; }
         else if (!pb_pular(&s, t2)) { break; }
       }
-      if (pid != 0 && res != 0) { marcar_envio(pid, MESH_ERRO_FILA, s_meu_num); }
+      if (pid != 0 && res != 0) { marcar_send_state(pid, MESH_ERRO_FILA, s_meu_num); }
     }
   }
   else if (f == 7 && t == 0) {           // configCompleteId
     // FIM DO DOWNLOAD DE CONFIGURACAO. E daqui em diante que o radio comeca a
-    // entregar o trafego AO VIVO - antes disso ele esta drenando a queue de
-    // configuracao. Nao ha nada a fazer alem de registrar, mas registrar
-    // importa: sem esta linha no log nao da para distinguir "o dump nunca
-    // terminou" de "terminou e nao chega mensagem", e o conserto e outro.
+    // entregar o trafego AO VIVO - antes disso ele esta drenando a queue of
+    // configuracao. Nao ha nada a fazer alem of registrar, mas registrar
+    // importa: sem esta line no log nao of para distinguir "o dump nunca
+    // terminou" of "terminou e nao chega message", e o conserto e outro.
     uint64_t v;
     if (pb_varint(&l, &v)) {
-      s_config_ok_ms = tab5_now_ms();   // a hora ao vivo conta daqui (ver marcar_hora_viva)
-      // A configuracao dos canais chegou inteira: s_canais_sujos ja esta de
-      // pe, e a carona da tarefa "cartao" grava em ate 1 s (fora do radio).
-      mesh_admin_fim_dump();         // a configuracao do no tambem
-      enviar_favs_pendentes();       // estrelas mudadas sem o radio
+      s_config_ok_ms = tab5_now_ms();   // a hora on vivo conta daqui (ver marcar_hora_viva)
+      // A configuracao dos canais chegou inteira: s_canais_sujos ja esta of
+      // pe, e a carona of tarefa "cartao" grava em ate 1 s (fora of radio).
+      mesh_admin_end_dump();         // a configuracao of no tambem
+      send_favs_pendentes();       // estrelas mudadas sem o radio
       ESP_LOGI(TAG, "configuracao completa (id %lu) - trafego ao vivo daqui",
                (unsigned long)v);
     }
@@ -3112,17 +3112,17 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
     uint64_t v;
     if (pb_varint(&l, &v) && v != 0) {
       // TENSAO DO BARRAMENTO NO INSTANTE DO REINICIO
-      // ("tem como saber se os 5V do Grove estao chegando?"). Nao medimos o
-      // Grove especificamente (so existe o INA226 do barramento da BATERIA,
-      // 2S Li-Po ~7.4V - ver tab5_power.hpp), e nao dá pra medir agora
+      // ("tem como saber se os 5V of Grove estao chegando?"). Nao medimos o
+      // Grove especificamente (so existe o INA226 of barramento of BATERIA,
+      // 2S Li-Po ~7.4V - ver tab5_power.hpp), e nao dá pra medir now
       // mesmo (tab5_power_latest() so, nunca _medir() daqui: esta e a
-      // tarefa do Mesh, nao a de interface, e o barramento I2C interno nao
+      // tarefa of Mesh, nao a of interface, e o barramento I2C interno nao
       // tem mutex - ver o aviso grande em tab5_power.hpp). O que "ultima"
-      // devolve e uma leitura em cache de ATE 1s atras, atualizada pela
-      // interface - resolucao grosseira para um afundamento rapido de
-      // tensao, mas se o barramento estiver visivelmente baixo bem na hora
-      // do reinicio, e um indicio real de energia, nao so uma suspeita.
-      mesh_diario_foto(s_saude.uptime_s);   // contexto do Tab5 neste instante
+      // devolve e uma leitura em cache of ATE 1s atras, atualizada pela
+      // interface - resolucao grosseira para one afundamento rapido of
+      // tensao, mas se o barramento estiver visivelmente bottom bem in hora
+      // of reinicio, e one indicio real of energia, nao so uma suspeita.
+      mesh_diario_foto(s_saude.uptime_s);   // context of Tab5 neste instante
       const tab5_measurement_t m = tab5_power_latest();
       ESP_LOGW(TAG, "o radio reiniciou - vou pedir a configuracao de novo "
                     "(barramento no instante: %.2fV %.0fmA, ate 1s atras)",
@@ -3131,22 +3131,22 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
     }
   }
   // CONFIG E MODULECONFIG - so o que o modo internet precisa: a regiao
-  // (Config.lora.region, que vai na raiz do topico) e o servidor MQTT do no
-  // (ModuleConfig.mqtt: 2=endereco 3=usuario 4=senha 8=raiz). Endereco vazio
-  // = o servidor publico, que e o padrao do firmware.
+  // (Config.lora.region, que vai in raiz of topico) e o servidor MQTT of no
+  // (ModuleConfig.mqtt: 2=endereco 3=user 4=senha 8=raiz). Endereco vazio
+  // = o servidor publico, que e o default of firmware.
   else if (f == 5 && t == 2) {           // config: oneof 1..10 = secao; 6=lora { 7=region }
     pb_leitor_t s, sec;
     int n2, t2;
     if (pb_sub(&l, &s)) {
-      while (pb_proximo_campo(&s, &n2, &t2)) {
+      while (pb_next_field(&s, &n2, &t2)) {
         if (t2 != 2) { if (!pb_pular(&s, t2)) { break; } continue; }
         if (!pb_sub(&s, &sec)) { break; }
-        // A SECAO CRUA vai para a configuracao do no (tab5_mesh_admin): e ela
-        // que volta, inteira, quando um campo e alterado.
-        mesh_admin_guardar_secao(false, n2, sec.p, (size_t)(sec.fim - sec.p));
+        // A SECAO CRUA vai para a configuracao of no (tab5_mesh_admin): e ela
+        // que iteration, inteira, when one field e alterado.
+        mesh_admin_guardar_secao(false, n2, sec.p, (size_t)(sec.end - sec.p));
         if (n2 != 6) { continue; }
         int n3, t3;
-        while (pb_proximo_campo(&sec, &n3, &t3)) {
+        while (pb_next_field(&sec, &n3, &t3)) {
           if (n3 == 7 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); mesh_mqtt_aprender_regiao((int)v); }
           else if (!pb_pular(&sec, t3)) { break; }
         }
@@ -3157,22 +3157,22 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
     pb_leitor_t s, sec;
     int n2, t2;
     if (pb_sub(&l, &s)) {
-      while (pb_proximo_campo(&s, &n2, &t2)) {
+      while (pb_next_field(&s, &n2, &t2)) {
         if (t2 != 2) { if (!pb_pular(&s, t2)) { break; } continue; }
         if (!pb_sub(&s, &sec)) { break; }
-        mesh_admin_guardar_secao(true, n2, sec.p, (size_t)(sec.fim - sec.p));
+        mesh_admin_guardar_secao(true, n2, sec.p, (size_t)(sec.end - sec.p));
         if (n2 != 1) { continue; }
         char end[64] = "", usr[32] = "", pwd[32] = "", raiz[48] = "";
         bool mqtt_lig = false, tls = false, proxy = false;   // proto3: ausente = false
         int n3, t3;
-        while (pb_proximo_campo(&sec, &n3, &t3)) {
+        while (pb_next_field(&sec, &n3, &t3)) {
           if      (n3 == 1 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); mqtt_lig = (v != 0); }
           else if (n3 == 7 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); tls = (v != 0); }
           else if (n3 == 9 && t3 == 0) { uint64_t v; pb_varint(&sec, &v); proxy = (v != 0); }
-          else if (n3 == 2 && t3 == 2) { pb_texto(&sec, end,  sizeof(end)); }
-          else if (n3 == 3 && t3 == 2) { pb_texto(&sec, usr,  sizeof(usr)); }
-          else if (n3 == 4 && t3 == 2) { pb_texto(&sec, pwd,  sizeof(pwd)); }
-          else if (n3 == 8 && t3 == 2) { pb_texto(&sec, raiz, sizeof(raiz)); }
+          else if (n3 == 2 && t3 == 2) { pb_text(&sec, end,  sizeof(end)); }
+          else if (n3 == 3 && t3 == 2) { pb_text(&sec, usr,  sizeof(usr)); }
+          else if (n3 == 4 && t3 == 2) { pb_text(&sec, pwd,  sizeof(pwd)); }
+          else if (n3 == 8 && t3 == 2) { pb_text(&sec, raiz, sizeof(raiz)); }
           else if (!pb_pular(&sec, t3)) { break; }
         }
         mesh_mqtt_aprender_servidor(end, usr, pwd, raiz);
@@ -3184,32 +3184,32 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
     pb_leitor_t s;
     if (pb_sub(&l,&s)) {
       const uint8_t* ch_ini = s.p;
-      const size_t   ch_n = (size_t)(s.fim - s.p);
-      // OS DOIS COMECAM EM ZERO, e isso e o conserto de dois bugs.
+      const size_t   ch_n = (size_t)(s.end - s.p);
+      // OS DOIS COMECAM EM ZERO, e isso e o conserto of dois bugs.
       //
       // 'index' (int32) e 'role' (enum) sao campos proto3 SINGULAR: o nanopb
-      // NAO os escreve quando valem zero. Comecando em -1 e 1, como era:
-      //   - o canal 0 (o primario, LongFast) chegava SEM o campo 1, ficava com
+      // NAO os escreve when valem zero. Comecando em -1 e 1, como era:
+      //   - o canal 0 (o primario, LongFast) chegava SEM o field 1, ficava com
       //     idx -1 e a configuracao inteira dele era ignorada - nunca entrava
-      //     como ativo, e por isso nao aparecia para reabrir depois de apagado;
-      //   - um canal DESABILITADO (role 0) chegava SEM o campo 3 e era lido como
-      //     PRIMARY - continuava "ativo", com o nome antigo, na coluna.
-      // O valor ausente e o zero do protobuf: e isso que o firmware quis dizer.
+      //     como active, e por isso nao aparecia para reabrir depois of apagado;
+      //   - one canal DESABILITADO (role 0) chegava SEM o field 3 e era lido como
+      //     PRIMARY - continuava "active", com o name antigo, in coluna.
+      // O valor ausente e o zero of protobuf: e isso que o firmware quis dizer.
       int idx = 0, papel = 0;
       bool downlink = false;
-      char nome[MESH_NOME_CONVERSA] = { 0 };
+      char name[MESH_NOME_CONVERSA] = { 0 };
       uint8_t psk[32];
       size_t  n_psk = 0;
       int n2, t2;
-      while (pb_proximo_campo(&s, &n2, &t2)) {
+      while (pb_next_field(&s, &n2, &t2)) {
         if      (n2 == 1 && t2 == 0) { uint64_t v; pb_varint(&s,&v); idx = (int)v; }
         else if (n2 == 3 && t2 == 0) { uint64_t v; pb_varint(&s,&v); papel = (int)v; }
         else if (n2 == 2 && t2 == 2) {           // ChannelSettings: 2=psk 3=name
           pb_leitor_t cs;
           if (pb_sub(&s,&cs)) {
             int n3, t3;
-            while (pb_proximo_campo(&cs, &n3, &t3)) {
-              if (n3 == 3 && t3 == 2) { pb_texto(&cs, nome, sizeof(nome)); }
+            while (pb_next_field(&cs, &n3, &t3)) {
+              if (n3 == 3 && t3 == 2) { pb_text(&cs, name, sizeof(name)); }
               else if (n3 == 6 && t3 == 0) { uint64_t v; pb_varint(&cs, &v); downlink = (v != 0); }   // o proxy assina
               else if (n3 == 2 && t3 == 2) {   // psk: a chave, para o modo internet
                 uint64_t k;
@@ -3224,27 +3224,27 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
         }
         else if (!pb_pular(&s, t2)) { break; }
       }
-      // O Channel CRU vai para a configuracao do no (a precisao da posicao do
-      // primario e editada la, e volta com o resto dele intacto).
+      // O Channel CRU vai para a configuracao of no (a precisao of position of
+      // primario e editada la, e iteration com o resto dele intacto).
       mesh_admin_guardar_canal(idx, ch_ini, ch_n);
       if (idx >= 0 && idx < MESH_MAX_CANAIS) {
-        mesh_mqtt_aprender_downlink(idx, papel != 0 && downlink);   // antes: aplicar_canal ensina o nome
-        aplicar_canal(idx, papel, nome, psk, n_psk);
+        mesh_mqtt_aprender_downlink(idx, papel != 0 && downlink);   // antes: aplicar_canal ensina o name
+        aplicar_canal(idx, papel, name, psk, n_psk);
       }
     }
   }
   else if (f == 14 && t == 2) {          // mqttClientProxyMessage: 1=topic 2=data 3=text 4=retained
-    // O NO PEDINDO PARA PUBLICAR (proxy ligado nele). Sem o proxy do lado do
-    // Tab5 a mensagem e so descartada - o no nao espera resposta.
+    // O NO PEDINDO PARA PUBLICAR (proxy enabled nele). Sem o proxy of lado of
+    // Tab5 a message e so descartada - o no nao espera resposta.
     pb_leitor_t s;
     if (pb_sub(&l, &s)) {
-      static char topico[128];   // so a tarefa do servico le FromRadio
+      static char topico[128];   // so a tarefa of servico le FromRadio
       topico[0] = 0;
       const uint8_t* dado = nullptr; size_t n_dado = 0;
       bool retido = false;
       int n2, t2;
-      while (pb_proximo_campo(&s, &n2, &t2)) {
-        if (n2 == 1 && t2 == 2) { pb_texto(&s, topico, sizeof(topico)); }
+      while (pb_next_field(&s, &n2, &t2)) {
+        if (n2 == 1 && t2 == 2) { pb_text(&s, topico, sizeof(topico)); }
         else if ((n2 == 2 || n2 == 3) && t2 == 2) {   // data (bytes) ou text: os dois vao crus
           uint64_t k;
           if (!pb_varint(&s, &k) || k > pb_restam(&s)) { break; }
@@ -3256,23 +3256,23 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
       if (mesh_mqtt_em_proxy() && topico[0] && dado) { mesh_mqtt_proxy_publicar(topico, dado, n_dado, retido); }
     }
   }
-  else if (f == 16 && t == 2) {          // clientNotification: aviso do firmware para quem usa
+  else if (f == 16 && t == 2) {          // clientNotification: aviso of firmware para quem usa
     pb_leitor_t s;
-    if (pb_sub(&l, &s)) { mesh_admin_guardar_aviso(s.p, (size_t)(s.fim - s.p)); }
+    if (pb_sub(&l, &s)) { mesh_admin_guardar_aviso(s.p, (size_t)(s.end - s.p)); }
   }
   else if (f == 13 && t == 2) {          // metadata: 1=firmware_version
     pb_leitor_t s;
     if (pb_sub(&l,&s)) {
-      mesh_admin_guardar_metadata(s.p, (size_t)(s.fim - s.p));
+      mesh_admin_guardar_metadata(s.p, (size_t)(s.end - s.p));
       int n2, t2;
-      while (pb_proximo_campo(&s, &n2, &t2)) {
-        if (n2 == 1 && t2 == 2) { pb_texto(&s, s_firmware, sizeof(s_firmware)); }
+      while (pb_next_field(&s, &n2, &t2)) {
+        if (n2 == 1 && t2 == 2) { pb_text(&s, s_firmware, sizeof(s_firmware)); }
         else if (!pb_pular(&s, t2)) { break; }
       }
     }
   }
-  // config e o resto: pulados, para o loop chegar ao campo seguinte em vez de
-  // parar no primeiro desconhecido.
+  // config e o resto: pulados, para o loop chegar on field seguinte em vez of
+  // stop no first desconhecido.
   else if (!pb_pular(&l, t)) { break; }
   }
 }
@@ -3281,47 +3281,47 @@ static void ler_from_radio(const uint8_t* buf, size_t n)
 // Tarefa
 // ---------------------------------------------------------------------------
 // ToRadio{ heartbeat: {} } enquadrado.
-//   campo 7, tipo 2 -> tag (7<<3)|2 = 0x3A, comprimento 0
+//   field 7, tipo 2 -> tag (7<<3)|2 = 0x3A, comprimento 0
 //
-// O radio espera que o cliente se manifeste de tempos em tempos; o log do C6L
-// mostra "Got client heartbeat" vindo do celular. Sem isto ele pode considerar
-// o cliente ausente e parar de entregar trafego - e a ponte fica viva mas muda.
-// O ENLACE: entrega o corpo de um ToRadio pela via do servico. Na serial ele
-// vai num frame 0x94 0xC3 <tamanho>; no BLE e o proprio valor da
+// O radio espera que o cliente se manifeste of tempos em tempos; o log of C6L
+// mostra "Got client heartbeat" vindo of celular. Sem isto ele pode considerar
+// o cliente ausente e stop of entregar trafego - e a ponte stays alive mas muda.
+// O ENLACE: entrega o body of one ToRadio pela via of servico. Na serial ele
+// vai num frame 0x94 0xC3 <tamanho>; no BLE e o proprio valor of
 // caracteristica toRadio (ver tab5_mesh_ble.hpp). E o UNICO lugar que sabe
-// qual e a via - o resto do servico so monta protobuf.
-// Com o no fora e o Wi-Fi de pe, a internet assume (ver usar_internet no
-// laco do servico): o que sairia pelo radio vai pelo MQTT.
-// Criada uma vez e nunca apagada: o enlace pode ser chamado da interface
-// enquanto o servico para e sobe de novo.
+// qual e a via - o resto of servico so monta protobuf.
+// Com o no fora e o Wi-Fi of pe, a internet assume (ver usar_internet no
+// laco of servico): o que sairia pelo radio vai pelo MQTT.
+// Criada uma vez e nunca apagada: o enlace pode ser chamado of interface
+// enquanto o servico para e sobe of novo.
 static SemaphoreHandle_t s_tx = nullptr;
 
-// Um ToRadio do proxy (a descida): o teto do firmware, pelo cabo e pelo BLE.
+// Um ToRadio of proxy (a press_start): o teto of firmware, pelo cabo e pelo BLE.
 #define QUADRO_PROXY_MAX 512
 
-static bool enlace_enviar(const uint8_t* corpo, size_t n)
+static bool enlace_send(const uint8_t* body, size_t n)
 {
-  // Para o diario de reinicios: o que o Tab5 mandou por ultimo. ToRadio:
+  // Para o diario of reinicios: o que o Tab5 mandou por ultimo. ToRadio:
   // 1 = pacote, 3 = want_config_id, 7 = batimento.
   if (n > 0) {
-    const int campo = corpo[0] >> 3;
-    mesh_diario_nota_envio(campo == 1 ? MESH_ENV_PACOTE : campo == 3 ? MESH_ENV_CONFIG
-                         : campo == 7 ? MESH_ENV_HEARTBEAT : MESH_ENV_NENHUM);
+    const int field = body[0] >> 3;
+    mesh_diario_nota_send_state(field == 1 ? MESH_ENV_PACOTE : field == 3 ? MESH_ENV_CONFIG
+                         : field == 7 ? MESH_ENV_HEARTBEAT : MESH_ENV_NENHUM);
   }
-  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_enviar(corpo, n); }
+  if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_send(body, n); }
   if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
-    if (!mesh_ble_conectado() && mesh_mqtt_conectado()) { return mesh_mqtt_enviar(corpo, n); }
-    return mesh_ble_enviar(corpo, n);
+    if (!mesh_ble_conectado() && mesh_mqtt_conectado()) { return mesh_mqtt_send(body, n); }
+    return mesh_ble_send(body, n);
   }
-  // UM QUADRO POR VEZ NA UART. Cabecalho e corpo sao duas escritas, e
-  // escrevem aqui a tarefa do Mesh (batimento, configuracao) e a de interface
-  // (texto, favorito, admin). Sem a trava, um batimento podia cair entre o
-  // cabecalho e o corpo de uma mensagem: o no lia um tamanho e recebia outro
-  // quadro no lugar - as duas se perdiam sem erro nenhum.
+  // UM QUADRO POR VEZ NA UART. Cabecalho e body sao duas escritas, e
+  // escrevem aqui a tarefa of Mesh (batimento, configuracao) e a of interface
+  // (text, favorito, admin). Sem a trava, one batimento podia cair entre o
+  // cabecalho e o body of uma message: o no lia one tamanho e recebia outro
+  // frame no lugar - as duas se perdiam sem erro nenhum.
   if (s_tx) { xSemaphoreTake(s_tx, portMAX_DELAY); }
   uint8_t cab[4] = { 0x94, 0xC3, (uint8_t)(n >> 8), (uint8_t)(n & 0xFF) };
   uart_write_bytes(MESH_UART, cab, sizeof(cab));
-  uart_write_bytes(MESH_UART, corpo, n);
+  uart_write_bytes(MESH_UART, body, n);
   if (s_tx) { xSemaphoreGive(s_tx); }
   return true;
 }
@@ -3329,40 +3329,40 @@ static bool enlace_enviar(const uint8_t* corpo, size_t n)
 static void mandar_heartbeat(void)
 {
   const uint8_t q[] = { 0x3A, 0x00 };
-  enlace_enviar(q, sizeof(q));
+  enlace_send(q, sizeof(q));
 }
 
-// PEDIR A CONFIGURACAO DE NOVO daqui a pouco - depois de gravar algo no no
+// PEDIR A CONFIGURACAO DE NOVO daqui a pouco - depois of gravar algo no no
 // (tab5_mesh_admin): ele reinicia e, pela serial, nao fala sozinho.
 static volatile uint32_t s_reapresentar_ms = 0;
-static volatile bool     s_acordar_proxima = false;
+static volatile bool     s_wake_next = false;
 
 static volatile bool     s_so_config = false;
 
 void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou)
 {
-  // Reiniciado, ele pode estar no modo de baixo consumo da serial e precisar
-  // da rajada de 0x94. Sem reinicio, NAO: a rajada no meio de uma conversa e
-  // ruido na maquina de quadros dele (ver pedir_apresentacao).
-  // Sem reinicio (posicao fixa posta ou tirada) so a CONFIGURACAO mudou: o
-  // pedido e o "so configuracao", sem a NodeDB inteira atras.
-  if (reiniciou) { s_acordar_proxima = true; s_so_config = false; }
+  // Reiniciado, ele pode estar no modo of bottom consumo of serial e precisar
+  // of rajada of 0x94. Sem reinicio, NAO: a rajada no middle of uma conversa e
+  // ruido in maquina of quadros dele (ver pedir_apresentacao).
+  // Sem reinicio (position fixa posta ou tirada) so a CONFIGURACAO changed: o
+  // request e o "so configuracao", sem a NodeDB inteira atras.
+  if (reiniciou) { s_wake_next = true; s_so_config = false; }
   else           { s_so_config = true; }
   s_reapresentar_ms = (tab5_now_ms() + ms) | 1u;
 }
 
-static void pedir_apresentacao(void)
+static void request_apresentacao(void)
 {
   // A RAJADA DE 0x94 SO NA PRIMEIRA VEZ.
   //
-  // Ela existe para tirar o radio do modo de baixo consumo da serial - e o
-  // procedimento documentado de acordar. Mas sao 32 bytes de lixo entrando na
-  // maquina de enquadramento DELE, e mandar isso com a conversa ja estabelecida
-  // e injetar ruido no meio de um frame que pode estar chegando ao mesmo
-  // tempo. Depois do primeiro contato o radio esta acordado por definicao: ele
-  // acabou de falar conosco.
-  if ((s_meu_num == 0 || s_acordar_proxima) && s_via == SETTINGS_MESH_TRANSPORT_SERIAL) {   // BLE nao tem modo de baixo consumo da serial
-    s_acordar_proxima = false;
+  // Ela existe para tirar o radio of modo of bottom consumo of serial - e o
+  // procedimento documentado of wake. Mas sao 32 bytes of lixo entrando in
+  // maquina of enquadramento DELE, e mandar isso com a conversa ja estabelecida
+  // e injetar ruido no middle of one frame que pode estar chegando on mesmo
+  // time. Depois of first contato o radio esta acordado por definicao: ele
+  // acabou of falar conosco.
+  if ((s_meu_num == 0 || s_wake_next) && s_via == SETTINGS_MESH_TRANSPORT_SERIAL) {   // BLE nao tem modo of bottom consumo of serial
+    s_wake_next = false;
     uint8_t acorda[32];
     memset(acorda, 0x94, sizeof(acorda));
     if (s_tx) { xSemaphoreTake(s_tx, portMAX_DELAY); }
@@ -3370,38 +3370,38 @@ static void pedir_apresentacao(void)
     if (s_tx) { xSemaphoreGive(s_tx); }
     vTaskDelay(pdMS_TO_TICKS(120));
   }
-  // SO A CONFIGURACAO quando so ela mudou: want_config_id 69420 e o
-  // SPECIAL_NONCE_ONLY_CONFIG do firmware (PhoneAPI) - canais, config e
+  // SO A CONFIGURACAO when so ela changed: want_config_id 69420 e o
+  // SPECIAL_NONCE_ONLY_CONFIG of firmware (PhoneAPI) - canais, config e
   // modulos, sem a NodeDB, que pelo Bluetooth com uma malha cheia sao
-  // centenas de quadros so para saber que um campo virou. Firmware antigo nao
-  // conhece o numero e manda tudo, como antes. Qualquer outro motivo (primeiro
-  // contato, reinicio, silencio) pede tudo.
+  // centenas of quadros so para saber que one field virou. Firmware antigo nao
+  // conhece o numero e manda everything, como antes. Qualquer outro reason (first
+  // contato, reinicio, silencio) pede everything.
   const bool so_config = s_so_config && s_meu_num != 0;
   s_so_config = false;
   static const uint8_t TUDO_Q[]   = { 0x18, 0x2A };               // ToRadio{ want_config_id: 42 }
   static const uint8_t CONFIG_Q[] = { 0x18, 0xAC, 0x9E, 0x04 };   // ToRadio{ want_config_id: 69420 }
-  s_config_ok_ms = 0;   // dump novo: o que vier ate o fim dele e passado
-  mesh_admin_inicio_dump();
-  if (so_config) { enlace_enviar(CONFIG_Q, sizeof(CONFIG_Q)); }
-  else           { enlace_enviar(TUDO_Q, sizeof(TUDO_Q)); }
+  s_config_ok_ms = 0;   // dump novo: o que vier ate o end dele e passado
+  mesh_admin_start_dump();
+  if (so_config) { enlace_send(CONFIG_Q, sizeof(CONFIG_Q)); }
+  else           { enlace_send(TUDO_Q, sizeof(TUDO_Q)); }
 }
 
 // ---------------------------------------------------------------------------
 // Envio
 // ---------------------------------------------------------------------------
-// Texto, admin e posicao saem no MESMO envelope ToRadio{ packet: MeshPacket{
+// Texto, admin e position saem no MESMO envelope ToRadio{ packet: MeshPacket{
 // to, channel, decoded: Data{ portnum, payload }, id, hop_limit, want_ack } },
 // montado num lugar so: mesh_pb_to_radio() (services/mesh_pb.hpp).
 
 // ---------------------------------------------------------------------------
 // FILA DE ENVIO DE TEXTO
 // ---------------------------------------------------------------------------
-typedef struct { uint16_t n; bool internet; uint32_t id; uint8_t d[MESH_TEXTO + 96]; } envio_fila_t;
-static QueueHandle_t s_fila_envio = nullptr;
+typedef struct { uint16_t n; bool internet; uint32_t id; uint8_t d[MESH_TEXTO + 96]; } send_state_fila_t;
+static QueueHandle_t s_fila_send_state = nullptr;
 #define MESH_FILA_ENVIO 8
 
-// Ja da para dizer que nao sai? (ver tab5_mesh_enviar)
-static bool pode_sair(bool internet, uint32_t para)
+// Ja of para dizer que nao exit? (ver tab5_mesh_enviar)
+static bool pode_exit(bool internet, uint32_t para)
 {
   const bool difusao = (para == 0xFFFFFFFFu);
   if (internet) { return difusao && mesh_mqtt_internet_conectado(); }
@@ -3412,74 +3412,74 @@ static bool pode_sair(bool internet, uint32_t para)
   return true;
 }
 
-// DOIS SEGUNDOS ENTRE TEXTOS. O firmware descarta o texto que chega do
-// cliente menos de 2 s depois do anterior (PhoneAPI, rate limit da porta TEXT,
-// da 2.5 ate a atual): na 2.7 sem erro nenhum - a mensagem ficava "enviando" e
+// DOIS SEGUNDOS ENTRE TEXTOS. O firmware descarta o text que chega of
+// cliente menos of 2 s depois of anterior (PhoneAPI, rate limit of porta TEXT,
+// of 2.5 ate a current): in 2.7 sem erro nenhum - a message ficava "enviando" e
 // virava "sem resposta". A fila espera o que falta; a internet nao tem esse
-// limite (e o servidor, nao o no). Chamada pela tarefa do servico, sem trava.
+// limit (e o servidor, nao o no). Chamada pela tarefa of servico, sem trava.
 static void laco_envios(void)
 {
   static uint32_t ultimo_ms = 0;
-  static envio_fila_t e;
-  if (!s_fila_envio) { return; }
+  static send_state_fila_t e;
+  if (!s_fila_send_state) { return; }
   for (int k = 0; k < 4; ++k) {
-    if (xQueuePeek(s_fila_envio, &e, 0) != pdTRUE) { return; }
+    if (xQueuePeek(s_fila_send_state, &e, 0) != pdTRUE) { return; }
     if (!e.internet && ultimo_ms && tab5_now_ms() - ultimo_ms < 2100) { return; }
-    xQueueReceive(s_fila_envio, &e, 0);
-    const bool ok = e.internet ? mesh_mqtt_internet_enviar(e.d, e.n) : enlace_enviar(e.d, e.n);
+    xQueueReceive(s_fila_send_state, &e, 0);
+    const bool ok = e.internet ? mesh_mqtt_internet_send(e.d, e.n) : enlace_send(e.d, e.n);
     if (!e.internet) { ultimo_ms = tab5_now_ms(); }
     if (!ok) {
-      // O enlace caiu entre o toque e a vez dela: falhou, e a tela diz.
+      // O enlace caiu entre o touch e a vez dela: falhou, e a screen diz.
       ESP_LOGW(TAG, "pacote %08lX: o enlace recusou", (unsigned long)e.id);
-      travar();
-      marcar_envio(e.id, MESH_ERRO_FILA, s_meu_num);
+      lock();
+      marcar_send_state(e.id, MESH_ERRO_FILA, s_meu_num);
       destravar();
     }
   }
 }
 
-bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
+bool tab5_mesh_send(uint32_t para, uint8_t canal, const char* text)
 {
-  if (!texto || !texto[0]) { return false; }
+  if (!text || !text[0]) { return false; }
 
-  // SEM SERVICO NAO HA PARA ONDE ESCREVER. A tela ja impede chegar aqui, mas a
-  // guarda mora TAMBEM aqui de proposito: sem servico nao ha UART instalada, e
-  // um uart_write_bytes numa porta que nao existe nao e "nao enviou" - e
-  // comportamento indefinido. Quem protege o hardware e a camada do hardware.
-  if (!s_servico_ativo) {
+  // SEM SERVICO NAO HA PARA ONDE ESCREVER. A screen ja impede chegar aqui, mas a
+  // guarda mora TAMBEM aqui of proposito: sem servico nao ha UART instalada, e
+  // one uart_write_bytes numa porta que nao existe nao e "nao enviou" - e
+  // comportamento indefinido. Quem protege o hardware e a camada of hardware.
+  if (!s_servico_active) {
     ESP_LOGW(TAG, "envio recusado: servico parado (sem no Meshtastic)");
     return false;
   }
   // ENLACE MUDO NAO E MOTIVO PARA RECUSAR, e a recusa era pior que o problema.
   //
-  // "no ar" aqui significa so "chegou algum frame do radio nos ultimos 30s".
+  // "no ar" aqui significa so "chegou algum frame of radio nos ultimos 30s".
   // Numa malha parada isso e o estado NORMAL: o radio nao fala sozinho, e nao
-  // ha nada de errado com o cabo. Recusando, o botao ENV nao fazia nada, sem
-  // mensagem de erro e sem entrada no historico - do lado de fora e
-  // indistinguivel de um sistema quebrado, e foi assim que ficou o tempo todo.
+  // ha nada of errado com o cabo. Recusando, o botao ENV nao fazia nada, sem
+  // message of erro e sem entrada no historico - of lado of fora e
+  // indistinguivel of one sistema quebrado, e foi assim que became o time todo.
   //
   // Mandar e o certo: se o radio nao estiver mesmo la, o queueStatus nao vem, o
-  // ACK nao vem, e o prazo de 60s marca a mensagem como "sem resposta" na
-  // propria tela. Isso e informacao; o silencio nao era.
+  // ACK nao vem, e o prazo of 60s marca a message como "sem resposta" in
+  // propria screen. Isso e informacao; o silencio nao era.
   if (!tab5_mesh_no_ar()) {
     ESP_LOGW(TAG, "enlace sem quadro recente - enviando assim mesmo");
   }
 
-  // No maximo MESH_PAYLOAD_MAX (233) bytes - acima disso o no descarta o
-  // pacote inteiro em silencio (ver o .hpp). Corta na fronteira de caractere:
-  // um acento partido ao meio sai como lixo na tela de quem recebe.
-  size_t n_txt = strnlen(texto, MESH_PAYLOAD_MAX + 1);
+  // No maximum MESH_PAYLOAD_MAX (233) bytes - acima disso o no descarta o
+  // pacote inteiro em silencio (ver o .hpp). Corta in fronteira of caractere:
+  // one acento partido on middle exit como lixo in screen of quem recebe.
+  size_t n_txt = strnlen(text, MESH_PAYLOAD_MAX + 1);
   if (n_txt > MESH_PAYLOAD_MAX) {
     n_txt = MESH_PAYLOAD_MAX;
-    while (n_txt > 0 && ((unsigned char)texto[n_txt] & 0xC0) == 0x80) { --n_txt; }
+    while (n_txt > 0 && ((unsigned char)text[n_txt] & 0xC0) == 0x80) { --n_txt; }
     ESP_LOGW(TAG, "texto acima de %d bytes - enviado cortado", MESH_PAYLOAD_MAX);
   }
   char enviado[MESH_PAYLOAD_MAX + 1];
-  memcpy(enviado, texto, n_txt);
+  memcpy(enviado, text, n_txt);
   enviado[n_txt] = 0;
 
   // Pela internet o pacote vai no canal 0 DE LA (o LongFast publico); o indice
-  // MESH_CANAL_INTERNET e so a chave da conversa daqui. E la so ha canal (sem PKI).
+  // MESH_CANAL_INTERNET e so a chave of conversa daqui. E la so ha canal (sem PKI).
   const bool internet = mesh_canal_internet(canal);
   if (internet && para != MESH_PB_DIFUSAO) { return false; }
 
@@ -3487,68 +3487,68 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
   env.para    = para;
   env.channel   = internet ? 0 : canal;
   env.porta   = PORT_TEXTO;
-  env.carga   = (const uint8_t*)texto;
+  env.carga   = (const uint8_t*)text;
   env.n_carga = n_txt;
   // ID PROPRIO, e e ele que torna a confirmacao possivel. Sem id o radio
-  // inventa um, e nunca ficamos sabendo qual - o ACK chegaria com um
+  // inventa one, e nunca ficamos sabendo qual - o ACK chegaria com one
   // request_id que nao bate com nada nosso. Zero e reservado, por isso o |1.
   env.id = esp_random() | 1u;
-  // hop_limit 3. Sem ele o pacote sai com ZERO SALTOS - so quem ouve a nossa
-  // antena diretamente recebe, e nada e repetido adiante. 3 e o padrao do
-  // proprio Meshtastic (nao lemos a Config do radio para herdar o dele).
+  // hop_limit 3. Sem ele o pacote exit com ZERO SALTOS - so quem ouve a nossa
+  // antena diretamente recebe, e nada e repetido adiante. 3 e o default of
+  // proprio Meshtastic (nao lemos a Config of radio para herdar o dele).
   env.saltos = 3;
-  // want_ack nos DOIS casos - tambem na difusao. La nao ha destinatario para
-  // confirmar, mas ha a CONFIRMACAO IMPLICITA: quando um vizinho repete o
-  // pacote, o firmware devolve um Routing com o nosso request_id. E a unica
-  // prova de que alguem ouviu - o mesmo que o app oficial faz num canal.
+  // want_ack nos DOIS casos - tambem in difusao. La nao ha destinatario para
+  // confirm, mas ha a CONFIRMACAO IMPLICITA: when one vizinho repete o
+  // pacote, o firmware devolve one Routing com o nosso request_id. E a unica
+  // prova of que alguem ouviu - o mesmo que o app oficial faz num canal.
   env.quer_ack = true;
   const uint32_t id = env.id;
 
-  // O enquadramento (se houver) e do enlace.
-  uint8_t quadro[MESH_TEXTO + 96];
-  const size_t n_quadro = mesh_pb_to_radio(&env, quadro, sizeof(quadro));
-  if (!n_quadro) { ESP_LOGE(TAG, "texto nao coube no quadro"); return false; }
+  // O enquadramento (se houver) e of enlace.
+  uint8_t frame[MESH_TEXTO + 96];
+  const size_t n_frame = mesh_pb_to_radio(&env, frame, sizeof(frame));
+  if (!n_frame) { ESP_LOGE(TAG, "texto nao coube no quadro"); return false; }
 
-  // A RECUSA QUE DA PARA SABER AGORA sai agora, com o envio falhando na
-  // tela: a rede publica fora, a internet (so canal - a direta precisa de
-  // PKI), o Bluetooth sem conexao. O resto e decidido pelo enlace, na fila.
-  if (!pode_sair(internet, para)) {
+  // A RECUSA QUE DA PARA SABER AGORA exit now, com o send_state falhando in
+  // screen: a rede publica fora, a internet (so canal - a direta precisa of
+  // PKI), o Bluetooth sem connection. O resto e decidido pelo enlace, in fila.
+  if (!pode_exit(internet, para)) {
     ESP_LOGW(TAG, "envio recusado: %s", internet ? tab5_mesh_rede_internet_estado() : tab5_mesh_enlace_descricao());
     return false;
   }
 
-  // NA FILA, NAO NA HORA. Quem chama e a tarefa de INTERFACE, e o envio pode
-  // ter de esperar o limite de 2 s do no entre textos (ver laco_envios) -
-  // esperar aqui congelava a tela. A mensagem aparece na conversa ja como
-  // "enviando"; a tarefa do servico a entrega no ritmo que o no aceita.
-  if (!s_fila_envio) { return false; }
-  static envio_fila_t e;   // so a interface envia texto; 300 bytes fora da pilha dela
-  e.n = (uint16_t)n_quadro;
+  // NA FILA, NAO NA HORA. Quem chama e a tarefa of INTERFACE, e o send_state pode
+  // ter of wait o limit of 2 s of no entre textos (ver laco_envios) -
+  // wait aqui congelava a screen. A message aparece in conversa ja como
+  // "enviando"; a tarefa of servico a entrega no ritmo que o no aceita.
+  if (!s_fila_send_state) { return false; }
+  static send_state_fila_t e;   // so a interface envia text; 300 bytes fora of stack dela
+  e.n = (uint16_t)n_frame;
   e.internet = internet;
   e.id = id;
-  memcpy(e.d, quadro, e.n);
-  if (xQueueSend(s_fila_envio, &e, 0) != pdTRUE) {
+  memcpy(e.d, frame, e.n);
+  if (xQueueSend(s_fila_send_state, &e, 0) != pdTRUE) {
     ESP_LOGW(TAG, "fila de envio cheia - mensagem nao saiu");
     return false;
   }
 
-  // Guarda a nossa propria mensagem: a tela mostra as suas a direita, e sem
+  // Guarda a nossa propria message: a screen mostra as suas a right, e sem
   // isto ela sumiria - o radio nao devolve o que voce mesmo enviou.
-  travar();
-  anotar_envio(id, para);
-  // Sem remendo no contador: o guardar_msg ja sabe que a mensagem e nossa
-  // (de == s_meu_num) e nao a conta como nao lida, nem aqui nem na conversa.
+  lock();
+  anotar_send_state(id, para);
+  // Sem remendo no contador: o guardar_msg ja sabe que a message e nossa
+  // (of == s_meu_num) e nao a conta como nao lida, nem aqui nem in conversa.
   // via_mqtt = false: e a NOSSA transmissao saindo pelo nosso proprio radio,
   // nunca chega pela ponte.
-  // saltos = desconhecido: e a NOSSA mensagem, ainda nao viajou nenhum salto
-  // do ponto de vista de quem recebe - e o meta-line nem aparece para
-  // mensagem MINHA de qualquer forma (ver desenhar_msgs em app_mesh.cpp).
-  // A HORA DO ENVIO, em UTC como a rx_time do radio. Era 0 - e
-  // 0 no fuso -3 vira 31/12/1969 na tela. Relogio ainda nao acertado (sem GPS
-  // nem malha desde o boot) continua 0 = "sem data", que a tela sabe tratar.
-  const uint32_t quando = tab5_time_epoch();
-  guardar_msg(s_meu_num, para, canal, enviado, quando, 0, 0, id, false, MESH_SALTOS_DESCONHECIDO);
-  lembrar_carimbo(id, quando);   // corrigido se o relogio saltar (ao_saltar_relogio)
+  // saltos = desconhecido: e a NOSSA message, ainda nao viajou nenhum salto
+  // of ponto of vista of quem recebe - e o meta-line nem aparece para
+  // message MINHA of qualquer forma (ver desenhar_msgs em app_mesh.cpp).
+  // A HORA DO ENVIO, em UTC como a rx_time of radio. Era 0 - e
+  // 0 no fuso -3 vira 31/12/1969 in screen. Relogio ainda nao acertado (sem GPS
+  // nem malha since o boot) continua 0 = "sem data", que a screen sabe tratar.
+  const uint32_t when = tab5_time_epoch();
+  guardar_msg(s_meu_num, para, canal, enviado, when, 0, 0, id, false, MESH_SALTOS_DESCONHECIDO);
+  lembrar_carimbo(id, when);   // corrigido se o clock saltar (ao_saltar_relogio)
   destravar();
 
   ESP_LOGI(TAG, "enviado para %08lX (canal %u) id=%08lX: %s",
@@ -3559,35 +3559,35 @@ bool tab5_mesh_enviar(uint32_t para, uint8_t canal, const char* texto)
 // ---------------------------------------------------------------------------
 // POSICAO DO GPS PARA A MALHA
 // ---------------------------------------------------------------------------
-// Com o C6L no Bluetooth o Grove fica livre para o GPS. A posicao vai num
-// MeshPacket, porta POSITION_APP (3), com um Position dentro:
+// Com o C6L no Bluetooth o Grove stays livre para o GPS. A position vai num
+// MeshPacket, porta POSITION_APP (3), com one Position dentro:
 //   1: latitude_i  (sfixed32, graus x 1e7)
 //   2: longitude_i (sfixed32, graus x 1e7)
 //   3: altitude    (int32, metros)
 //   4: time        (fixed32, epoch UTC)
 //
-// PARA QUEM, e a diferenca e de tempo de ar.
-//   - COM O NO do outro lado: SO PARA ELE (to = o numero dele), como faz o
-//     app do celular. Ele passa a usa-la como a propria posicao e a difunde
-//     no ritmo dele (Localizacao > "enviar a cada", "ao se mover"), com a
-//     precisao do canal. Antes ia em DIFUSAO, 3 saltos: a malha recebia a
-//     mesma posicao duas vezes - a do Tab5 e, logo depois, a do no repetindo
-//     o que ja sabia, cada uma no ritmo de um.
-//   - O no JA SABE onde esta (posicao fixa, ou o GPS dele ligado): nada a
+// PARA QUEM, e a diferenca e of time of ar.
+//   - COM O NO of outro lado: SO PARA ELE (to = o numero dele), como faz o
+//     app of celular. Ele passa a usa-la como a propria position e a difunde
+//     no ritmo dele (Localizacao > "send a cada", "on se move"), com a
+//     precisao of canal. Antes ia em DIFUSAO, 3 saltos: a malha recebia a
+//     mesma position duas vezes - a of Tab5 e, logo depois, a of no repetindo
+//     o que ja sabia, cada uma no ritmo of one.
+//   - O no JA SABE onde esta (position fixa, ou o GPS dele enabled): nada a
 //     mandar. A fixa ignoraria a nossa; o GPS dele a atropelaria.
 //   - PELA INTERNET (sem no, ou o Bluetooth caiu e o MQTT cobre): o Tab5 e o
-//     no, entao difunde ele mesmo - com a precisao do canal primario que o
-//     no deixou configurada (0 = nao manda; menos de 32 = so a regiao).
-// Sem fix, nao manda nada (devolve false e a tarefa tenta de novo em 30 s);
-// true = resolvido ate a proxima volta (mandou, ou nao ha o que mandar).
-static bool enviar_posicao(void)
+//     no, entao difunde ele mesmo - com a precisao of canal primario que o
+//     no deixou configurada (0 = nao manda; menos of 32 = so a regiao).
+// Sem fix, nao manda nada (devolve false e a tarefa tenta of novo em 30 s);
+// true = resolvido ate a next iteration (mandou, ou nao ha o que mandar).
+static bool send_position(void)
 {
-  if (!s_servico_ativo || !tab5_gps_service_active()) { return false; }
+  if (!s_servico_active || !tab5_gps_service_active()) { return false; }
   const bool com_no = radio_aceita_admin();
   const bool pela_net = !com_no && (s_via == SETTINGS_MESH_TRANSPORT_INTERNET || s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH)
                      && mesh_mqtt_conectado() && !mesh_mqtt_em_proxy();
   if (!com_no && !pela_net) { return false; }
-  if (com_no && mesh_admin_no_tem_posicao_propria()) { return true; }
+  if (com_no && mesh_admin_no_tem_position_propria()) { return true; }
   const int32_t prec = mesh_admin_precisao_primario();
   if (pela_net && prec == 0) { return true; }
 
@@ -3595,8 +3595,8 @@ static bool enviar_posicao(void)
   if (!g.valid || g.qualidade == 0) { return false; }
   int32_t lat = (int32_t)(g.lat * 1e7), lon = (int32_t)(g.lon * 1e7);
   if (pela_net && prec > 0 && prec < 32) {
-    // O mesmo corte do firmware (PositionModule): os bits que sobram vao
-    // para o meio da celula, nao para o canto.
+    // O mesmo corte of firmware (PositionModule): os bits que sobram vao
+    // para o middle of celula, nao para o canto.
     const uint32_t mascara = 0xFFFFFFFFu << (32 - prec);
     lat = (int32_t)(((uint32_t)lat & mascara) + (1u << (31 - prec)));
     lon = (int32_t)(((uint32_t)lon & mascara) + (1u << (31 - prec)));
@@ -3604,14 +3604,14 @@ static bool enviar_posicao(void)
 
   uint8_t pos[32];
   pb_escritor_t w = pb_escritor(pos, sizeof(pos));
-  mesh_pb_posicao(&w, lat, lon, (int32_t)g.altitude_m, tab5_time_epoch());
+  mesh_pb_position(&w, lat, lon, (int32_t)g.altitude_m, tab5_time_epoch());
 
-  // Para o no: sem saltos (nao sai dele). Difusao: 3 saltos (ver tab5_mesh_enviar).
+  // Para o no: sem saltos (nao exit dele). Difusao: 3 saltos (ver tab5_mesh_enviar).
   const mesh_pb_envelope_t env = { com_no ? s_meu_num : MESH_PB_DIFUSAO, -1, PORT_POSICAO, pos,
                                    pb_tamanho(&w), esp_random() | 1u, (uint8_t)(com_no ? 0 : 3), false };
-  uint8_t quadro[96];
-  const size_t n = pb_tamanho(&w) ? mesh_pb_to_radio(&env, quadro, sizeof(quadro)) : 0;
-  const bool ok = n && enlace_enviar(quadro, n);
+  uint8_t frame[96];
+  const size_t n = pb_tamanho(&w) ? mesh_pb_to_radio(&env, frame, sizeof(frame)) : 0;
+  const bool ok = n && enlace_send(frame, n);
   if (ok) {
     ESP_LOGI(TAG, "posicao do GPS %s (%.5f, %.5f)", com_no ? "passada ao no" : "difundida pela internet",
              g.lat, g.lon);
@@ -3620,220 +3620,220 @@ static bool enviar_posicao(void)
 }
 
 // Quem somos, para os clientes MQTT (no e internet): eles publicam e
-// respondem o want_config em nome deste numero e destes nomes. Chamado antes
-// de subir qualquer um dos dois.
-static void informar_no_ao_mqtt(void)
+// respondem o want_config em name deste numero e destes nomes. Chamado antes
+// of raise qualquer one dos dois.
+static void informar_no_on_mqtt(void)
 {
   char curto[MESH_NOME_CURTO] = "", longo[MESH_NOME_LONGO] = "";
-  tab5_mesh_nome_cache(s_meu_num, curto, sizeof(curto));
-  tab5_mesh_nome_longo_cache(s_meu_num, longo, sizeof(longo));
-  mesh_mqtt_definir_no(s_meu_num, curto, longo);
+  tab5_mesh_name_cache(s_meu_num, curto, sizeof(curto));
+  tab5_mesh_name_longo_cache(s_meu_num, longo, sizeof(longo));
+  mesh_mqtt_set_no(s_meu_num, curto, longo);
 }
 
 // AS GRAVACOES LENTAS DO MESH, NA CARONA DA TAREFA "cartao" (tab5_sd_carona).
-// Eram feitas no laco do RADIO: enquanto a NodeDB ia para o cartao (montar,
-// escrever dezenas de KB, fsync) ninguem lia a UART, e o buffer de 4 KB (~350
-// ms a 115200) transbordava num cartao lento - quadro do no perdido. A regra
-// do sistema (hal/tab5_sd.hpp) e esta: quem so esvazia dados no cartao pega
-// carona na tarefa dele. Canais: a cada 15 s se mudaram (e logo depois do
-// dump, que os marca). NodeDB: a cada 10 min se mudou.
-static void mesh_na_carona(void)
+// Eram feitas no laco of RADIO: enquanto a NodeDB ia para o cartao (montar,
+// write dezenas of KB, fsync) ninguem lia a UART, e o buffer of 4 KB (~350
+// ms a 115200) transbordava num cartao lento - frame of no perdido. A regra
+// of sistema (hal/tab5_sd.hpp) e esta: quem so esvazia data no cartao pega
+// carona in tarefa dele. Canais: a cada 15 s se changed (e logo depois of
+// dump, que os marca). NodeDB: a cada 10 min se changed.
+static void mesh_in_carona(void)
 {
-  if (!s_servico_ativo) { return; }
+  if (!s_servico_active) { return; }
   const uint32_t t = tab5_now_ms();
-  static uint32_t proximos_canais = 0, proxima_nodedb = 600000;
+  static uint32_t proximos_canais = 0, next_nodedb = 600000;
   if (s_canais_sujos && (int32_t)(t - proximos_canais) >= 0) {
     proximos_canais = t + 15000;
     salvar_canais();
   }
-  if ((int32_t)(t - proxima_nodedb) >= 0) {
-    proxima_nodedb = t + 600000;
+  if ((int32_t)(t - next_nodedb) >= 0) {
+    next_nodedb = t + 600000;
     if (s_nos_ver != s_nodedb_ver_salva) { salvar_nodedb(); }
   }
 }
 
 static void vTaskMesh(void*)
 {
-  static uint8_t quadro[1024];
+  static uint8_t frame[1024];
   size_t usado = 0;
-  int    estado = 0;          // 0=procura 0x94  1=viu 0x94  2=tamanho  3=corpo
+  int    estado = 0;          // 0=procura 0x94  1=viu 0x94  2=tamanho  3=body
   size_t falta = 0;
-  uint8_t tam_hi = 0;
-  uint32_t proxima_apresentacao = 0;
-  uint32_t proximo_heartbeat = 15000;   // primeiro so depois do dump inicial
+  uint8_t size_hi = 0;
+  uint32_t next_apresentacao = 0;
+  uint32_t next_heartbeat = 15000;   // first so depois of dump inicial
 
-  // WATCHDOG: um deadlock aqui e SILENCIOSO e caro de um jeito especifico -
-  // esta tarefa segura o mutex do mesh (travar()/destravar()) em varios
-  // trechos, e travada DENTRO de um deles o mutex nunca seria devolvido. A
-  // tela nao trava (ela so pediria o mutex e ficaria esperando, mas o loop de
+  // WATCHDOG: one deadlock aqui e SILENCIOSO e caro of one jeito especifico -
+  // esta tarefa segura o mutex of mesh (lock()/destravar()) em varios
+  // trechos, e travada DENTRO of one deles o mutex nunca seria devolvido. A
+  // screen nao trava (ela so pediria o mutex e ficaria esperando, mas o loop of
   // interface segue vivo por fora), entao o sintoma seria "mensagens paradas
-  // de chegar" sem nenhum log dizendo por que - dificil de distinguir de um
-  // radio mudo de verdade. Ver o comentario igual em kernel/core.cpp para o
-  // raciocinio completo.
+  // of chegar" sem nenhum log dizendo por que - dificil of distinguir of one
+  // radio mudo of verdade. Ver o comentario igual em kernel/core.cpp para o
+  // raciocinio complete.
   if (esp_task_wdt_add(NULL) != ESP_OK) {
     ESP_LOGW(TAG, "nao consegui inscrever a tarefa no watchdog");
   }
 
   for (;;)
   {
-    // PONTO DE SAIDA. No topo do loop, fora de qualquer secao critica: aqui a
+    // PONTO DE SAIDA. No topo of loop, fora of qualquer secao critica: aqui a
     // tarefa nao segura mutex nem arquivo, entao sumir daqui nao deixa nada
-    // pela metade. Como o uart_read_bytes la embaixo espera no maximo 200ms, a
+    // pela metade. Como o uart_read_bytes la embaixo espera no maximum 200ms, a
     // parada custa isso no pior caso.
-    if (parada_pedida(&s_parada)) {
+    if (stop_requested(&s_parada)) {
       // DESINSCREVE ANTES DE MORRER. O watchdog guarda o HANDLE desta tarefa;
-      // deletando sem avisar ele antes, o handle fica pendurado la dentro e o
-      // proximo ciclo de verificacao do watchdog encontraria uma tarefa que
-      // nao existe mais - o tipo de "fantasma" que este sistema anda cacando
-      // em outros lugares (Grove, apresentacao do radio). A ordem importa:
+      // deletando sem notify ele antes, o handle stays pendurado la dentro e o
+      // next ciclo of verificacao of watchdog encontraria uma tarefa que
+      // nao existe mais - o tipo of "fantasma" que este sistema anda cacando
+      // em outros lugares (Grove, apresentacao of radio). A order importa:
       // desinscrever so funciona enquanto a tarefa ainda existe para fazer a
       // chamada.
       esp_task_wdt_delete(NULL);
-      parada_confirmar(&s_parada);
-      return;   // a vaga do pool devolve o dono e volta a dormir (kernel/task_pool.h)
+      stop_confirm(&s_parada);
+      return;   // a vaga of pool devolve o dono e iteration a dormir (kernel/task_pool.h)
     }
 
-    // PROVA DE VIDA. Chegar aqui de novo significa que a volta anterior
-    // terminou - nenhum uart_read_bytes, trava de mutex ou I/O de cartao
-    // ficou preso. 200ms e o maior bloqueio que este loop faz de proposito
-    // (o prazo do uart_read_bytes la embaixo); bem dentro dos 5s do watchdog.
+    // PROVA DE VIDA. Chegar aqui of novo significa que a iteration anterior
+    // terminou - nenhum uart_read_bytes, trava of mutex ou I/O of cartao
+    // became preso. 200ms e o maior bloqueio que este loop faz of proposito
+    // (o prazo of uart_read_bytes la embaixo); bem dentro dos 5s of watchdog.
     esp_task_wdt_reset();
 
     const uint32_t t = tab5_now_ms();
 
-    // Apresentacao SO quando o enlace esta mudo. Pedir de novo com o enlace
-    // vivo faz o radio REINICIAR o download de configuracao inteiro - foi o que
+    // Apresentacao SO when o enlace esta mudo. Pedir of novo com o enlace
+    // vivo faz o radio REINICIAR o download of configuracao inteiro - foi o que
     // produziu 11 node_info para 6 nos: o dump rodou duas vezes.
     // O radio avisou que reiniciou: pede a configuracao NA HORA. Sem isto a
-    // gente esperava o enlace ficar mudo e o prazo de 10s vencer - e nesse
-    // meio-tempo a lista de nos e os canais ficavam do reinicio anterior.
+    // gente esperava o enlace ficar mudo e o prazo of 10s vencer - e nesse
+    // meio-tempo a lista of nos e os canais ficavam of reinicio anterior.
     mesh_admin_tique(t);
     if (s_reapresentar_ms && (int32_t)(t - s_reapresentar_ms) >= 0) {
       s_reapresentar_ms = 0;
-      proxima_apresentacao = t + 10000;
-      pedir_apresentacao();
+      next_apresentacao = t + 10000;
+      request_apresentacao();
     }
     else if (s_radio_reiniciou) {
       s_radio_reiniciou = false;
-      proxima_apresentacao = t + 10000;
-      pedir_apresentacao();
+      next_apresentacao = t + 10000;
+      request_apresentacao();
     }
-    else if (!tab5_mesh_no_ar() && t > proxima_apresentacao) {
+    else if (!tab5_mesh_no_ar() && t > next_apresentacao) {
       // DOIS RITMOS, e a diferenca entre eles e o que resolve.
       //
       // Sem o my_info nao sabemos nem o nosso proprio numero: nada funciona, e
-      // insistir de 10 em 10 segundos e o certo - e o primeiro contato.
+      // insistir of 10 em 10 segundos e o certo - e o first contato.
       //
-      // COM ele, ja conversamos com este radio. Um silencio agora quer dizer
-      // "a malha esta quieta", nao "o radio sumiu" - e pedir a configuracao de
-      // novo faz o C6L REINICIAR o download inteiro, jogando fora o trafego ao
-      // vivo que estiver na queue dele. Era um dump a cada 30s, para sempre, na
-      // maior parte do tempo. De dois em dois minutos ainda recupera um radio
-      // que travou, sem transformar a conversa num ciclo de reapresentacoes.
+      // COM ele, ja conversamos com este radio. Um silencio now quer dizer
+      // "a malha esta quieta", nao "o radio sumiu" - e request a configuracao of
+      // novo faz o C6L REINICIAR o download inteiro, jogando fora o trafego on
+      // vivo que estiver in queue dele. Era one dump a cada 30s, para sempre, in
+      // maior parte of time. De dois em dois minutos ainda recupera one radio
+      // que travou, sem transformar a conversa num ciclo of reapresentacoes.
       const uint32_t espera = (s_meu_num == 0) ? 10000 : 120000;
-      proxima_apresentacao = t + espera;
+      next_apresentacao = t + espera;
       ESP_LOGI(TAG, "sem quadro ha %d s - pedindo a configuracao ao radio",
                SILENCIO_MS / 1000);
-      pedir_apresentacao();
+      request_apresentacao();
     }
 
-    // Nomes de no pendentes, de 15 em 15 segundos. Espacado de proposito: e o
-    // que transforma a rajada de montagens do boot numa unica escrita.
-    static uint32_t proxima_descarga = 15000;
-    if (t > proxima_descarga) {
-      proxima_descarga = t + 15000;
-      descarregar_nomes();   // so entrega ao gravador (tab5_sd_enqueue_append): nao bloqueia
+    // Nomes of no pendentes, of 15 em 15 segundos. Espacado of proposito: e o
+    // que transforma a rajada of montagens of boot numa unica escrita.
+    static uint32_t next_descarga = 15000;
+    if (t > next_descarga) {
+      next_descarga = t + 15000;
+      descarregar_nomes();   // so entrega on gravador (tab5_sd_enqueue_append): nao bloqueia
     }
     // Canais (NVS) e NodeDB (cartao) NAO sao gravados aqui: ver mesh_na_carona.
 
-    // Prazo dos envios sem resposta. Rede de seguranca: quando o radio desiste
+    // Prazo dos envios sem resposta. Rede of seguranca: when o radio desiste
     // por conta propria ele AVISA (Routing.MAX_RETRANSMIT), entao chegar aqui
-    // significa que o enlace morreu no meio - e "nao sei" e o que a tela deve
+    // significa que o enlace morreu no middle - e "nao sei" e o que a screen deve
     // dizer, nao "falhou".
     for (int i = 0; i < MESH_MAX_ENVIOS; ++i) {
       if (s_envios[i].state == MESH_ENVIANDO
        && (t - s_envios[i].em_ms) > MESH_ACK_MS) {
         s_envios[i].state = MESH_SEM_RESPOSTA;
         s_envios_ver++;
-        sistema_avisar(AVISO_MESH_ENVIO);
+        system_notify(AVISO_MESH_ENVIO);
         gravar_desfecho(s_envios[i].id, MESH_SEM_RESPOSTA, 0);
         ESP_LOGW(TAG, "pacote %08lX: sem confirmacao em %d s",
                  (unsigned long)s_envios[i].id, MESH_ACK_MS / 1000);
       }
     }
 
-    laco_envios();   // texto na fila (ver tab5_mesh_enviar)
+    laco_envios();   // text in fila (ver tab5_mesh_enviar)
 
-    // Batimento periodico. Mantem o radio convencido de que ha cliente do outro
-    // lado; sem ele o trafego ao vivo pode simplesmente parar de vir.
-    if (t > proximo_heartbeat) {
-      proximo_heartbeat = t + 30000;
+    // Batimento periodico. Mantem o radio convencido of que ha cliente of outro
+    // lado; sem ele o trafego on vivo pode simplesmente stop of vir.
+    if (t > next_heartbeat) {
+      next_heartbeat = t + 30000;
       mandar_heartbeat();
     }
 
-    // LEITURA EM BLOCO, e a diferenca e de energia, nao de elegancia.
+    // LEITURA EM BLOCO, e a diferenca e of energia, nao of elegancia.
     //
-    // Antes era uma chamada por BYTE, com prazo de 200ms. A 115200 baud isso
-    // chega a 11.520 chamadas por segundo, cada uma com travessia de queue e
-    // troca de contexto - e roda o tempo todo, porque isto e servico, nao app.
+    // Antes era uma chamada por BYTE, com prazo of 200ms. A 115200 baud isso
+    // chega a 11.520 chamadas por segundo, cada uma com travessia of queue e
+    // troca of context - e roda o time todo, porque isto e servico, nao app.
     //
-    // Lendo em bloco, um pacote inteiro sai de UMA chamada. A tarefa acorda
-    // poucas vezes por segundo em vez de milhares, e o core volta a ficar
-    // ocioso entre elas - que e o que permite ao DFS trabalhar.
+    // Lendo em bloco, one pacote inteiro exit of UMA chamada. A tarefa acorda
+    // poucas vezes por segundo em vez of milhares, e o core iteration a ficar
+    // ocioso entre elas - que e o que permite on DFS trabalhar.
     // POSICAO DO GPS PARA A MALHA - ver enviar_posicao().
-    static uint32_t proxima_posicao = 60000;
-    if (settings_mesh_position_interval_min() && t > proxima_posicao) {
-      proxima_posicao = t + (enviar_posicao() ? settings_mesh_position_interval_min() * 60000u : 30000u);
+    static uint32_t next_position = 60000;
+    if (settings_mesh_position_interval_min() && t > next_position) {
+      next_position = t + (send_position() ? settings_mesh_position_interval_min() * 60000u : 30000u);
     }
 
-    // A REDE PUBLICA PELA INTERNET, em paralelo a tudo o resto (ver tab5_mesh_mqtt.hpp):
-    // sobe com o Wi-Fi e o ajuste ligado, desce sem um ou outro. Ate 8
-    // pacotes por volta, lidos como da rede INTERNET (s_rede_rx) - nao contam como
-    // quadro do no (s_ultimo_quadro_ms e a vida do RADIO).
+    // A REDE PUBLICA PELA INTERNET, em paralelo a everything o resto (ver tab5_mesh_mqtt.hpp):
+    // sobe com o Wi-Fi e o ajuste enabled, desce sem one ou outro. Ate 8
+    // pacotes por iteration, lidos como of rede INTERNET (s_rede_rx) - nao contam como
+    // frame of no (s_ultimo_quadro_ms e a vida of RADIO).
     {
       const bool quer_internet = settings_mesh_public_network() && tab5_wifi_state() == TAB5_WIFI_CONNECTED;
-      if (quer_internet && !mesh_mqtt_internet_ativo()) {
-        informar_no_ao_mqtt();
-        mesh_mqtt_internet_iniciar();
-        travar();
-        if (!esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_criar_conversa(true, MESH_CANAL_INTERNET, 0); }
+      if (quer_internet && !mesh_mqtt_internet_active()) {
+        informar_no_on_mqtt();
+        mesh_mqtt_internet_start();
+        lock();
+        if (!esta_apagada(true, MESH_CANAL_INTERNET)) { achar_ou_create_conversa(true, MESH_CANAL_INTERNET, 0); }
         destravar();
-      } else if (!quer_internet && mesh_mqtt_internet_ativo()) {
-        mesh_mqtt_internet_parar();
+      } else if (!quer_internet && mesh_mqtt_internet_active()) {
+        mesh_mqtt_internet_stop();
       }
       for (int k = 0; k < 32; ++k) {
-        const size_t n = mesh_mqtt_internet_receber(quadro, sizeof(quadro));
+        const size_t n = mesh_mqtt_internet_receber(frame, sizeof(frame));
         if (n == 0) { break; }
-        travar();
+        lock();
         s_rede_rx = MESH_REDE_INTERNET;
-        ler_from_radio(quadro, n);
+        read_from_radio(frame, n);
         s_rede_rx = MESH_REDE_NO;
         destravar();
       }
     }
 
     // O CLIENTE MQTT, EM UM DE DOIS PAPEIS (ver services/tab5_mesh_mqtt.hpp):
-    //   INTERNET - o Tab5 fala com a malha pelo servidor, quando o no nao esta
-    //              (ou quando a via escolhida e a Internet);
-    //   PROXY    - o no esta conectado e com o proxy ligado: o Tab5 so carrega
-    //              o que ELE publica e assina (proxy ligado no no).
-    // Os dois sao exclusivos por construcao: o proxy exige o no presente, a
-    // internet como tapa-buraco exige a falta dele. Com folga nas duas
-    // direcoes: o BLE cai e volta sozinho numa reconexao, e o servidor nao
-    // deve ser aberto e fechado a cada piscada dele.
+    //   INTERNET - o Tab5 fala com a malha pelo servidor, when o no nao esta
+    //              (ou when a via escolhida e a Internet);
+    //   PROXY    - o no esta conectado e com o proxy enabled: o Tab5 so carrega
+    //              o que ELE publica e assina (proxy enabled no no).
+    // Os dois sao exclusivos por construcao: o proxy requires o no presente, a
+    // internet como tapa-buraco requires a falta dele. Com folga nas duas
+    // direcoes: o BLE cai e iteration sozinho numa reconexao, e o servidor nao
+    // deve ser open e closed a cada piscada dele.
     {
       enum { MQ_NADA = 0, MQ_NET, MQ_PROXY };
-      static int      modo_pedido = MQ_NADA;
-      static uint32_t modo_desde = 0;
+      static int      modo_request = MQ_NADA;
+      static uint32_t modo_since = 0;
       // DOIS JEITOS DE A INTERNET ESTAR AQUI:
       //   - ela E a via (escolhida em Ajustes, ou o kernel subiu o servico so
       //     por ela): roda com o Wi-Fi, e ponto. O C6L no cabo nao a derruba
-      //     daqui - quem decide trocar para o Grove e a sondagem do kernel, ao
-      //     ACHAR o no (a prioridade do Grove), nao este laco a cada volta. Com
-      //     o teste do Grove aqui, escolher "internet" com o C6L plugado
-      //     derrubava o MQTT logo depois de subir.
+      //     daqui - quem decide switch para o Grove e a sondagem of kernel, on
+      //     ACHAR o no (a priority of Grove), nao este laco a cada iteration. Com
+      //     o teste of Grove aqui, escolher "internet" com o C6L plugado
+      //     derrubava o MQTT logo depois of raise.
       //   - a via e o no (cabo ou Bluetooth): a internet so cobre a falta
-      //     dele, se o ajuste "internet quando sem o no" estiver ligado.
+      //     dele, se o ajuste "internet when sem o no" estiver enabled.
       const bool wifi = tab5_wifi_state() == TAB5_WIFI_CONNECTED;
       const bool no_ok = (s_via == SETTINGS_MESH_TRANSPORT_SERIAL)
                       || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado())
@@ -3841,87 +3841,87 @@ static void vTaskMesh(void*)
       const bool quer_net = wifi && ((s_via == SETTINGS_MESH_TRANSPORT_INTERNET)
                                   || (settings_mesh_internet() && !no_ok));
       // O proxy pede o no CONVERSANDO (nao so a via escolhida) e com o dump
-      // completo: e o dump que diz se o proxy esta ligado nele e quais canais
+      // complete: e o dump que diz se o proxy esta enabled nele e quais canais
       // descem.
       const bool no_vivo = (s_via == SETTINGS_MESH_TRANSPORT_SERIAL && tab5_mesh_no_ar())
                         || (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH && mesh_ble_conectado());
-      // A CHAVE E DO NO: liga-se o proxy na pagina "No" do app Mesh, que grava
+      // A CHAVE E DO NO: liga-se o proxy in pagina "No" of app Mesh, que grava
       // proxy_to_client_enabled nele. Ligado no no, o Tab5 empresta a internet.
       const bool quer_proxy = wifi && no_vivo && s_config_ok_ms != 0 && mesh_mqtt_no_tem_proxy();
       const int modo = quer_proxy ? MQ_PROXY : quer_net ? MQ_NET : MQ_NADA;
-      int atual = !mesh_mqtt_ativo() ? MQ_NADA : mesh_mqtt_em_proxy() ? MQ_PROXY : MQ_NET;
-      if (modo != modo_pedido) { modo_pedido = modo; modo_desde = t; }
-      // Descer: o no que acabou de voltar tira a internet NA HORA (o proxy vai
-      // subir); o resto espera 10 s firmes, para nao derrubar numa piscada.
-      if (atual != MQ_NADA && atual != modo
-       && (modo == MQ_PROXY || t - modo_desde >= 10000)) {
-        mesh_mqtt_parar();
-        atual = MQ_NADA;
+      int current = !mesh_mqtt_active() ? MQ_NADA : mesh_mqtt_em_proxy() ? MQ_PROXY : MQ_NET;
+      if (modo != modo_request) { modo_request = modo; modo_since = t; }
+      // Descer: o no que acabou of voltar tira a internet NA HORA (o proxy vai
+      // raise); o resto espera 10 s firmes, para nao derrubar numa piscada.
+      if (current != MQ_NADA && current != modo
+       && (modo == MQ_PROXY || t - modo_since >= 10000)) {
+        mesh_mqtt_stop();
+        current = MQ_NADA;
       }
       // Subir: a internet como tapa-buraco espera 20 s (o BLE costuma voltar
       // antes disso); a via Internet e o proxy sobem logo.
       const uint32_t folga = (modo == MQ_NET && s_via != SETTINGS_MESH_TRANSPORT_INTERNET) ? 20000 : 0;
-      if (atual == MQ_NADA && modo != MQ_NADA && t - modo_desde >= folga) {
-        informar_no_ao_mqtt();
-        if (modo == MQ_PROXY) { mesh_mqtt_iniciar_proxy(); } else { mesh_mqtt_iniciar(); }
-        atual = !mesh_mqtt_ativo() ? MQ_NADA : modo;
+      if (current == MQ_NADA && modo != MQ_NADA && t - modo_since >= folga) {
+        informar_no_on_mqtt();
+        if (modo == MQ_PROXY) { mesh_mqtt_start_proxy(); } else { mesh_mqtt_start(); }
+        current = !mesh_mqtt_active() ? MQ_NADA : modo;
       }
-      if (atual == MQ_NET) {
-        if (mesh_mqtt_conectou_agora() && s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { s_radio_reiniciou = true; }
-        // ESVAZIA A FILA, nao um por volta: com o no no cabo a volta espera ate
-        // 200 ms na serial, e um pacote por volta (5/s) perdia a rajada do
-        // servidor. So o primeiro espera (na via Internet e o ritmo do laco).
+      if (current == MQ_NET) {
+        if (mesh_mqtt_conectou_now() && s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { s_radio_reiniciou = true; }
+        // ESVAZIA A FILA, nao one por iteration: com o no no cabo a iteration espera ate
+        // 200 ms in serial, e one pacote por iteration (5/s) perdia a rajada of
+        // servidor. So o first espera (in via Internet e o ritmo of laco).
         for (int k = 0; k < 16; ++k) {
-          const size_t n = mesh_mqtt_receber(quadro, sizeof(quadro),
+          const size_t n = mesh_mqtt_receber(frame, sizeof(frame),
                                              (k == 0 && s_via == SETTINGS_MESH_TRANSPORT_INTERNET) ? 200 : 0);
           if (n == 0) { break; }
-          travar();
+          lock();
           s_c_quadros++;
-          ler_from_radio(quadro, n);
-          s_ultimo_quadro_ms = tab5_now_ms();
+          read_from_radio(frame, n);
+          s_ultimo_frame_ms = tab5_now_ms();
           destravar();
         }
-      } else if (atual == MQ_PROXY) {
-        // DESCIDA DO PROXY: o que veio do servidor vai ao no. Ate 8 por volta -
-        // a volta dura no maximo os 200 ms da leitura do enlace, e a fila (32)
-        // segura a rajada no meio-tempo. Eram 4 (20/s), e um servidor publico
+      } else if (current == MQ_PROXY) {
+        // DESCIDA DO PROXY: o que veio of servidor vai on no. Ate 8 por iteration -
+        // a iteration dura no maximum os 200 ms of leitura of enlace, e a fila (32)
+        // segura a rajada no meio-tempo. Eram 4 (20/s), e one servidor publico
         // entregando o canal inteiro enchia a fila. Mais que 8 seguraria a
-        // volta escrevendo na serial/Bluetooth.
+        // iteration escrevendo in serial/Bluetooth.
         static uint8_t desce[QUADRO_PROXY_MAX];
         for (int k = 0; k < 8; ++k) {
           const size_t n = mesh_mqtt_proxy_receber(desce, sizeof(desce));
           if (n == 0) { break; }
-          enlace_enviar(desce, n);
+          enlace_send(desce, n);
         }
       }
       if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) {
-        if (!mesh_mqtt_ativo()) { vTaskDelay(pdMS_TO_TICKS(200)); }
+        if (!mesh_mqtt_active()) { vTaskDelay(pdMS_TO_TICKS(200)); }
         continue;
       }
     }
 
     // VIA BLUETOOTH: o enlace ja entrega FromRadio inteiro, sem frame - nao
-    // ha maquina de enquadramento. Mesmo prazo de 200 ms da serial.
+    // ha maquina of enquadramento. Mesmo prazo of 200 ms of serial.
     if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
-      if (mesh_ble_conectou_agora()) { s_radio_reiniciou = true; }   // pede a configuracao ja
-      // O que ja chegou de uma vez (o dump vem em rajada); so o primeiro espera.
+      if (mesh_ble_conectou_now()) { s_radio_reiniciou = true; }   // pede a configuracao ja
+      // O que ja chegou of uma vez (o dump vem em rajada); so o first espera.
       for (int k = 0; k < 16; ++k) {
-        const size_t n = mesh_ble_receber(quadro, sizeof(quadro), k == 0 ? 200 : 0);
+        const size_t n = mesh_ble_receber(frame, sizeof(frame), k == 0 ? 200 : 0);
         if (n == 0) { break; }
-        travar();
+        lock();
         s_c_quadros++;
-        ler_from_radio(quadro, n);
-        s_ultimo_quadro_ms = tab5_now_ms();
+        read_from_radio(frame, n);
+        s_ultimo_frame_ms = tab5_now_ms();
         destravar();
       }
       continue;
     }
 
-    // ACORDA NO PRIMEIRO BYTE, LE O RESTO NA HORA. uart_read_bytes so volta
-    // com o tamanho pedido OU no prazo: pedindo 256, um quadro de 60 bytes
-    // ficava esperando os 200 ms inteiros - cada mensagem chegava atrasada, e o
-    // laco inteiro (fila de envio e os dois clientes de internet) andava nesse passo. Esperar
-    // UM byte dorme igual quando a serial esta quieta e acorda quando ela fala.
+    // ACORDA NO PRIMEIRO BYTE, LE O RESTO NA HORA. uart_read_bytes so iteration
+    // com o tamanho request OU no prazo: pedindo 256, one frame of 60 bytes
+    // ficava esperando os 200 ms inteiros - cada message chegava atrasada, e o
+    // laco inteiro (fila of send_state e os dois clientes of internet) andava nesse passo. Esperar
+    // UM byte dorme igual when a serial esta quieta e acorda when ela fala.
     static uint8_t entrada[512];
     int lidos = uart_read_bytes(MESH_UART, entrada, 1, pdMS_TO_TICKS(200));
     if (lidos <= 0) { continue; }
@@ -3938,18 +3938,18 @@ static void vTaskMesh(void*)
     switch (estado) {
       case 0: if (b == 0x94) { estado = 1; } break;
       case 1: estado = (b == 0xC3) ? 2 : (b == 0x94 ? 1 : 0); break;
-      case 2: tam_hi = b; estado = 3; break;
+      case 2: size_hi = b; estado = 3; break;
       case 3: {
-        falta = ((size_t)tam_hi << 8) | b;
+        falta = ((size_t)size_hi << 8) | b;
         usado = 0;
         if (falta == 0) { estado = 0; }
-        else if (falta > sizeof(quadro)) {
-          // PULA O CORPO, nao volta a procurar cabecalho dentro dele.
+        else if (falta > sizeof(frame)) {
+          // PULA O CORPO, nao iteration a procurar cabecalho dentro dele.
           //
-          // Voltando ao estado 0 a maquina passava a varrer os proprios bytes
-          // do frame descartado atras de 0x94 0xC3 - e essa dupla aparece por
-          // acaso em dado binario. Encontrando uma, ela lia um "tamanho" que e
-          // lixo e engolia o frame BOM que vinha depois. Uma mensagem some, e
+          // Voltando on estado 0 a maquina passava a varrer os proprios bytes
+          // of frame descartado atras of 0x94 0xC3 - e essa dupla aparece por
+          // acaso em dado binario. Encontrando uma, ela lia one "tamanho" que e
+          // lixo e engolia o frame BOM que vinha depois. Uma message some, e
           // nada no log diz por que.
           ESP_LOGW(TAG, "quadro de %u bytes nao cabe - pulando", (unsigned)falta);
           estado = 5;
@@ -3957,16 +3957,16 @@ static void vTaskMesh(void*)
         else { estado = 4; }
         break;
       }
-      case 5:                      // engolindo um frame grande demais
+      case 5:                      // engolindo one frame grande demais
         if (--falta == 0) { estado = 0; }
         break;
       case 4:
-        quadro[usado++] = b;
+        frame[usado++] = b;
         if (usado >= falta) {
-          travar();
+          lock();
           s_c_quadros++;
-          ler_from_radio(quadro, usado);
-          s_ultimo_quadro_ms = tab5_now_ms();
+          read_from_radio(frame, usado);
+          s_ultimo_frame_ms = tab5_now_ms();
           destravar();
           estado = 0;
         }
@@ -3978,122 +3978,122 @@ static void vTaskMesh(void*)
 
 // PARA O SERVICO E DEVOLVE O GROVE.
 //
-// Existe para o caso que o sistema simplesmente nao cobria: trocar o modulo do
-// cabo com o aparelho ligado. Sem isto o servico ficava de pe conversando com
-// um C6L que nao estava mais la, e o GPS recem-plugado nunca era procurado
+// Existe para o caso que o sistema simplesmente nao cobria: switch o modulo of
+// cabo com o aparelho enabled. Sem isto o servico ficava of pe conversando com
+// one C6L que nao estava mais la, e o GPS recem-plugado nunca era procurado
 // porque a porta tinha dono.
 //
-// Devolve false quando NAO conseguiu parar - e nesse caso nao limpa nada. Se a
-// tarefa nao confirmou que saiu, ela ainda pode estar viva: apagar a UART e o
-// mutex debaixo dela trocaria um servico teimoso por uma pane.
-bool tab5_mesh_parar(void)
+// Devolve false when NAO conseguiu stop - e nesse caso nao limpa nada. Se a
+// tarefa nao confirmou que exited, ela ainda pode estar alive: erase a UART e o
+// mutex debaixo dela trocaria one servico teimoso por uma pane.
+bool tab5_mesh_stop(void)
 {
-  if (!s_servico_ativo) { return true; }   // ja parado; pedir de novo nao e erro
+  if (!s_servico_active) { return true; }   // ja parado; request of novo nao e erro
 
   ESP_LOGI(TAG, "parando o servico...");
-  // A tarefa espera no maximo 200 ms na UART (ou na fila do enlace): a saida
-  // custa uma volta. 1 s e folga larga. Sem confirmacao, o pedido FICA DE PE
-  // e nada e desmontado - a proxima chamada termina (ver parada_pedir).
-  if (!parada_pedir(&s_parada, 1000)) {
+  // A tarefa espera no maximum 200 ms in UART (ou in fila of enlace): a saida
+  // custa uma iteration. 1 s e folga larga. Sem confirmacao, o request FICA DE PE
+  // e nada e desmontado - a next chamada termina (ver parada_pedir).
+  if (!stop_request(&s_parada, 1000)) {
     ESP_LOGE(TAG, "a tarefa nao confirmou em 1s - segue parando, nada foi desmontado");
     return false;
   }
 
-  // Daqui para baixo a tarefa NAO EXISTE MAIS. So agora e seguro desmontar o
+  // Daqui para bottom a tarefa NAO EXISTE MAIS. So now e seguro desmontar o
   // que ela usava.
 
-  // TAREFA DE GRAVACAO PRIMEIRO - independente da UART/mutex acima (so
-  // depende da propria queue), mas rodando ate aqui. 300ms de folga: uma
-  // escrita costuma levar bem menos, e nao ha nada em andamento na tarefa
+  // TAREFA DE GRAVACAO PRIMEIRO - independente of UART/mutex acima (so
+  // depende of propria queue), mas running ate aqui. 300ms of folga: uma
+  // escrita costuma levar bem menos, e nao ha nada em andamento in tarefa
   // "mesh" que ainda vá enfileirar mais nada (ja confirmou saida). Qualquer
-  // pedido ainda na queue quando ela sair e descartado - mesmo trade-off
+  // request ainda in queue when ela exit e descartado - mesmo trade-off
   // aceito em toda queue deste sistema que enfileira E/S (ver o aviso grande
-  // junto de MESH_FILA_GRAVACAO).
+  // junto of MESH_FILA_GRAVACAO).
 
-  // O que estava pendente vai agora: a tarefa que faria a descarga acabou de
+  // O que estava pending vai now: a tarefa que faria a descarga acabou of
   // morrer, e sem isto os nomes aprendidos nesta sessao se perderiam.
   descarregar_nomes();
 
-  mesh_mqtt_parar();
-  mesh_mqtt_internet_parar();   // a fila dele e lida so por esta tarefa, que acabou de sair
+  mesh_mqtt_stop();
+  mesh_mqtt_internet_stop();   // a fila dele e lida so por esta tarefa, que acabou of exit
   if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
-    mesh_ble_parar();
+    mesh_ble_stop();
   } else if (s_via == SETTINGS_MESH_TRANSPORT_SERIAL) {
     uart_driver_delete(MESH_UART);
     tab5_grove_release(GROVE_OWNER_MESH);
   }
 
   // O AVISO SO SAI SE NAO HA NADA PARA LER. Antes ele era apagado a cada
-  // parada - e o Mesh para sozinho (troca de via, Wi-Fi caindo): o aviso
-  // sumia sem o usuario ter lido nada. As nao lidas ficam guardadas e voltam
-  // com as conversas; o que esta publicado agora continua valendo.
+  // parada - e o Mesh para sozinho (troca of via, Wi-Fi caindo): o aviso
+  // sumia sem o user ter lido nada. As nao lidas ficam guardadas e voltam
+  // com as conversas; o que esta publicado now continua valendo.
   guardar_nao_lidas();
-  if (s_notif >= 0 && !ha_nao_lidas_guardadas()) { notif_limpar(s_notif); }
+  if (s_notif >= 0 && !ha_nao_lidas_guardadas()) { notification_limpar(s_notif); }
   salvar_canais();   // o que a carona ainda nao levou (ela para com o servico)
-  salvar_nodedb();   // antes do memset da tabela, logo abaixo
-  // O MUTEX FICA. Ele era apagado aqui e recriado no proximo iniciar - mas
-  // as consultas publicas (a barra da home, o app Mesh) o tomam de OUTRAS
-  // tarefas a qualquer momento: apagar um mutex preso ou com alguem
-  // esperando nele e memoria liberada em uso, e entre o apagar e o recriar
-  // as leituras corriam sem exclusao nenhuma. Criado uma vez, vale para
-  // sempre (o mesmo de tab5_sd).
+  salvar_nodedb();   // antes of memset of tabela, logo abaixo
+  // O MUTEX FICA. Ele era apagado aqui e recriado no next start - mas
+  // as consultas publicas (a barra of home, o app Mesh) o tomam of OUTRAS
+  // tarefas a qualquer momento: erase one mutex preso ou com alguem
+  // esperando nele e memoria liberada em uso, e entre o erase e o recriar
+  // as leituras corriam sem exclusao none. Criado uma vez, vale para
+  // sempre (o mesmo of tab5_sd).
 
   // Enlace zerado: sem isto o tab5_mesh_no_ar() continuaria respondendo pelo
-  // ultimo frame recebido, e a barra diria "conectado" a um radio ausente.
-  s_ultimo_quadro_ms = 0;
+  // ultimo frame recebido, e a barra diria "conectado" a one radio ausente.
+  s_ultimo_frame_ms = 0;
   s_config_ok_ms = 0;
-  // s_meu_num NAO e zerado: nosso numero nao muda porque o cabo saiu, e o
-  // arquivo precisa dele para saber de quem e cada mensagem.
-  s_n_msgs = 0;   // a contagem de NOS nao tem variavel: sai do memset abaixo
+  // s_meu_num NAO e zerado: nosso numero nao muda porque o cabo exited, e o
+  // arquivo precisa dele para saber of quem e cada message.
+  s_n_msgs = 0;   // a contagem of NOS nao tem variavel: exit of memset abaixo
   s_total_msgs = 0;
   s_nao_lidas = 0;
   s_nao_lidas_dir = 0;
-  // Sob a trava: a interface pode estar lendo as tabelas agora mesmo (a
-  // barra da home, o app Mesh) - antes isto rodava com o mutex ja apagado.
-  travar();
+  // Sob a trava: a interface pode estar lendo as tabelas now mesmo (a
+  // barra of home, o app Mesh) - antes isto rodava com o mutex ja apagado.
+  lock();
   memset(s_nos,  0, sizeof(s_nos));
   ++s_nos_ver;
   memset(s_conv, 0, sizeof(s_conv));
   ++s_conv_ver;
   destravar();
 
-  s_servico_ativo = false;
-  sistema_avisar(AVISO_MESH_NOS);   // a barra de escrita passa a "so consulta"
+  s_servico_active = false;
+  system_notify(AVISO_MESH_NOS);   // a barra of escrita passa a "so consulta"
   ESP_LOGI(TAG, "servico parado%s", s_via == SETTINGS_MESH_TRANSPORT_SERIAL ? ", Grove livre" : "");
   return true;
 }
 
-bool tab5_mesh_soltar_grove(void)
+bool tab5_mesh_release_grove(void)
 {
-  // Via Bluetooth o servico nao esta no Grove: trocar o modulo do cabo nao e
-  // motivo para derrubar a conversa com o no.
-  if (s_servico_ativo && s_via != SETTINGS_MESH_TRANSPORT_SERIAL) { return true; }
-  return tab5_mesh_parar();
+  // Via Bluetooth o servico nao esta no Grove: switch o modulo of cabo nao e
+  // reason para derrubar a conversa com o no.
+  if (s_servico_active && s_via != SETTINGS_MESH_TRANSPORT_SERIAL) { return true; }
+  return tab5_mesh_stop();
 }
 
 uint8_t tab5_mesh_via(void) { return s_via; }
 
 const char* tab5_mesh_enlace_descricao(void)
 {
-  if (!s_servico_ativo) { return "parado"; }
+  if (!s_servico_active) { return "parado"; }
   if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { return mesh_mqtt_descricao(); }
   if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
-    return (!mesh_ble_conectado() && mesh_mqtt_ativo()) ? mesh_mqtt_descricao() : mesh_ble_descricao();
+    return (!mesh_ble_conectado() && mesh_mqtt_active()) ? mesh_mqtt_descricao() : mesh_ble_descricao();
   }
   return tab5_mesh_no_ar() ? "cabo Grove, conversando" : "cabo Grove, esperando o no";
 }
 
-static void iniciar_via(uint8_t via);
+static void start_via(uint8_t via);
 
-void tab5_mesh_iniciar(void)
+void tab5_mesh_start(void)
 {
-  // SOBE NA VIA ESCOLHIDA. Se o servico esta de pe por OUTRA via (internet
-  // cobrindo a falta do no, ou o Bluetooth quando o Grove acabou de ganhar a
-  // prioridade), para antes: sem isto o iniciar_via via "ja esta de pe" e nao
-  // fazia nada, e o Mesh seguia na via velha.
+  // SOBE NA VIA ESCOLHIDA. Se o servico esta of pe por OUTRA via (internet
+  // cobrindo a falta of no, ou o Bluetooth when o Grove acabou of ganhar a
+  // priority), para antes: sem isto o iniciar_via via "ja esta of pe" e nao
+  // fazia nada, e o Mesh seguia in via velha.
   const uint8_t via = settings_mesh_transport();
-  if (s_servico_ativo && s_via != via && !parada_em_curso(&s_parada)) { tab5_mesh_parar(); }
-  iniciar_via(via);
+  if (s_servico_active && s_via != via && !stop_em_progress(&s_parada)) { tab5_mesh_stop(); }
+  start_via(via);
 }
 
 const char* tab5_mesh_rede_internet_estado(void)
@@ -4101,7 +4101,7 @@ const char* tab5_mesh_rede_internet_estado(void)
   static char t[72];
   if (!settings_mesh_public_network())                          { return "desligada"; }
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)    { return "esperando o Wi-Fi"; }
-  if (!s_servico_ativo)                             { return "serviço Mesh parado"; }
+  if (!s_servico_active)                             { return "serviço Mesh parado"; }
   if (!mesh_mqtt_internet_conectado())                   { return "conectando a mqtt.meshtastic.org"; }
   snprintf(t, sizeof(t), "conectada · %lu pacotes", (unsigned long)mesh_mqtt_internet_recebidos());
   return t;
@@ -4111,20 +4111,20 @@ const char* tab5_mesh_internet_estado(void)
 {
   if (settings_mesh_transport() == SETTINGS_MESH_TRANSPORT_INTERNET) {
     if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "Internet escolhida: esperando o Wi-Fi conectar"; }
-    if (!mesh_mqtt_ativo())                        { return "Internet escolhida: vai conectar em instantes"; }
+    if (!mesh_mqtt_active())                        { return "Internet escolhida: vai conectar em instantes"; }
     return mesh_mqtt_descricao();
   }
   if (!settings_mesh_internet())                   { return "Desligada"; }
   if (tab5_grove_type() == GROVE_MESHTASTIC
-   || (s_servico_ativo && s_via == SETTINGS_MESH_TRANSPORT_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
+   || (s_servico_active && s_via == SETTINGS_MESH_TRANSPORT_SERIAL)) { return "Em espera: o nó no Grove tem prioridade"; }
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED)  { return "Esperando o Wi-Fi conectar"; }
-  if (!mesh_mqtt_ativo())                         { return "Ligada, vai conectar em instantes"; }
+  if (!mesh_mqtt_active())                         { return "Ligada, vai conectar em instantes"; }
   return mesh_mqtt_descricao();
 }
 
 const char* tab5_mesh_proxy_estado(void)
 {
-  // Curto: vai ao lado de "ligado" numa linha da pagina "No".
+  // Curto: vai on lado of "enabled" numa line of pagina "No".
   static char d[48];
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "sem Wi-Fi no Tab5"; }
   if (!mesh_mqtt_no_tem_proxy())                 { return "o nó ainda não confirmou"; }
@@ -4136,22 +4136,22 @@ const char* tab5_mesh_proxy_estado(void)
   return d;
 }
 
-void tab5_mesh_iniciar_internet(void)
+void tab5_mesh_start_internet(void)
 {
-  if (s_servico_ativo) { return; }
-  iniciar_via(SETTINGS_MESH_TRANSPORT_INTERNET);
+  if (s_servico_active) { return; }
+  start_via(SETTINGS_MESH_TRANSPORT_INTERNET);
 }
 
-static void iniciar_via(uint8_t via)
+static void start_via(uint8_t via)
 {
-  // IDEMPOTENTE. Sem esta guarda, chamar duas vezes criaria um segundo mutex
-  // (vazando o primeiro, com quem as tarefas ainda estariam sincronizando) e
+  // IDEMPOTENTE. Sem esta guarda, chamar duas vezes criaria one segundo mutex
+  // (vazando o first, com quem as tarefas ainda estariam sincronizando) e
   // uma segunda tarefa disputando a mesma UART. Nunca acontecia porque o unico
-  // chamador era o boot; agora existe o caminho de re-sondagem.
-  if (s_servico_ativo) {
-    // Uma parada em andamento nao pode ser atropelada por um inicio: a tarefa
-    // antiga ainda esta viva e a UART ainda e dela.
-    if (parada_em_curso(&s_parada)) {
+  // chamador era o boot; now existe o caminho of re-sondagem.
+  if (s_servico_active) {
+    // Uma parada em andamento nao pode ser atropelada por one start: a tarefa
+    // antiga ainda esta alive e a UART ainda e dela.
+    if (stop_em_progress(&s_parada)) {
       ESP_LOGW(TAG, "ainda parando o servico anterior - nao vou subir por cima");
     } else {
       ESP_LOGI(TAG, "servico ja esta de pe - nada a fazer");
@@ -4159,74 +4159,74 @@ static void iniciar_via(uint8_t via)
     return;
   }
 
-  tab5_mutex_criar(&s_trava);   // uma vez por boot - ver tab5_mesh_parar
-  tab5_sd_piggyback(mesh_na_carona);   // idempotente: a carona e registrada uma vez
-  tab5_mutex_criar(&s_tx);
-  if (!s_fila_envio) { s_fila_envio = xQueueCreateWithCaps(MESH_FILA_ENVIO, sizeof(envio_fila_t), MALLOC_CAP_SPIRAM); }
-  if (s_fila_envio) { xQueueReset(s_fila_envio); }
-  tab5_time_on_jump(ao_saltar_relogio);   // idempotente
+  tab5_mutex_create(&s_trava);   // uma vez por boot - ver tab5_mesh_parar
+  tab5_sd_piggyback(mesh_in_carona);   // idempotente: a carona e registrada uma vez
+  tab5_mutex_create(&s_tx);
+  if (!s_fila_send_state) { s_fila_send_state = xQueueCreateWithCaps(MESH_FILA_ENVIO, sizeof(send_state_fila_t), MALLOC_CAP_SPIRAM); }
+  if (s_fila_send_state) { xQueueReset(s_fila_send_state); }
+  tab5_time_on_jump(on_saltar_clock);   // idempotente
 
 
-  s_notif = notif_registrar("Meshtastic");
-  notif_associar_app(s_notif, "Mesh");   // tocar o aviso abre o app Mesh
-  // A preferencia (ajustes) e quem manda desde o INSTANTE em que a fonte
-  // nasce - este registro acontece de novo a cada sondagem que reencontra o
-  // modulo (troca de cabo), entao sem isto o silencio "esqueceria" a cada
+  s_notif = notification_registrar("Meshtastic");
+  notification_associar_app(s_notif, "Mesh");   // touch o aviso abre o app Mesh
+  // A preferencia (ajustes) e quem manda since o INSTANTE em que a fonte
+  // nasce - este registro acontece of novo a cada sondagem que reencontra o
+  // modulo (troca of cabo), entao sem isto o silencio "esqueceria" a cada
   // hot-swap.
-  if (s_notif >= 0) { notif_silenciar(s_notif, !settings_mesh_beep()); }
+  if (s_notif >= 0) { notification_silenciar(s_notif, !settings_mesh_beep()); }
   memset(s_nos, 0, sizeof(s_nos));
   ++s_nos_ver;
   memset(s_conv, 0, sizeof(s_conv));
-  // O ANEL DE IDS VISTOS NAO E ZERADO: trocar de via (Grove -> internet) ou
+  // O ANEL DE IDS VISTOS NAO E ZERADO: switch of via (Grove -> internet) ou
   // reconectar o cabo nao muda quais mensagens ja estao no cartao. Zerado, a
-  // mesma mensagem ouvida pelo radio e depois pela ponte MQTT entrava duas
+  // mesma message ouvida pelo radio e depois pela ponte MQTT entrava duas
   // vezes no historico.
-  memset(&s_saude, 0, sizeof(s_saude));   // a saude e do no desta via, nao da anterior
+  memset(&s_saude, 0, sizeof(s_saude));   // a saude e of no desta via, nao of anterior
 
   ++s_conv_ver;   // a coluna recomeca
 
-  // OS CANAIS EXISTEM DESDE O INICIO, sem esperar mensagem: os ativos da
-  // ultima configuracao conhecida (NVS), ou o primario sem nenhuma. Numa malha
-  // quieta, sem isto, nao havia para onde escrever. Os apagados ficam de fora
+  // OS CANAIS EXISTEM DESDE O INICIO, sem wait message: os ativos of
+  // ultima configuracao conhecida (NVS), ou o primario sem none. Numa malha
+  // quieta, sem isto, nao havia para onde write. Os apagados ficam of fora
   // - e eram recriados aqui, o canal 0 sempre, mesmo apagado.
-  criar_conversas_dos_canais();
+  create_conversas_dos_canais();
 
-  // Os nos que o Tab5 ja conhecia (alem do teto do radio).
+  // Os nos que o Tab5 ja conhecia (alem of teto of radio).
   carregar_nodedb();
-  mesh_diario_carregar();   // reinicios do no ja anotados (cartao)
-  mesh_wifi_no_carregar();  // redes do Wi-Fi do no ja usadas (cartao)
+  mesh_diario_carregar();   // reinicios of no ja anotados (cartao)
+  mesh_wifi_no_carregar();  // redes of Wi-Fi of no ja usadas (cartao)
 
   // FAVORITOS NA TABELA DESDE O INICIO, mesmo sem ter falado: estao fixos.
   recordar_favs();
   for (int i = 0; i < s_n_favs; ++i) { achar_no(s_favs[i]); }
 
   // RESTAURA O QUE O memset() ACIMA ACABOU DE APAGAR - defeito observado em
-  // abrir o app ANTES de plugar o C6L jah carrega tudo do cartao
-  // (ao_abrir() chama tab5_mesh_carregar_do_cartao()), mas a sondagem do Grove
+  // open o app ANTES of plugar o C6L jah carrega everything of cartao
+  // (ao_abrir() chama tab5_mesh_carregar_do_cartao()), mas a sondagem of Grove
   // que chega depois, achando o modulo, zera s_conv[] alguns milissegundos
-  // apos - a lista fica so com o canal 0 (linha acima) ate o usuario sair e
-  // voltar ao app, o que forca um novo ao_abrir(). Chamar de novo aqui, logo
-  // apos o memset, fecha a mesma lacuna sem depender do usuario reabrir nada.
-  // Idempotente (achar_ou_criar_conversa acha o que ja existe em vez de
-  // duplicar) e seguro nesta tarefa: tab5_mesh_iniciar() so roda dentro de
-  // vTaskSondagemGrove (kernel/core.cpp), a tarefa de prioridade mais baixa do
-  // sistema, feita para aguentar E/S lenta (aqui, montar o cartao) sem travar
-  // o toque.
-  tab5_mesh_carregar_do_cartao();
+  // apos - a lista stays so com o canal 0 (line acima) ate o user exit e
+  // voltar on app, o que forca one novo ao_abrir(). Chamar of novo aqui, logo
+  // apos o memset, fecha a mesma lacuna sem depender of user reabrir nada.
+  // Idempotente (achar_ou_criar_conversa acha o que ja existe em vez of
+  // duplicar) e seguro nesta tarefa: tab5_mesh_iniciar() so roda dentro of
+  // vTaskSondagemGrove (kernel/core.cpp), a tarefa of priority mais baixa of
+  // sistema, feita para aguentar E/S lenta (aqui, montar o cartao) sem lock
+  // o touch.
+  tab5_mesh_carregar_of_cartao();
 
   // As conversas renasceram com as nao lidas guardadas (guardar_nao_lidas):
-  // a barra passa a contar a partir delas, e nao do que sobrou publicado.
-  travar();
+  // a barra passa a count a partir delas, e nao of que sobrou publicado.
+  lock();
   publicar_notif();
   destravar();
 
   s_via = via;
   if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) {
-    // Sem cabo e sem radio: o laco do servico abre o MQTT (usar_internet).
+    // Sem cabo e sem radio: o laco of servico abre o MQTT (usar_internet).
   } else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     // Sem Grove e sem UART: o enlace BLE procura o no, conecta e entrega o
-    // que chegar. O Bluetooth ja foi ligado por quem chamou.
-    if (!mesh_ble_iniciar()) { ESP_LOGE(TAG, "enlace Bluetooth nao subiu"); return; }
+    // que chegar. O Bluetooth ja foi enabled por quem chamou.
+    if (!mesh_ble_start()) { ESP_LOGE(TAG, "enlace Bluetooth nao subiu"); return; }
   } else {
   uart_config_t cfg = { };
   cfg.baud_rate = MESH_BAUD;
@@ -4241,7 +4241,7 @@ static void iniciar_via(uint8_t via)
     return;
   }
 
-  esp_log_level_set("uart", ESP_LOG_ERROR);   // reserva antiga do Ex_I2C, ver tab5_grove
+  esp_log_level_set("uart", ESP_LOG_ERROR);   // reserva antiga of Ex_I2C, ver tab5_grove
   if (uart_driver_install(MESH_UART, 4096, 512, 0, NULL, 0) != ESP_OK
    || uart_param_config(MESH_UART, &cfg) != ESP_OK
    || uart_set_pin(MESH_UART, MESH_TX, MESH_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK)
@@ -4253,27 +4253,27 @@ static void iniciar_via(uint8_t via)
   esp_log_level_set("uart", ESP_LOG_WARN);
   }   // via serial
 
-  // Prioridade 3, igual ao WiFi: abaixo da interface (4), para nunca engasgar o
-  // toque; acima do registro (1), porque perder byte da serial e irreversivel.
-  // ATIVO ANTES DE A TAREFA EXISTIR: com prioridade 3 ela comeca na hora,
-  // antes de quem chamou (a sondagem, prioridade 1) voltar - e ja envia.
+  // Prioridade 3, igual on WiFi: abaixo of interface (4), para nunca engasgar o
+  // touch; acima of registro (1), porque perder byte of serial e irreversivel.
+  // ATIVO ANTES DE A TAREFA EXISTIR: com priority 3 ela comeca in hora,
+  // antes of quem chamou (a sondagem, priority 1) voltar - e ja envia.
   s_iniciado_em_ms = tab5_now_ms();   // ver o aviso em tab5_mesh_silencio_ms()
-  s_servico_ativo  = true;
-  // 6 KB: com 4 KB o monitor registrou no minimo 264 bytes livres em uso real.
-  if (!parada_preparar(&s_parada)
-   || !pool_criar(nullptr, vTaskMesh, nullptr, "mesh", 6144, 3, OWNER_SERVICE, "Mesh")) {
+  s_servico_active  = true;
+  // 6 KB: com 4 KB o monitor registrou no minimum 264 bytes livres em uso real.
+  if (!stop_prepare(&s_parada)
+   || !pool_create(nullptr, vTaskMesh, nullptr, "mesh", 6144, 3, OWNER_SERVICE, "Mesh")) {
     // DEVOLVE O QUE O INICIAR TOMOU. Antes so a bandeira voltava: a UART e o
-    // Grove ficavam com o Mesh para sempre, e nenhuma sondagem achava mais
+    // Grove ficavam com o Mesh para sempre, e none sondagem achava mais
     // nada no cabo ate reiniciar.
-    parada_desistir(&s_parada);
-    s_servico_ativo = false;
-    if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { mesh_ble_parar(); }
+    stop_abandon(&s_parada);
+    s_servico_active = false;
+    if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { mesh_ble_stop(); }
     else if (s_via == SETTINGS_MESH_TRANSPORT_SERIAL) { uart_driver_delete(MESH_UART); tab5_grove_release(GROVE_OWNER_MESH); }
     ESP_LOGE(TAG, "sem memoria para a tarefa do Mesh");
     return;
   }
-  sistema_avisar(AVISO_MESH_NOS);
-  tab5_mem_marco("Mesh (servico)");
+  system_notify(AVISO_MESH_NOS);
+  tab5_memory_marco("Mesh (servico)");
   if (s_via == SETTINGS_MESH_TRANSPORT_INTERNET) { ESP_LOGI(TAG, "servico no ar (so internet, sem o no)"); }
   else if (s_via == SETTINGS_MESH_TRANSPORT_BLUETOOTH) { ESP_LOGI(TAG, "servico no ar (Bluetooth)"); }
   else { ESP_LOGI(TAG, "servico no ar (Grove %d baud, RX=%d TX=%d)", MESH_BAUD, MESH_RX, MESH_TX); }

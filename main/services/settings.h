@@ -78,7 +78,7 @@ void    settings_set_screen_timeout_s(uint8_t seconds);
 
 // PANEL CLOCK (DPI/pixel clock), in MHz.
 //
-// Previously this could only be changed with `tela relogio <mhz>` in the
+// Previously this could only be changed with `screen clock <mhz>` in the
 // console, and the value disappeared at the next boot because the system
 // always restored 60 MHz. Lowering the clock reduces the continuous PSRAM
 // reads required by the panel (see tab5_power.cpp). This saves power from the
@@ -95,7 +95,7 @@ void    settings_set_screen_timeout_s(uint8_t seconds);
 
 uint8_t settings_panel_clock_mhz(void);
 
-// SAVE ONLY; do not apply to the panel. tab5_power_dpi_clock() changes the
+// SAVE ONLY; of not apply to the panel. tab5_power_dpi_clock() changes the
 // hardware clock. The caller (console or Settings app) controls the order of
 // applying and saving because only it knows whether the change succeeded.
 void    settings_set_panel_clock_mhz(uint8_t mhz);

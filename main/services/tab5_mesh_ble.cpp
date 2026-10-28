@@ -3,7 +3,7 @@
 #include "tab5_ble.hpp"
 #include "tab5_owners.hpp"
 #include "task_pool.h"
-#include "service_stop.hpp"      // parada cooperativa da tarefa (kernel)
+#include "service_stop.hpp"      // parada cooperativa of tarefa (kernel)
 #include "settings.h"
 #include "notification.h"
 
@@ -25,53 +25,53 @@
 
 static const char* TAG = "mesh_ble";
 
-// UUIDs do servico do Meshtastic (docs: meshtastic.org, "Bluetooth API").
+// UUIDs of servico of Meshtastic (docs: meshtastic.org, "Bluetooth API").
 #define UUID_TORADIO   "f75c76d2-129e-4dad-a1dd-7866124401e7"
 #define UUID_FROMRADIO "2c55e69e-4993-11ed-b878-0242ac120002"
 #define UUID_FROMNUM   "ed9da18c-a800-4f66-a670-aa7547e34453"
 
-#define CORPO_MAX       512    // MAX_TO_FROM_RADIO_SIZE do firmware
+#define CORPO_MAX       512    // MAX_TO_FROM_RADIO_SIZE of firmware
 #define PRAZO_OP_MS   10000    // cada operacao GATT
 #define PRAZO_PAR_MS  30000    // pareamento (o no pode estar mostrando o PIN)
-#define VOLTA_MS       5000    // leitura de seguranca, mesmo sem aviso do fromNum
+#define VOLTA_MS       5000    // leitura of seguranca, mesmo sem aviso of fromNum
 
-typedef struct { uint16_t n; uint8_t d[CORPO_MAX]; } envio_t;
+typedef struct { uint16_t n; uint8_t d[CORPO_MAX]; } send_state_t;
 
 // ---- estado ----------------------------------------------------------------
 static TaskHandle_t        s_tarefa = nullptr;
 static QueueHandle_t       s_tx = nullptr;
 static MessageBufferHandle_t s_rx = nullptr;
-static SemaphoreHandle_t   s_op = nullptr;        // fim de uma operacao GATT/GAP
+static SemaphoreHandle_t   s_op = nullptr;        // end of uma operacao GATT/GAP
 static volatile int        s_op_rc = 0;
-static parada_t            s_parada = { };      // pedido de parada / saida confirmada da tarefa
-static volatile bool       s_conectado = false, s_conectou_agora = false;
-static volatile bool       s_ler = false;
+static stop_t            s_parada = { };      // request of parada / saida confirmada of tarefa
+static volatile bool       s_conectado = false, s_conectou_now = false;
+static volatile bool       s_read = false;
 static volatile uint16_t   s_conn = BLE_HS_CONN_HANDLE_NONE;
-static volatile bool       s_pin_pedido = false;
+static volatile bool       s_pin_request = false;
 // PIN NA HORA. O Meshtastic tem dois modos: PIN FIXO (123456 nos
-// aparelhos sem tela, ou o que se configurou) e PIN ALEATORIO, que o no mostra
-// na tela A CADA pareamento - um PIN salvo nunca acerta esse. Por isso: a
-// primeira tentativa usa o PIN de Ajustes; se o no recusar, a proxima e
-// INTERATIVA - o pedido fica esperando (o pareamento da ~30 s) e Ajustes >
-// Meshtastic abre o teclado para digitar o que o no esta mostrando.
-static volatile bool       s_pin_interativo = false;   // a proxima vez, pergunta
-static volatile bool       s_pin_esperando = false;    // ha um pedido esperando o PIN agora
+// aparelhos sem screen, ou o que se configurou) e PIN ALEATORIO, que o no mostra
+// in screen A CADA pareamento - one PIN salvo nunca acerta esse. Por isso: a
+// primeira tentativa usa o PIN of Ajustes; se o no recusar, a next e
+// INTERATIVA - o request stays esperando (o pareamento of ~30 s) e Ajustes >
+// Meshtastic abre o keyboard para digitar o que o no esta mostrando.
+static volatile bool       s_pin_interativo = false;   // a next vez, pergunta
+static volatile bool       s_pin_esperando = false;    // ha one request esperando o PIN now
 static volatile uint16_t   s_pin_conn = 0;
 static int                 s_notif = -1;
 static char                s_estado[48] = "parado";
-static char                s_nome[24] = "", s_end[18] = "";
+static char                s_name[24] = "", s_end[18] = "";
 
 static ble_uuid_any_t s_u_svc, s_u_to, s_u_from, s_u_num;
-static uint16_t s_svc_ini, s_svc_fim, s_h_to, s_h_from, s_h_num, s_h_cccd;
+static uint16_t s_svc_ini, s_svc_end, s_h_to, s_h_from, s_h_num, s_h_cccd;
 
-// O envio sendo escrito (so a tarefa do enlace usa) - PSRAM, fora da stack.
-EXT_RAM_BSS_ATTR static envio_t s_envio;
+// O send_state sendo escrito (so a tarefa of enlace usa) - PSRAM, fora of stack.
+EXT_RAM_BSS_ATTR static send_state_t s_send_state;
 
-// Leitura em andamento (callback da NimBLE -> tarefa)
+// Leitura em andamento (callback of NimBLE -> tarefa)
 static uint8_t  s_lido[CORPO_MAX];
 static uint16_t s_lido_n;
 
-// Cada mudanca de estado tambem vai para o log: uma tentativa de conexao que
+// Cada mudanca of estado tambem vai para o log: uma tentativa of connection que
 // falha deixa o rastro inteiro (procurando -> conectando -> pareando -> ...).
 static void estado(const char* fmt, const char* arg = nullptr)
 {
@@ -81,52 +81,52 @@ static void estado(const char* fmt, const char* arg = nullptr)
   snprintf(s_estado, sizeof(s_estado), "%s", novo);
 }
 
-static int esperar_op(uint32_t ms)
+static int wait_op(uint32_t ms)
 {
-  if (parada_pedida(&s_parada)) { return BLE_HS_ENOTCONN; }   // pediram para parar: nada de operacao nova
+  if (stop_requested(&s_parada)) { return BLE_HS_ENOTCONN; }   // pediram para stop: nada of operacao nova
   if (xSemaphoreTake(s_op, pdMS_TO_TICKS(ms)) != pdTRUE) { return BLE_HS_ETIMEOUT; }
   return s_op_rc;
 }
-static void fim_op(int rc) { s_op_rc = rc; xSemaphoreGive(s_op); }
+static void end_op(int rc) { s_op_rc = rc; xSemaphoreGive(s_op); }
 
 // ---------------------------------------------------------------------------
-// EVENTOS DA CONEXAO (tarefa da NimBLE - curto, so anota e acorda)
+// EVENTOS DA CONEXAO (tarefa of NimBLE - curto, so anota e acorda)
 // ---------------------------------------------------------------------------
-static int ao_gap(struct ble_gap_event* ev, void*)
+static int on_gap(struct ble_gap_event* ev, void*)
 {
   switch (ev->type) {
     case BLE_GAP_EVENT_CONNECT:
       if (ev->connect.status == 0) { s_conn = ev->connect.conn_handle; }
-      fim_op(ev->connect.status);
+      end_op(ev->connect.status);
       break;
 
     case BLE_GAP_EVENT_DISCONNECT:
       ESP_LOGI(TAG, "desconectado (motivo 0x%x)", ev->disconnect.reason);
       s_conn = BLE_HS_CONN_HANDLE_NONE;
       s_conectado = false;
-      fim_op(BLE_HS_ENOTCONN);   // destrava quem esperava uma operacao
+      end_op(BLE_HS_ENOTCONN);   // destrava quem esperava uma operacao
       if (s_tarefa) { xTaskNotifyGive(s_tarefa); }
       break;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
-      fim_op(ev->enc_change.status);
+      end_op(ev->enc_change.status);
       break;
 
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
-      // O PIN. O no diz o que quer: DIGITAR (o comum - ele mostra ou tem um
-      // fixo, 123456 nos sem tela) ou CONFERIR um numero (aceitamos).
+      // O PIN. O no diz o que quer: DIGITAR (o comum - ele mostra ou tem one
+      // fixo, 123456 nos sem screen) ou CONFERIR one numero (aceitamos).
       struct ble_sm_io io;
       memset(&io, 0, sizeof(io));
       io.action = ev->passkey.params.action;
       if (io.action == BLE_SM_IOACT_INPUT) {
-        s_pin_pedido = true;
+        s_pin_request = true;
         if (s_pin_interativo || settings_mesh_pin_on_screen()) {
           s_pin_interativo = true;
           // Espera quem digitar (mesh_ble_digitar_pin): nada e injetado aqui.
           s_pin_conn = ev->passkey.conn_handle;
           s_pin_esperando = true;
           estado("digite o PIN que o nó mostra");
-          if (s_notif >= 0) { notif_publicar(s_notif, 1, NOTIF_ATENCAO, "PIN do Meshtastic"); }
+          if (s_notif >= 0) { notification_publicar(s_notif, 1, NOTIF_ATENCAO, "PIN do Meshtastic"); }
           ESP_LOGI(TAG, "o no pediu o PIN - esperando o usuario (Ajustes > Meshtastic)");
           break;
         }
@@ -140,7 +140,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
     }
 
     case BLE_GAP_EVENT_REPEAT_PAIRING: {
-      // O no esqueceu o vinculo (reset) e quer parear de novo: apagamos o
+      // O no esqueceu o vinculo (reset) e quer parear of novo: apagamos o
       // nosso e deixamos repetir - senao ficaria recusando para sempre.
       struct ble_gap_conn_desc d;
       if (ble_gap_conn_find(ev->repeat_pairing.conn_handle, &d) == 0) {
@@ -151,7 +151,7 @@ static int ao_gap(struct ble_gap_event* ev, void*)
 
     case BLE_GAP_EVENT_NOTIFY_RX:
       if (ev->notify_rx.attr_handle == s_h_num) {
-        s_ler = true;
+        s_read = true;
         if (s_tarefa) { xTaskNotifyGive(s_tarefa); }
       }
       break;
@@ -162,19 +162,19 @@ static int ao_gap(struct ble_gap_event* ev, void*)
 }
 
 // ---------------------------------------------------------------------------
-// GATT SINCRONO - uma operacao por vez, sempre da tarefa do enlace
+// GATT SINCRONO - uma operacao por vez, sempre of tarefa of enlace
 // ---------------------------------------------------------------------------
 static int cb_mtu(uint16_t, const struct ble_gatt_error* e, uint16_t mtu, void*)
 {
   if (e->status == 0) { ESP_LOGI(TAG, "MTU %u", (unsigned)mtu); }
-  fim_op(e->status);
+  end_op(e->status);
   return 0;
 }
 
 static int cb_svc(uint16_t, const struct ble_gatt_error* e, const struct ble_gatt_svc* s, void*)
 {
-  if (e->status == 0) { s_svc_ini = s->start_handle; s_svc_fim = s->end_handle; return 0; }
-  fim_op(e->status == BLE_HS_EDONE ? 0 : e->status);
+  if (e->status == 0) { s_svc_ini = s->start_handle; s_svc_end = s->end_handle; return 0; }
+  end_op(e->status == BLE_HS_EDONE ? 0 : e->status);
   return 0;
 }
 
@@ -186,7 +186,7 @@ static int cb_chr(uint16_t, const struct ble_gatt_error* e, const struct ble_gat
     else if (ble_uuid_cmp(&c->uuid.u, &s_u_num.u)  == 0) { s_h_num  = c->val_handle; }
     return 0;
   }
-  fim_op(e->status == BLE_HS_EDONE ? 0 : e->status);
+  end_op(e->status == BLE_HS_EDONE ? 0 : e->status);
   return 0;
 }
 
@@ -200,11 +200,11 @@ static int cb_dsc(uint16_t, const struct ble_gatt_error* e, uint16_t chr_val,
     }
     return 0;
   }
-  fim_op(e->status == BLE_HS_EDONE ? 0 : e->status);
+  end_op(e->status == BLE_HS_EDONE ? 0 : e->status);
   return 0;
 }
 
-static int cb_ler(uint16_t, const struct ble_gatt_error* e, struct ble_gatt_attr* a, void*)
+static int cb_read(uint16_t, const struct ble_gatt_error* e, struct ble_gatt_attr* a, void*)
 {
   if (e->status == 0 && a) {
     const uint16_t n = OS_MBUF_PKTLEN(a->om);
@@ -214,53 +214,53 @@ static int cb_ler(uint16_t, const struct ble_gatt_error* e, struct ble_gatt_attr
     }
     return 0;
   }
-  fim_op(e->status == BLE_HS_EDONE ? 0 : e->status);
+  end_op(e->status == BLE_HS_EDONE ? 0 : e->status);
   return 0;
 }
 
-static int cb_escrever(uint16_t, const struct ble_gatt_error* e, struct ble_gatt_attr*, void*)
+static int cb_write(uint16_t, const struct ble_gatt_error* e, struct ble_gatt_attr*, void*)
 {
-  fim_op(e->status);
+  end_op(e->status);
   return 0;
 }
 
-static bool conexao_viva(void) { return s_conn != BLE_HS_CONN_HANDLE_NONE; }
+static bool connection_alive(void) { return s_conn != BLE_HS_CONN_HANDLE_NONE; }
 
-static int escrever(uint16_t h, const uint8_t* d, size_t n)
+static int write(uint16_t h, const uint8_t* d, size_t n)
 {
-  if (!conexao_viva()) { return BLE_HS_ENOTCONN; }
+  if (!connection_alive()) { return BLE_HS_ENOTCONN; }
   xSemaphoreTake(s_op, 0);
   const uint16_t mtu = ble_att_mtu(s_conn);
   int rc;
   if (n + 3 <= mtu) {
-    rc = ble_gattc_write_flat(s_conn, h, d, (uint16_t)n, cb_escrever, nullptr);
+    rc = ble_gattc_write_flat(s_conn, h, d, (uint16_t)n, cb_write, nullptr);
   } else {
     struct os_mbuf* om = ble_hs_mbuf_from_flat(d, (uint16_t)n);
-    rc = om ? ble_gattc_write_long(s_conn, h, 0, om, cb_escrever, nullptr) : BLE_HS_ENOMEM;
+    rc = om ? ble_gattc_write_long(s_conn, h, 0, om, cb_write, nullptr) : BLE_HS_ENOMEM;
   }
-  return rc ? rc : esperar_op(PRAZO_OP_MS);
+  return rc ? rc : wait_op(PRAZO_OP_MS);
 }
 
-// FromRadio: uma mensagem por leitura; leitura vazia = o no nao tem mais nada.
-// Ate 64 por vez (a fila de envio nao pode esperar o dump inteiro). Devolve
-// false quando parou no teto SEM esvaziar: o resto vem na volta seguinte, na
-// hora - antes esperava o proximo aviso do fromNum (que so vem com pacote
-// NOVO) ou os 5 s da leitura de seguranca, e um dump de muitos nos andava aos
+// FromRadio: uma message por leitura; leitura vazia = o no nao tem mais nada.
+// Ate 64 por vez (a fila of send_state nao pode wait o dump inteiro). Devolve
+// false when parou no teto SEM esvaziar: o resto vem in iteration seguinte, in
+// hora - antes esperava o next aviso of fromNum (que so vem com pacote
+// NOVO) ou os 5 s of leitura of seguranca, e one dump of muitos nos andava aos
 // soluços.
-static bool ler_ate_vazio(void)
+static bool read_ate_vazio(void)
 {
-  for (int k = 0; k < 64 && conexao_viva() && !parada_pedida(&s_parada); ++k) {
+  for (int k = 0; k < 64 && connection_alive() && !stop_requested(&s_parada); ++k) {
     xSemaphoreTake(s_op, 0);
     s_lido_n = 0;
-    if (ble_gattc_read_long(s_conn, s_h_from, 0, cb_ler, nullptr) != 0) { return true; }
-    if (esperar_op(PRAZO_OP_MS) != 0) { return true; }
+    if (ble_gattc_read_long(s_conn, s_h_from, 0, cb_read, nullptr) != 0) { return true; }
+    if (wait_op(PRAZO_OP_MS) != 0) { return true; }
     if (s_lido_n == 0) { return true; }
     if (xMessageBufferSend(s_rx, s_lido, s_lido_n, pdMS_TO_TICKS(500)) == 0) {
       ESP_LOGW(TAG, "o servico Mesh nao esta consumindo - mensagem de %u bytes perdida",
                (unsigned)s_lido_n);
     }
   }
-  return !conexao_viva() || parada_pedida(&s_parada);
+  return !connection_alive() || stop_requested(&s_parada);
 }
 
 // ---------------------------------------------------------------------------
@@ -274,17 +274,17 @@ static bool achar_no(ble_addr_t* alvo)
   const bool tem_salvo = tab5_ble_parse_address(salvo, quer);
 
   estado(tem_salvo ? "procurando %s" : "procurando um no Meshtastic", salvo);
-  // Se a tela ja esta varrendo, aproveitamos a varredura dela.
+  // Se a screen ja esta varrendo, aproveitamos a varredura dela.
   // 8 s: com o Wi-Fi conectado o C6 divide o radio, e a busca ouve menos.
   if (!tab5_ble_scanning() && !tab5_ble_scan(8000)) { return false; }
-  while (tab5_ble_scanning() && !parada_pedida(&s_parada)) { vTaskDelay(pdMS_TO_TICKS(200)); }
+  while (tab5_ble_scanning() && !stop_requested(&s_parada)) { vTaskDelay(pdMS_TO_TICKS(200)); }
 
   int melhor = -1;
   int8_t rssi = -128;
   tab5_ble_seen_t v;
-  const uint32_t agora = tab5_now_ms();
+  const uint32_t now = tab5_now_ms();
   for (int i = 0; i < tab5_ble_seen_count(); ++i) {
-    if (!tab5_ble_get_seen(i, &v) || agora - v.seen_ms > 15000) { continue; }
+    if (!tab5_ble_get_seen(i, &v) || now - v.seen_ms > 15000) { continue; }
     if (tem_salvo ? (memcmp(v.addr, quer, 6) == 0) : (v.meshtastic && v.rssi > rssi)) {
       melhor = i; rssi = v.rssi;
       if (tem_salvo) { break; }
@@ -294,30 +294,30 @@ static bool achar_no(ble_addr_t* alvo)
   tab5_ble_get_seen(melhor, &v);
   alvo->type = v.type;
   memcpy(alvo->val, v.addr, 6);
-  snprintf(s_nome, sizeof(s_nome), "%s", v.name[0] ? v.name : "Meshtastic");
+  snprintf(s_name, sizeof(s_name), "%s", v.name[0] ? v.name : "Meshtastic");
   tab5_ble_address_text(v.addr, s_end);
   return true;
 }
 
-// 0 = conectado e pronto; <0 = tente de novo em breve; >0 = espere mais (PIN)
+// 0 = conectado e pronto; <0 = tente of novo em breve; >0 = espere mais (PIN)
 static int conectar(const ble_addr_t* alvo)
 {
   uint8_t proprio;
   if (ble_hs_id_infer_auto(0, &proprio) != 0) { return -1; }
 
-  estado("conectando a %s", s_nome);
+  estado("conectando a %s", s_name);
   xSemaphoreTake(s_op, 0);
-  int rc = ble_gap_connect(proprio, alvo, 10000, nullptr, ao_gap, nullptr);
+  int rc = ble_gap_connect(proprio, alvo, 10000, nullptr, on_gap, nullptr);
   if (rc != 0) { ESP_LOGW(TAG, "ble_gap_connect: %d", rc); return -1; }
-  rc = esperar_op(12000);
-  if (rc != 0 || !conexao_viva()) {
+  rc = wait_op(12000);
+  if (rc != 0 || !connection_alive()) {
     ESP_LOGW(TAG, "nao conectou (%d)", rc);
     ble_gap_conn_cancel();
     return -1;
   }
 
-  // Os enderecos desta conexao: o que a stack acha que e o nosso (id), o que
-  // foi de fato ao ar (ota) e o do no. A verificacao final do pareamento
+  // Os enderecos desta connection: o que a stack acha que e o nosso (id), o que
+  // foi of fato on ar (ota) e o of no. A verificacao final of pareamento
   // seguro inclui os enderecos - se id e ota divergirem, e ali que ela quebra.
   {
     struct ble_gap_conn_desc d;
@@ -332,27 +332,27 @@ static int conectar(const ble_addr_t* alvo)
   }
 
   xSemaphoreTake(s_op, 0);
-  if (ble_gattc_exchange_mtu(s_conn, cb_mtu, nullptr) == 0) { esperar_op(PRAZO_OP_MS); }
+  if (ble_gattc_exchange_mtu(s_conn, cb_mtu, nullptr) == 0) { wait_op(PRAZO_OP_MS); }
 
   // Pareamento. Ja vinculado: so retoma a cifra, sem PIN. Sem vinculo: o no
   // pede o PIN (ver PASSKEY_ACTION).
-  estado("pareando com %s", s_nome);
-  s_pin_pedido = false;
+  estado("pareando com %s", s_name);
+  s_pin_request = false;
   xSemaphoreTake(s_op, 0);
   rc = ble_gap_security_initiate(s_conn);
-  if (rc == 0) { rc = esperar_op(PRAZO_PAR_MS); }
+  if (rc == 0) { rc = wait_op(PRAZO_PAR_MS); }
   if (rc != 0 && rc != BLE_HS_EALREADY) {
     struct ble_gap_conn_desc d;
-    const bool achou = conexao_viva() && ble_gap_conn_find(s_conn, &d) == 0;
-    if (conexao_viva()) { ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM); }
+    const bool achou = connection_alive() && ble_gap_conn_find(s_conn, &d) == 0;
+    if (connection_alive()) { ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM); }
     if (s_pin_esperando) {
       s_pin_esperando = false;
-      if (s_notif >= 0) { notif_limpar(s_notif); }
+      if (s_notif >= 0) { notification_limpar(s_notif); }
     }
-    // DHKEY CHECK FAILED: as 20 rodadas do PIN passaram (o PIN estava certo),
-    // mas a verificacao final do pareamento seguro (LE Secure Connections)
+    // DHKEY CHECK FAILED: as 20 rodadas of PIN passaram (o PIN estava certo),
+    // mas a verificacao final of pareamento seguro (LE Secure Connections)
     // nao bateu. O modo LEGADO com PIN nao tem essa etapa, e o Meshtastic o
-    // aceita: troca para ele e pergunta o PIN de novo ja (o no mostra outro).
+    // aceita: troca para ele e pergunta o PIN of novo ja (o no mostra outro).
     if ((rc == BLE_HS_SM_PEER_ERR(BLE_SM_ERR_DHKEY) || rc == BLE_HS_SM_US_ERR(BLE_SM_ERR_DHKEY))
      && ble_hs_cfg.sm_sc) {
       ESP_LOGW(TAG, "verificacao final do pareamento seguro falhou (%d) - tentando o pareamento legado", rc);
@@ -361,70 +361,70 @@ static int conectar(const ble_addr_t* alvo)
       estado("tentando outro modo de pareamento - o no vai mostrar outro PIN");
       return -1;
     }
-    // O PIN SALVO FOI RECUSADO: o no mostra um PIN novo a cada pareamento.
-    // Lembra disso (NVS) e tenta de novo ja - agora perguntando o PIN.
-    if (s_pin_pedido && !s_pin_interativo) {
+    // O PIN SALVO FOI RECUSADO: o no mostra one PIN novo a cada pareamento.
+    // Lembra disso (NVS) e tenta of novo ja - now perguntando o PIN.
+    if (s_pin_request && !s_pin_interativo) {
       ESP_LOGW(TAG, "PIN salvo recusado (%d) - o no usa PIN na tela; pergunto a partir de agora", rc);
       settings_set_mesh_pin_on_screen(true);
-      settings_set_mesh_pin(123456);   // o salvo estava errado: volta ao padrao
+      settings_set_mesh_pin(123456);   // o salvo estava errado: iteration on default
       s_pin_interativo = true;
       estado("o nó mostra o PIN na tela - tentando de novo");
       return -1;
     }
-    if (s_pin_pedido) {
+    if (s_pin_request) {
       // PIN errado (ou o prazo venceu). Nao repete sozinho: cada tentativa
-      // incomoda o no e gera um PIN novo nele. A proxima pergunta o PIN na
-      // hora, e so comeca quando o usuario pedir (mesh_ble_tentar_de_novo, que
-      // o ENVIAR do PIN em Ajustes > Meshtastic chama).
+      // incomoda o no e gera one PIN novo nele. A next pergunta o PIN in
+      // hora, e so comeca when o user request (mesh_ble_tentar_de_novo, que
+      // o ENVIAR of PIN em Ajustes > Meshtastic chama).
       ESP_LOGW(TAG, "pareamento recusado (%d) - PIN errado ou prazo vencido", rc);
       estado("PIN recusado - toque no nó para tentar");
       s_pin_interativo = true;
       return 2;
     }
-    // Sem PIN pedido e ainda assim falhou: o vinculo guardado nao vale mais
-    // (o no foi resetado). Apaga e tenta do zero na proxima volta.
+    // Sem PIN request e ainda assim falhou: o vinculo guardado nao vale mais
+    // (o no foi resetado). Apaga e tenta of zero in next iteration.
     if (achou) { ble_store_util_delete_peer(&d.peer_id_addr); }
     ESP_LOGW(TAG, "cifra recusada (%d) - vinculo antigo apagado", rc);
     return -1;
   }
 
-  // Descoberta do servico e das tres caracteristicas.
-  s_svc_ini = s_svc_fim = s_h_to = s_h_from = s_h_num = s_h_cccd = 0;
+  // Descoberta of servico e das tres caracteristicas.
+  s_svc_ini = s_svc_end = s_h_to = s_h_from = s_h_num = s_h_cccd = 0;
   xSemaphoreTake(s_op, 0);
   rc = ble_gattc_disc_svc_by_uuid(s_conn, &s_u_svc.u, cb_svc, nullptr);
-  if (rc == 0) { rc = esperar_op(PRAZO_OP_MS); }
+  if (rc == 0) { rc = wait_op(PRAZO_OP_MS); }
   if (rc == 0 && s_svc_ini) {
     xSemaphoreTake(s_op, 0);
-    rc = ble_gattc_disc_all_chrs(s_conn, s_svc_ini, s_svc_fim, cb_chr, nullptr);
-    if (rc == 0) { rc = esperar_op(PRAZO_OP_MS); }
+    rc = ble_gattc_disc_all_chrs(s_conn, s_svc_ini, s_svc_end, cb_chr, nullptr);
+    if (rc == 0) { rc = wait_op(PRAZO_OP_MS); }
   }
   if (rc == 0 && s_h_num) {
     xSemaphoreTake(s_op, 0);
-    rc = ble_gattc_disc_all_dscs(s_conn, s_h_num, s_svc_fim, cb_dsc, nullptr);
-    if (rc == 0) { rc = esperar_op(PRAZO_OP_MS); }
+    rc = ble_gattc_disc_all_dscs(s_conn, s_h_num, s_svc_end, cb_dsc, nullptr);
+    if (rc == 0) { rc = wait_op(PRAZO_OP_MS); }
   }
   if (rc != 0 || !s_h_to || !s_h_from) {
     ESP_LOGW(TAG, "o aparelho nao tem o servico do Meshtastic completo (%d)", rc);
-    if (conexao_viva()) { ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM); }
+    if (connection_alive()) { ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM); }
     return -1;
   }
 
-  // Assina o fromNum. Sem ele ainda funciona (a volta de VOLTA_MS le assim
+  // Assina o fromNum. Sem ele ainda funciona (a iteration of VOLTA_MS le assim
   // mesmo), so mais devagar.
   if (s_h_cccd) {
     const uint8_t liga[2] = { 0x01, 0x00 };
-    if (escrever(s_h_cccd, liga, 2) != 0) { ESP_LOGW(TAG, "nao assinei o fromNum"); }
+    if (write(s_h_cccd, liga, 2) != 0) { ESP_LOGW(TAG, "nao assinei o fromNum"); }
   }
 
   s_pin_interativo = false;
-  if (s_notif >= 0) { notif_limpar(s_notif); }
+  if (s_notif >= 0) { notification_limpar(s_notif); }
 
   // Deste no em diante e este no: guarda para reconectar direto.
   settings_set_mesh_ble_address(s_end);
-  ESP_LOGI(TAG, "conectado a %s (%s)", s_nome, s_end);
-  estado("conectado a %s", s_nome);
+  ESP_LOGI(TAG, "conectado a %s (%s)", s_name, s_end);
+  estado("conectado a %s", s_name);
   s_conectado = true;
-  s_conectou_agora = true;
+  s_conectou_now = true;
   return 0;
 }
 
@@ -435,7 +435,7 @@ static void vTaskMeshBle(void*)
 {
   uint32_t espera = 0;
   for (;;) {
-    if (parada_pedida(&s_parada)) { break; }
+    if (stop_requested(&s_parada)) { break; }
     if (espera) {
       ulTaskNotifyTake(pdTRUE, espera == portMAX_DELAY ? portMAX_DELAY : pdMS_TO_TICKS(espera));
       espera = 0;
@@ -456,8 +456,8 @@ static void vTaskMeshBle(void*)
     }
     const int rc = conectar(&alvo);
     if (rc != 0) {
-      // A queda da conexao acorda esta tarefa (ver DISCONNECT em ao_gap) - sem
-      // escoar esse aviso, a espera acabava na hora e a busca seguinte corria
+      // A queda of connection acorda esta tarefa (ver DISCONNECT em ao_gap) - sem
+      // escoar esse aviso, a espera acabava in hora e a busca seguinte corria
       // enquanto o no ainda nao voltou a anunciar.
       vTaskDelay(pdMS_TO_TICKS(500));
       ulTaskNotifyTake(pdTRUE, 0);
@@ -465,43 +465,43 @@ static void vTaskMeshBle(void*)
       continue;
     }
 
-    s_ler = true;   // o que o no ja tinha na queue
+    s_read = true;   // o que o no ja tinha in queue
     TickType_t ultima = xTaskGetTickCount();
-    while (conexao_viva() && !parada_pedida(&s_parada)) {
-      ulTaskNotifyTake(pdTRUE, s_ler ? 0 : pdMS_TO_TICKS(1000));
-      while (xQueueReceive(s_tx, &s_envio, 0) == pdTRUE) {
-        if (escrever(s_h_to, s_envio.d, s_envio.n) != 0) { ESP_LOGW(TAG, "escrita no toRadio falhou"); }
-        s_ler = true;   // a resposta vem pelo fromRadio
+    while (connection_alive() && !stop_requested(&s_parada)) {
+      ulTaskNotifyTake(pdTRUE, s_read ? 0 : pdMS_TO_TICKS(1000));
+      while (xQueueReceive(s_tx, &s_send_state, 0) == pdTRUE) {
+        if (write(s_h_to, s_send_state.d, s_send_state.n) != 0) { ESP_LOGW(TAG, "escrita no toRadio falhou"); }
+        s_read = true;   // a resposta vem pelo fromRadio
       }
-      if (s_ler || (xTaskGetTickCount() - ultima) > pdMS_TO_TICKS(VOLTA_MS)) {
-        s_ler = false;
+      if (s_read || (xTaskGetTickCount() - ultima) > pdMS_TO_TICKS(VOLTA_MS)) {
+        s_read = false;
         ultima = xTaskGetTickCount();
-        if (!ler_ate_vazio()) { s_ler = true; }
+        if (!read_ate_vazio()) { s_read = true; }
       }
     }
     s_conectado = false;
-    if (!parada_pedida(&s_parada)) { estado("conexão caiu - reconectando"); espera = 2000; }
+    if (!stop_requested(&s_parada)) { estado("conexão caiu - reconectando"); espera = 2000; }
   }
 
-  if (conexao_viva()) {
+  if (connection_alive()) {
     ble_gap_terminate(s_conn, BLE_ERR_REM_USER_CONN_TERM);
-    for (int k = 0; k < 20 && conexao_viva(); ++k) { vTaskDelay(pdMS_TO_TICKS(50)); }
+    for (int k = 0; k < 20 && connection_alive(); ++k) { vTaskDelay(pdMS_TO_TICKS(50)); }
   }
   s_conectado = false;
   estado("parado");
-  parada_confirmar(&s_parada);
-  // Retorna: a vaga do pool devolve o dono e volta a dormir (kernel/task_pool.h).
+  stop_confirm(&s_parada);
+  // Retorna: a vaga of pool devolve o dono e iteration a dormir (kernel/task_pool.h).
 }
 
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
-bool mesh_ble_iniciar(void)
+bool mesh_ble_start(void)
 {
-  if (parada_rodando(&s_parada)) { return true; }
+  if (stop_running(&s_parada)) { return true; }
   if (!s_op) {
     s_op = xSemaphoreCreateBinary();
-    s_tx = xQueueCreateWithCaps(4, sizeof(envio_t), MALLOC_CAP_SPIRAM);
+    s_tx = xQueueCreateWithCaps(4, sizeof(send_state_t), MALLOC_CAP_SPIRAM);
     s_rx = xMessageBufferCreateWithCaps(8192, MALLOC_CAP_SPIRAM);
     ble_uuid_from_str(&s_u_svc,  TAB5_BLE_UUID_MESHTASTIC);
     ble_uuid_from_str(&s_u_to,   UUID_TORADIO);
@@ -509,36 +509,36 @@ bool mesh_ble_iniciar(void)
     ble_uuid_from_str(&s_u_num,  UUID_FROMNUM);
   }
   if (!s_op || !s_tx || !s_rx) { ESP_LOGE(TAG, "sem memoria"); return false; }
-  if (s_notif < 0) { s_notif = notif_registrar("Bluetooth"); notif_associar_app(s_notif, "Mesh"); }
+  if (s_notif < 0) { s_notif = notification_registrar("Bluetooth"); notification_associar_app(s_notif, "Mesh"); }
   xQueueReset(s_tx);
   xMessageBufferReset(s_rx);
-  s_conectado = false; s_conectou_agora = false;
-  s_nome[0] = s_end[0] = 0;
-  if (!parada_preparar(&s_parada)) { return false; }
+  s_conectado = false; s_conectou_now = false;
+  s_name[0] = s_end[0] = 0;
+  if (!stop_prepare(&s_parada)) { return false; }
   pool_id_t id;
-  if (!pool_criar(&id, vTaskMeshBle, nullptr, "mesh_ble", 4096, 3, OWNER_SERVICE, "Mesh BLE")) {
-    parada_desistir(&s_parada);
+  if (!pool_create(&id, vTaskMeshBle, nullptr, "mesh_ble", 4096, 3, OWNER_SERVICE, "Mesh BLE")) {
+    stop_abandon(&s_parada);
     return false;
   }
   s_tarefa = id.handle;
   return true;
 }
 
-// A tarefa dorme em esperas PROPRIAS (notificacao, fim de operacao da pilha
+// A tarefa dorme em esperas PROPRIAS (notification, end of operacao of stack
 // BLE): o aviso e REPETIDO enquanto se espera. Um so podia ser engolido pelo
 // xSemaphoreTake(s_op, 0) que antecede cada operacao, e a tarefa ficava presa
-// os 12 s do conectar (ou os ~30 s do PIN) - o desligar seguia sem ela e a
-// pilha sumia debaixo de um ble_gap_* em curso.
+// os 12 s of conectar (ou os ~30 s of PIN) - o disable seguia sem ela e a
+// stack sumia debaixo of one ble_gap_* em progress.
 static void cutucar_tarefa(void)
 {
   if (s_tarefa) { xTaskNotifyGive(s_tarefa); }
-  fim_op(BLE_HS_ENOTCONN);
+  end_op(BLE_HS_ENOTCONN);
 }
 
-bool mesh_ble_parar(void)
+bool mesh_ble_stop(void)
 {
   if (!s_tarefa) { return true; }
-  if (!parada_pedir(&s_parada, 6000, cutucar_tarefa)) {
+  if (!stop_request(&s_parada, 6000, cutucar_tarefa)) {
     ESP_LOGE(TAG, "a tarefa do enlace nao saiu em 6 s");
     return false;
   }
@@ -546,13 +546,13 @@ bool mesh_ble_parar(void)
   return true;
 }
 
-bool mesh_ble_enviar(const uint8_t* corpo, size_t n)
+bool mesh_ble_send(const uint8_t* body, size_t n)
 {
-  if (!s_conectado || !s_tx || !corpo || n == 0 || n > CORPO_MAX) { return false; }
-  envio_t* e = (envio_t*)heap_caps_malloc(sizeof(envio_t), MALLOC_CAP_SPIRAM);
+  if (!s_conectado || !s_tx || !body || n == 0 || n > CORPO_MAX) { return false; }
+  send_state_t* e = (send_state_t*)heap_caps_malloc(sizeof(send_state_t), MALLOC_CAP_SPIRAM);
   if (!e) { return false; }
   e->n = (uint16_t)n;
-  memcpy(e->d, corpo, n);
+  memcpy(e->d, body, n);
   const bool ok = xQueueSend(s_tx, e, pdMS_TO_TICKS(200)) == pdTRUE;
   heap_caps_free(e);
   if (ok && s_tarefa) { xTaskNotifyGive(s_tarefa); }
@@ -565,21 +565,21 @@ size_t mesh_ble_receber(uint8_t* buf, size_t max, uint32_t espera_ms)
   return xMessageBufferReceive(s_rx, buf, max, pdMS_TO_TICKS(espera_ms));
 }
 
-bool mesh_ble_conectou_agora(void)
+bool mesh_ble_conectou_now(void)
 {
-  if (!s_conectou_agora) { return false; }
-  s_conectou_agora = false;
+  if (!s_conectou_now) { return false; }
+  s_conectou_now = false;
   return true;
 }
 
 bool        mesh_ble_conectado(void) { return s_conectado; }
 const char* mesh_ble_descricao(void) { return s_estado; }
 
-bool mesh_ble_rodando(void) { return parada_rodando(&s_parada); }
+bool mesh_ble_running(void) { return stop_running(&s_parada); }
 
-void mesh_ble_no(char nome[24], char endereco[18])
+void mesh_ble_no(char name[24], char endereco[18])
 {
-  if (nome)     { snprintf(nome, 24, "%s", s_conectado ? s_nome : ""); }
+  if (name)     { snprintf(name, 24, "%s", s_conectado ? s_name : ""); }
   if (endereco) { snprintf(endereco, 18, "%s", s_conectado ? s_end : ""); }
 }
 
@@ -589,7 +589,7 @@ bool mesh_ble_digitar_pin(uint32_t pin)
 {
   if (!s_pin_esperando) { return false; }
   s_pin_esperando = false;
-  if (s_notif >= 0) { notif_limpar(s_notif); }
+  if (s_notif >= 0) { notification_limpar(s_notif); }
   struct ble_sm_io io;
   memset(&io, 0, sizeof(io));
   io.action = BLE_SM_IOACT_INPUT;
@@ -598,7 +598,7 @@ bool mesh_ble_digitar_pin(uint32_t pin)
   return ble_sm_inject_io(s_pin_conn, &io) == 0;
 }
 
-void mesh_ble_tentar_de_novo(void)
+void mesh_ble_tentar_of_novo(void)
 {
-  if (parada_rodando(&s_parada)) { xTaskNotifyGive(s_tarefa); }
+  if (stop_running(&s_parada)) { xTaskNotifyGive(s_tarefa); }
 }

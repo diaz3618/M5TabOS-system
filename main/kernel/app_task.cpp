@@ -1,96 +1,98 @@
 #include "app_task.h"
 #include "tab5_owners.hpp"
-#include "app.h"          // sistema_app_atual
-#include "internal.hpp"   // sistema_na_interface
+#include "app.h"          // system_app_current
+#include "internal.hpp"   // system_in_interface
 #include "esp_log.h"
 
-static const char *TAG = "tarefa";
+static const char *TAG = "app_task";
 
-// Envolve o loop do app: quando ele retorna, avisa quem espera e so entao a
-// tarefa se apaga. O app nunca chama vTaskDelete.
+// Wraps the app's loop: when it returns, it notifies whoever is waiting and
+// only then does the task delete itself. The app never calls vTaskDelete.
 //
-// 'fim' CAPTURADO AQUI, ANTES do corpo rodar - NAO lido de 't->fim' depois.
-// Bug real, batido em hardware com a camera: uma foto de
-// 720x1280 levou mais de 10s para gravar no cartao (bem mais que qualquer
-// timeout de tarefa_app_encerrar() deste sistema), a tarefa foi "abandonada"
-// - e o comentario de tarefa_app_encerrar() ja avisava, corretamente, que
-// abandonar NAO apaga o semaphore (so o 't->fim' do CHAMADOR vira nullptr,
-// para o chamador nao mexer mais nele). O problema e que este trampolim
-// tambem enxerga o MESMO 't' (e o mesmo ponteiro passado para
-// xTaskCreatePinnedToCore) - entao, ao finalmente terminar, ele lia
-// 't->fim' DE NOVO e achava nullptr, e xSemaphoreGive(nullptr) derrubou o
-// sistema inteiro (assert em xQueueGenericSend, "pxQueue" nulo).
+// 'end' CAPTURED HERE, BEFORE the body runs - NOT read from 't->end' later.
+// A real bug, hit on hardware with the camera: a 720x1280 photo took more
+// than 10s to save to the card (well beyond any timeout app_task_stop()
+// in this system would use), so the task was "abandoned" - and
+// app_task_stop()'s own comment already correctly warned that abandoning
+// does NOT delete the semaphore (only the CALLER's 't->end' becomes
+// nullptr, so the caller stops touching it). The problem is that this
+// trampoline also sees the SAME 't' (the same pointer passed to
+// xTaskCreatePinnedToCore) - so, when it finally finished, it read
+// 't->end' AGAIN, found nullptr, and xSemaphoreGive(nullptr) brought down
+// the whole system (assert in xQueueGenericSend, null "pxQueue").
 //
-// Guardando o handle AQUI, na stack desta tarefa, antes do corpo comecar,
-// o trampolim sempre da baixa no semaphore de VERDADE (ele continua existindo
-// - so 't->fim' foi zerado, nao o objeto), esteja 't' abandonado ou nao.
-// Se ninguem mais espera por ele (o caso abandonado), o give so marca o
-// semaphore como "dado" e ninguem nunca o lê de volta - um vazamento
-// controlado, exatamente o trade-off que tarefa_app_encerrar() ja aceitava
-// por escrito ("vazar e ruim; corromper e pior"), so que agora sem crash.
-static void trampolim(void* arg)
+// By keeping the handle HERE, on this task's own stack, before the body
+// starts, the trampoline always gives the REAL semaphore (it still exists -
+// only 't->end' was zeroed, not the object), whether 't' was abandoned or
+// not. If nobody is waiting for it anymore (the abandoned case), the give
+// just marks the semaphore as "given" and nobody ever reads it on the next
+// iteration - a controlled leak, exactly the trade-off app_task_stop()
+// already accepted in writing ("leaking is bad; corrupting is worse"), just
+// without the crash now.
+static void trampoline(void* arg)
 {
-  tarefa_app_t* t = (tarefa_app_t*)arg;
-  SemaphoreHandle_t fim = t->fim;
-  t->corpo(t);
-  xSemaphoreGive(fim);
-  // Retorna: a vaga do pool devolve o dono e volta a dormir. Nunca vTaskDelete.
+  app_task_t* t = (app_task_t*)arg;
+  SemaphoreHandle_t end = t->end;
+  t->body(t);
+  xSemaphoreGive(end);
+  // Returns: the pool slot gives up its owner and goes back to sleep. Never vTaskDelete.
 }
 
-bool tarefa_app_criar(tarefa_app_t* t, tarefa_app_corpo_t corpo,
-                      const char* nome, uint32_t pilha, UBaseType_t prioridade)
+bool app_task_create(app_task_t* t, app_task_body_t body,
+                      const char* name, uint32_t stack, UBaseType_t priority)
 {
   t->handle = nullptr;
-  t->parar  = false;
-  t->corpo  = corpo;
+  t->stop  = false;
+  t->body  = body;
 
-  // Binario, e nao contador: so um "acabei" nos interessa.
-  t->fim = xSemaphoreCreateBinary();
-  if (!t->fim) { return false; }
+  // Binary, not counting: only a single "I'm done" matters to us.
+  t->end = xSemaphoreCreateBinary();
+  if (!t->end) { return false; }
 
-  // DONO AUTOMATICO (hal/tab5_owners.hpp): criada pela interface com um app na
-  // frente = tarefa DESSE app (a Camera abre "cam", o Azimutal "NMEAParse").
-  // Quem cria fora disso (um servico, no boot) registra o proprio dono - e
-  // um registro depois deste troca o dono, entao o servico sempre vence.
-  // O dono vai junto do pedido: a vaga o registra ANTES de a funcao comecar.
-  const char* app = (sistema_app_atual() && sistema_na_interface()) ? sistema_app_atual() : nullptr;
-  if (!pool_criar(&t->id, trampolim, t, nome, pilha, prioridade,
+  // AUTOMATIC OWNER (hal/tab5_owners.hpp): created by the interface with an
+  // app in front = that app's task (the Camera opens "cam", Radar opens
+  // "NMEAParse"). Whoever creates one outside of that (a service, at boot)
+  // registers its own owner - and a later registration swaps the owner, so
+  // the service always wins. The owner travels with the request: the slot
+  // registers it BEFORE the function starts.
+  const char* app = (system_app_current() && system_in_interface()) ? system_app_current() : nullptr;
+  if (!pool_create(&t->id, trampoline, t, name, stack, priority,
                   app ? OWNER_APP : OWNER_SYSTEM, app)) {
-    vSemaphoreDelete(t->fim);
-    t->fim = nullptr;
+    vSemaphoreDelete(t->end);
+    t->end = nullptr;
     return false;
   }
   t->handle = t->id.handle;
   return true;
 }
 
-void tarefa_app_encerrar(tarefa_app_t* t, uint32_t ms)
+void app_task_stop(app_task_t* t, uint32_t ms)
 {
   if (!t->handle) { return; }
 
-  t->parar = true;
+  t->stop = true;
 
-  // Tira a tarefa do bloqueio AGORA, sem esperar o timeout dela. Devolve pdFAIL
-  // se ela nao estava bloqueada - e nesse caso ela ja vai ver a bandeira na
-  // proxima volta, entao nao ha o que fazer.
-  pool_acordar(&t->id);
+  // Pulls the task out of a block RIGHT NOW, without waiting out its
+  // timeout. Returns pdFAIL if it wasn't blocked - in that case it'll see
+  // the flag on its next iteration anyway, so there's nothing more to do.
+  pool_wake(&t->id);
 
-  if (xSemaphoreTake(t->fim, pdMS_TO_TICKS(ms)) == pdTRUE) {
-    vSemaphoreDelete(t->fim);
-    t->fim = nullptr;
+  if (xSemaphoreTake(t->end, pdMS_TO_TICKS(ms)) == pdTRUE) {
+    vSemaphoreDelete(t->end);
+    t->end = nullptr;
     t->handle = nullptr;
-    t->id = (pool_id_t)POOL_ID_VAZIO;
+    t->id = (pool_id_t)POOL_ID_EMPTY;
     return;
   }
 
-  // Nao confirmou no prazo. NAO matamos a tarefa e NAO destruimos o semaphore:
-  // ela pode estar viva e entregar depois, e apagar o semaphore agora daria
-  // crash. Vazar uma tarefa e um semaphore e ruim; corromper um driver ou
-  // escrever em memoria liberada e pior. O log existe para isso nao passar
-  // despercebido.
-  ESP_LOGE(TAG, "tarefa nao confirmou saida em %lums - abandonada de proposito",
+  // Didn't confirm in time. We do NOT kill the task and do NOT destroy the
+  // semaphore: it may still be alive and deliver later, and freeing the
+  // semaphore now would crash. Leaking a task and a semaphore is bad;
+  // corrupting a driver or writing to freed memory is worse. The log exists
+  // so this doesn't go unnoticed.
+  ESP_LOGE(TAG, "task did not confirm exit within %lums - abandoned on purpose",
            (unsigned long)ms);
-  t->fim = nullptr;
+  t->end = nullptr;
   t->handle = nullptr;
-  t->id = (pool_id_t)POOL_ID_VAZIO;
+  t->id = (pool_id_t)POOL_ID_EMPTY;
 }

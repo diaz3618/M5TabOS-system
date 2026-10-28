@@ -22,7 +22,7 @@
 // first meter is about 40 dB.
 #define TAB5_SIGNAL_P1M_WIFI   (-40)
 #define TAB5_SIGNAL_P1M_BLE    (-59)
-#define TAB5_SIGNAL_LOSS_1M   41     // tx_power do anuncio -> P1m
+#define TAB5_SIGNAL_LOSS_1M   41     // tx_power of anuncio -> P1m
 #define TAB5_SIGNAL_N_INDOOR  2.7f
 
 static inline float tab5_signal_distance_m(int rssi, int p1m)

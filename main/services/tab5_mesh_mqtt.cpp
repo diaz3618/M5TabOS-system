@@ -1,6 +1,6 @@
 #include "tab5_mesh_mqtt.hpp"
 #include "tab5_mutex.hpp"
-#include "mesh_pb.hpp"   // o codec do servico Mesh (leitura e escrita)
+#include "mesh_pb.hpp"   // o codec of servico Mesh (leitura e escrita)
 #include "tab5_time.hpp"  // tab5_time_epoch
 
 #include "mqtt_client.h"
@@ -22,13 +22,13 @@
 static const char* TAG = "mesh_mqtt";
 
 // ---------------------------------------------------------------------------
-// CONFIGURACAO (aprendida do no, guardada na NVS)
+// CONFIGURACAO (aprendida of no, guardada in NVS)
 // ---------------------------------------------------------------------------
 #define MAX_CANAIS 8
 
 typedef struct {
-  uint8_t papel;         // 0 desligado, 1 primario, 2 secundario (Channel.Role)
-  char    name[12];      // o nome do canal e no maximo 11 bytes no Meshtastic
+  uint8_t papel;         // 0 disabled, 1 primario, 2 secundario (Channel.Role)
+  char    name[12];      // o name of canal e no maximum 11 bytes no Meshtastic
   uint8_t n_psk;
   uint8_t psk[32];
 } canal_t;
@@ -46,22 +46,22 @@ static SemaphoreHandle_t s_trava_cfg = nullptr;
 #define NVS_ESPACO "mesh"
 #define NVS_CHAVE  "mqtt_cfg"
 
-// Servidor publico oficial do Meshtastic, com as credenciais padrao publicadas
-// pelo projeto. A raiz oficial padrao e "msh".
+// Servidor publico oficial of Meshtastic, com as credenciais default publicadas
+// pelo projeto. A raiz oficial default e "msh".
 #define SRV_PADRAO "mqtt.meshtastic.org"
 #define USR_PADRAO "meshdev"
 #define PWD_PADRAO "large4cats"
 
-// Config.LoRaConfig.RegionCode, na ordem do protobuf (meshtastic/config.proto).
+// Config.LoRaConfig.RegionCode, in order of protobuf (meshtastic/config.proto).
 static const char* const REGIOES[] = {
   "UNSET", "US", "EU_433", "EU_868", "CN", "JP", "ANZ", "KR", "TW", "RU", "IN",
   "NZ_865", "TH", "LORA_24", "UA_433", "UA_868", "MY_433", "MY_919", "SG_923",
   "PH_433", "PH_868", "PH_915", "ANZ_433", "KZ_433", "KZ_863", "NP_865", "BR_902",
 };
 
-static void travar_cfg(void)
+static void lock_cfg(void)
 {
-  tab5_mutex_travar(&s_trava_cfg);
+  tab5_mutex_lock(&s_trava_cfg);
 }
 static void destravar_cfg(void) { xSemaphoreGive(s_trava_cfg); }
 
@@ -73,14 +73,14 @@ static void garantir_cfg(void)
   memset(&s_cfg, 0, sizeof(s_cfg));
   nvs_handle_t h;
   if (nvs_open(NVS_ESPACO, NVS_READONLY, &h) == ESP_OK) {
-    size_t tam = sizeof(s_cfg);
-    if (nvs_get_blob(h, NVS_CHAVE, &s_cfg, &tam) != ESP_OK || tam != sizeof(s_cfg)) {
+    size_t size = sizeof(s_cfg);
+    if (nvs_get_blob(h, NVS_CHAVE, &s_cfg, &size) != ESP_OK || size != sizeof(s_cfg)) {
       memset(&s_cfg, 0, sizeof(s_cfg));
     }
     nvs_close(h);
   }
-  // Nenhum canal aprendido: o padrao de fabrica de todo no, LongFast com a
-  // chave padrao (psk de 1 byte = 1).
+  // Nenhum canal aprendido: o default of fabrica of todo no, LongFast com a
+  // chave default (psk of 1 byte = 1).
   bool algum = false;
   for (int i = 0; i < MAX_CANAIS; ++i) { if (s_cfg.canais[i].papel) { algum = true; } }
   if (!algum) {
@@ -101,15 +101,15 @@ static void gravar_cfg(void)
   nvs_close(h);
 }
 
-void mesh_mqtt_aprender_canal(int idx, int papel, const char* nome, const uint8_t* psk, size_t n_psk)
+void mesh_mqtt_aprender_canal(int idx, int papel, const char* name, const uint8_t* psk, size_t n_psk)
 {
   if (idx < 0 || idx >= MAX_CANAIS) { return; }
   canal_t novo = { };
   novo.papel = (uint8_t)papel;
-  snprintf(novo.name, sizeof(novo.name), "%s", nome ? nome : "");
+  snprintf(novo.name, sizeof(novo.name), "%s", name ? name : "");
   novo.n_psk = (uint8_t)(n_psk > sizeof(novo.psk) ? sizeof(novo.psk) : n_psk);
   if (psk && novo.n_psk) { memcpy(novo.psk, psk, novo.n_psk); }
-  travar_cfg();
+  lock_cfg();
   garantir_cfg();
   if (memcmp(&s_cfg.canais[idx], &novo, sizeof(novo)) != 0) {
     s_cfg.canais[idx] = novo;
@@ -121,52 +121,52 @@ void mesh_mqtt_aprender_canal(int idx, int papel, const char* nome, const uint8_
 
 void mesh_mqtt_aprender_regiao(int regiao)
 {
-  travar_cfg();
+  lock_cfg();
   garantir_cfg();
   if (s_cfg.regiao != regiao) { s_cfg.regiao = regiao; gravar_cfg(); }
   destravar_cfg();
 }
 
-void mesh_mqtt_aprender_servidor(const char* endereco, const char* usuario,
+void mesh_mqtt_aprender_servidor(const char* endereco, const char* user,
                                  const char* senha, const char* raiz)
 {
   cfg_t c;
-  travar_cfg();
+  lock_cfg();
   garantir_cfg();
   c = s_cfg;
   snprintf(c.srv,  sizeof(c.srv),  "%s", endereco ? endereco : "");
-  snprintf(c.usr,  sizeof(c.usr),  "%s", usuario ? usuario : "");
+  snprintf(c.usr,  sizeof(c.usr),  "%s", user ? user : "");
   snprintf(c.pwd,  sizeof(c.pwd),  "%s", senha ? senha : "");
   snprintf(c.raiz, sizeof(c.raiz), "%s", raiz ? raiz : "");
   if (memcmp(&c, &s_cfg, sizeof(c)) != 0) { s_cfg = c; gravar_cfg(); ESP_LOGI(TAG, "servidor aprendido do no"); }
   destravar_cfg();
 }
 
-// Raiz oficial do servidor padrao (ver SRV_PADRAO).
+// Raiz oficial of servidor default (ver SRV_PADRAO).
 #define RAIZ_PADRAO "msh"
 
-// "msh/BR_902": a raiz que o no usa. O firmware poe a regiao na raiz quando a
+// "msh/BR_902": a raiz que o no usa. O firmware poe a regiao in raiz when a
 // regiao e escolhida; se o no mandou uma raiz, vale ela.
-static void raiz_efetiva(char* out, size_t tam)
+static void raiz_efetiva(char* out, size_t size)
 {
-  // Sem servidor aprendido do no vale o padrao, com a raiz dele.
-  if (!s_cfg.srv[0]) { snprintf(out, tam, "%s", RAIZ_PADRAO); return; }
-  if (s_cfg.raiz[0]) { snprintf(out, tam, "%s", s_cfg.raiz); return; }
+  // Sem servidor aprendido of no vale o default, com a raiz dele.
+  if (!s_cfg.srv[0]) { snprintf(out, size, "%s", RAIZ_PADRAO); return; }
+  if (s_cfg.raiz[0]) { snprintf(out, size, "%s", s_cfg.raiz); return; }
   const int r = s_cfg.regiao;
-  if (r > 0 && r < (int)(sizeof(REGIOES) / sizeof(REGIOES[0]))) { snprintf(out, tam, "msh/%s", REGIOES[r]); }
-  else { snprintf(out, tam, "%s", RAIZ_PADRAO); }
+  if (r > 0 && r < (int)(sizeof(REGIOES) / sizeof(REGIOES[0]))) { snprintf(out, size, "msh/%s", REGIOES[r]); }
+  else { snprintf(out, size, "%s", RAIZ_PADRAO); }
 }
 
 // ---------------------------------------------------------------------------
-// CRIPTOGRAFIA DO CANAL - AES-CTR, a mesma do firmware (CryptoEngine.cpp)
+// CRIPTOGRAFIA DO CANAL - AES-CTR, a mesma of firmware (CryptoEngine.cpp)
 // ---------------------------------------------------------------------------
-// psk de 1 byte e um INDICE: 0 = sem cifra, 1 = a chave padrao, N = a padrao
-// com o ultimo byte somado de N-1. 16 ou 32 bytes = AES-128/256 com ela.
+// psk of 1 byte e one INDICE: 0 = sem cifra, 1 = a chave default, N = a default
+// com o ultimo byte somado of N-1. 16 ou 32 bytes = AES-128/256 com ela.
 static const uint8_t CHAVE_PADRAO[16] = {
   0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01,
 };
 
-static size_t chave_do_canal(const canal_t& c, uint8_t chave[32])
+static size_t chave_of_canal(const canal_t& c, uint8_t chave[32])
 {
   if (c.n_psk == 1) {
     if (c.psk[0] == 0) { return 0; }
@@ -178,28 +178,28 @@ static size_t chave_do_canal(const canal_t& c, uint8_t chave[32])
   return 0;
 }
 
-// O "channel" de um pacote cifrado nao e o indice, e este hash: XOR dos bytes
-// do nome com o XOR dos bytes da chave.
-static uint8_t hash_do_canal(const canal_t& c)
+// O "channel" of one pacote cifrado nao e o indice, e este hash: XOR dos bytes
+// of name com o XOR dos bytes of chave.
+static uint8_t hash_of_canal(const canal_t& c)
 {
   uint8_t h = 0, chave[32];
   for (const char* p = c.name; *p; ++p) { h ^= (uint8_t)*p; }
-  const size_t n = chave_do_canal(c, chave);
+  const size_t n = chave_of_canal(c, chave);
   for (size_t i = 0; i < n; ++i) { h ^= chave[i]; }
   return h;
 }
 
-// Nonce: id do pacote (64 bits, LE) + no de origem (32 bits, LE) + zeros. O
-// contador do CTR anda nos ultimos bytes - igual para cifrar e decifrar.
-static bool cifrar(const canal_t& c, uint32_t id, uint32_t de, const uint8_t* in, size_t n, uint8_t* out)
+// Nonce: id of pacote (64 bits, LE) + no of origem (32 bits, LE) + zeros. O
+// contador of CTR anda nos ultimos bytes - igual para cifrar e decifrar.
+static bool cifrar(const canal_t& c, uint32_t id, uint32_t of, const uint8_t* in, size_t n, uint8_t* out)
 {
   uint8_t chave[32];
-  const size_t nk = chave_do_canal(c, chave);
+  const size_t nk = chave_of_canal(c, chave);
   if (nk == 0) { memcpy(out, in, n); return true; }
   uint8_t nonce[16] = { }, bloco[16] = { };
   const uint64_t id64 = id;
   memcpy(nonce, &id64, 8);
-  memcpy(nonce + 8, &de, 4);
+  memcpy(nonce + 8, &of, 4);
   size_t desl = 0;
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
@@ -213,38 +213,38 @@ static bool cifrar(const canal_t& c, uint32_t id, uint32_t de, const uint8_t* in
 // ESTADO DO ENLACE
 // ---------------------------------------------------------------------------
 #define QUADRO_MAX 600
-typedef struct { uint16_t n; uint8_t d[QUADRO_MAX]; } quadro_t;
+typedef struct { uint16_t n; uint8_t d[QUADRO_MAX]; } frame_t;
 
 static esp_mqtt_client_handle_t s_cli = nullptr;
 static QueueHandle_t   s_fila = nullptr;
-static volatile bool   s_conectado = false, s_conectou_agora = false;
+static volatile bool   s_conectado = false, s_conectou_now = false;
 static uint32_t        s_num = 0;
 static char            s_curto[8] = "", s_longo[40] = "";
 static char            s_descr[96] = "internet: parado";
 
-// PROXY (ver o .hpp). O que o no disse da propria configuracao MQTT vem do
-// dump e mora so em RAM; a raiz e aprendida do PRIMEIRO topico que o no
+// PROXY (ver o .hpp). O que o no disse of propria configuracao MQTT vem of
+// dump e mora so em RAM; a raiz e aprendida of PRIMEIRO topico que o no
 // publica - e a fonte mais certa, porque e literalmente o que ele usa.
-static volatile bool s_proxy = false;   // o cliente de pe e o do proxy
+static volatile bool s_proxy = false;   // o cliente of pe e o of proxy
 static bool     s_no_mqtt = false, s_no_proxy = false, s_no_tls = false;
 static bool     s_downlink[MAX_CANAIS];
-static char     s_px_raiz[48] = "";       // a assinada agora ("" = nenhuma)
-static char     s_px_raiz_no[48] = "";    // a aprendida do topico publicado pelo no
+static char     s_px_raiz[48] = "";       // a assinada now ("" = none)
+static char     s_px_raiz_no[48] = "";    // a aprendida of topico publicado pelo no
 static uint32_t s_px_subiu = 0, s_px_desceu = 0, s_px_perdeu = 0;
 
-// Envio publicado com QoS 1 -> o PUBACK do servidor vira o "confirmado" da tela.
+// Envio publicado com QoS 1 -> o PUBACK of servidor vira o "confirmado" of screen.
 #define PENDENTES 8
 typedef struct { int msg; uint32_t id; } pend_t;
 static pend_t s_pend[PENDENTES];
 static int s_prox_pend = 0;
 
-// Duas tarefas entregam (a do cliente MQTT e a do servico, respondendo ao
-// want_config): o quadro de montagem e unico e estatico (600 bytes na stack
-// do servico pesariam), entao passa por uma trava.
+// Duas tarefas entregam (a of cliente MQTT e a of servico, respondendo on
+// want_config): o frame of montagem e unico e estatico (600 bytes in stack
+// of servico pesariam), entao passa por uma trava.
 static SemaphoreHandle_t s_trava_ent = nullptr;
 static SemaphoreHandle_t s_trava_env = nullptr;   // ver mesh_mqtt_enviar
-// FILA CHEIA: um aviso a cada 10 s, com o total e QUAL fila - um por pacote
-// inundava o log numa rajada, e "queue cheia" sozinho nao dizia de que rede.
+// FILA CHEIA: one aviso a cada 10 s, com o total e QUAL fila - one por pacote
+// inundava o log numa rajada, e "queue cheia" sozinho nao dizia of que rede.
 static QueueHandle_t s_rede_internet_fila_ref = nullptr;   // ver s_rede_internet_fila, mais abaixo
 static uint32_t s_perdidos[2] = { 0, 0 };        // 0 = no (internet/proxy), 1 = rede publica
 static void perdeu(QueueHandle_t fila)
@@ -252,19 +252,19 @@ static void perdeu(QueueHandle_t fila)
   const int k = (fila && fila == s_rede_internet_fila_ref) ? 1 : 0;
   ++s_perdidos[k];
   static int64_t ultimo_us[2] = { 0, 0 };
-  const int64_t agora = esp_timer_get_time();
-  if (agora - ultimo_us[k] >= 10000000) {
-    ultimo_us[k] = agora;
+  const int64_t now = esp_timer_get_time();
+  if (now - ultimo_us[k] >= 10000000) {
+    ultimo_us[k] = now;
     ESP_LOGW(TAG, "fila %s cheia - %lu pacote(s) descartado(s) desde o boot",
              k ? "internet" : "no", (unsigned long)s_perdidos[k]);
   }
 }
 
-// MONTAGEM SEM PILHA. As tarefas dos clientes MQTT tem pilha justa (3,5 KB
-// no da internet, pico medido de 2,6 KB) e as duas chegam aqui: o quadro e
-// montado DIRETO no quadro estatico que vai para a fila, sob s_trava_ent -
-// nenhum buffer de 600 bytes na pilha de ninguem.
-static quadro_t s_q;                     // o que vai para a fila (xQueueSend copia)
+// MONTAGEM SEM PILHA. As tarefas dos clientes MQTT tem stack justa (3,5 KB
+// no of internet, pico measured of 2,6 KB) e as duas chegam aqui: o frame e
+// montado DIRETO no frame estatico que vai para a fila, sob s_trava_ent -
+// nenhum buffer of 600 bytes in stack of ninguem.
+static frame_t s_q;                     // o que vai para a fila (xQueueSend copia)
 static uint8_t  s_pacote[QUADRO_MAX];    // MeshPacket em montagem (entregar_pacote)
 
 // Com s_trava_ent tomada.
@@ -288,35 +288,35 @@ static bool entregar_em(QueueHandle_t fila, const uint8_t* d, size_t n)
 }
 static bool entregar(const uint8_t* d, size_t n) { return entregar_em(s_fila, d, n); }
 
-// FromRadio{ campo: corpo } para o servico, como o radio entregaria.
-static bool entregar_from_radio(QueueHandle_t fila, int campo, const pb_escritor_t* corpo)
+// FromRadio{ field: body } para o servico, como o radio entregaria.
+static bool entregar_from_radio(QueueHandle_t fila, int field, const pb_escritor_t* body)
 {
   if (!fila || !s_trava_ent) { return false; }
   xSemaphoreTake(s_trava_ent, portMAX_DELAY);
   pb_escritor_t f = pb_escritor(s_q.d, sizeof(s_q.d));
-  pb_w_sub(&f, campo, corpo);
+  pb_w_sub(&f, field, body);
   const bool ok = enfileirar(fila, pb_tamanho(&f));
   xSemaphoreGive(s_trava_ent);
   return ok;
 }
 
-// UM PACOTE COMO O RADIO O ENTREGARIA, a partir de um Data ja montado:
+// UM PACOTE COMO O RADIO O ENTREGARIA, a partir of one Data ja montado:
 // FromRadio{ 2: packet MeshPacket{ 1: from, 2: to, 4: decoded, 6: id,
-// 7: rx_time, 14: via_mqtt } }. 'da_internet' carimba a hora de chegada e o
-// via_mqtt (o que veio do servidor); a confirmacao do PUBACK vai sem os dois,
-// como a do radio.
-static bool entregar_pacote(QueueHandle_t fila, uint32_t de, uint32_t para,
-                            const pb_escritor_t* data, bool da_internet)
+// 7: rx_time, 14: via_mqtt } }. 'da_internet' carimba a hora of chegada e o
+// via_mqtt (o que veio of servidor); a confirmacao of PUBACK vai sem os dois,
+// como a of radio.
+static bool entregar_pacote(QueueHandle_t fila, uint32_t of, uint32_t para,
+                            const pb_escritor_t* data, bool of_internet)
 {
   if (!fila || !s_trava_ent) { return false; }
   xSemaphoreTake(s_trava_ent, portMAX_DELAY);
   pb_escritor_t w = pb_escritor(s_pacote, sizeof(s_pacote));
-  pb_w_fixo32(&w, 1, de);
+  pb_w_fixo32(&w, 1, of);
   pb_w_fixo32(&w, 2, para);
   pb_w_sub(&w, 4, data);
   pb_w_fixo32(&w, 6, esp_random() | 1u);
-  if (da_internet) {
-    if (const uint32_t agora = tab5_time_epoch()) { pb_w_fixo32(&w, 7, agora); }
+  if (of_internet) {
+    if (const uint32_t now = tab5_time_epoch()) { pb_w_fixo32(&w, 7, now); }
     pb_w_num(&w, 14, 1);
   }
   pb_escritor_t f = pb_escritor(s_q.d, sizeof(s_q.d));
@@ -327,12 +327,12 @@ static bool entregar_pacote(QueueHandle_t fila, uint32_t de, uint32_t para,
 }
 
 // ---------------------------------------------------------------------------
-// A REDE PUBLICA PELA INTERNET - um segundo cliente, em paralelo (ver o .hpp)
+// A REDE PUBLICA PELA INTERNET - one segundo cliente, em paralelo (ver o .hpp)
 // ---------------------------------------------------------------------------
-// O servidor publico do projeto, com a raiz da regiao US e o LongFast de
-// fabrica (chave padrao). O resto do enlace e o mesmo do modo internet: a
+// O servidor publico of projeto, com a raiz of regiao US e o LongFast of
+// fabrica (chave default). O resto of enlace e o mesmo of modo internet: a
 // mesma decifragem, o mesmo envelope, a mesma confirmacao pelo PUBACK - so a
-// fila e outra, e o servico marca o que sai dela como da rede de internet.
+// fila e outra, e o servico marca o que exit dela como of rede of internet.
 #define INTERNET_SRV  "mqtt.meshtastic.org"
 #define INTERNET_RAIZ "msh/US"
 static const canal_t CANAL_INTERNET = { 1, "LongFast", 1, { 1 } };
@@ -344,37 +344,37 @@ static pend_t          s_rede_internet_pend[8];
 static int             s_rede_internet_prox_pend = 0;
 static uint32_t        s_rede_internet_recebidos = 0;
 
-static int canal_por_nome(const char* nome, size_t n)
+static int canal_por_name(const char* name, size_t n)
 {
   for (int i = 0; i < MAX_CANAIS; ++i) {
     const canal_t& c = s_cfg.canais[i];
-    if (c.papel && strlen(c.name) == n && memcmp(c.name, nome, n) == 0) { return i; }
+    if (c.papel && strlen(c.name) == n && memcmp(c.name, name, n) == 0) { return i; }
   }
   return -1;
 }
 
-// Relatorio de mapa (<raiz>/2/map/): vai sem cifra e traz nome, papel, modelo e
-// posicao do no - o jeito de conhecer os nos que nao mandam NodeInfo pelo canal.
-// Vira um NodeInfo e uma Position, como se o radio os tivesse ouvido.
+// Relatorio of mapa (<raiz>/2/map/): vai sem cifra e traz name, papel, modelo e
+// position of no - o jeito of conhecer os nos que nao mandam NodeInfo pelo canal.
+// Vira one NodeInfo e uma Position, como se o radio os tivesse ouvido.
 static void processar_mapa(const uint8_t* d, size_t n)
 {
   pb_leitor_t l = pb_leitor(d, n);
-  pb_campo_t c;
+  pb_field_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
-  while (pb_campo(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
+  while (pb_field(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
   if (!mp) { return; }
-  uint32_t de = 0;
+  uint32_t of = 0;
   const uint8_t* dec = nullptr; size_t n_dec = 0;
   l = pb_leitor(mp, n_mp);
-  while (pb_campo(&l, &c)) {
-    if (c.num == 1 && c.type == 5) { de = (uint32_t)c.v; }
+  while (pb_field(&l, &c)) {
+    if (c.num == 1 && c.type == 5) { of = (uint32_t)c.v; }
     else if (c.num == 4 && c.type == 2) { dec = c.val; n_dec = c.n_val; }
   }
-  if (!dec || !de || de == s_num) { return; }
+  if (!dec || !of || of == s_num) { return; }
   const uint8_t* rel = nullptr; size_t n_rel = 0;
   uint64_t porta = 0;
   l = pb_leitor(dec, n_dec);
-  while (pb_campo(&l, &c)) {
+  while (pb_field(&l, &c)) {
     if (c.num == 1 && c.type == 0) { porta = c.v; }
     else if (c.num == 2 && c.type == 2) { rel = c.val; n_rel = c.n_val; }
   }
@@ -385,7 +385,7 @@ static void processar_mapa(const uint8_t* d, size_t n)
   uint64_t papel = 0, modelo = 0;
   uint32_t lat = 0, lon = 0;
   l = pb_leitor(rel, n_rel);
-  while (pb_campo(&l, &c)) {
+  while (pb_field(&l, &c)) {
     if      (c.num == 1  && c.type == 2) { longo = c.val; n_longo = c.n_val; }
     else if (c.num == 2  && c.type == 2) { curto = c.val; n_curto = c.n_val; }
     else if (c.num == 3  && c.type == 0) { papel = c.v; }
@@ -396,21 +396,21 @@ static void processar_mapa(const uint8_t* d, size_t n)
   if (!n_longo && !n_curto) { return; }
 
   char id[12];
-  snprintf(id, sizeof(id), "!%08lx", (unsigned long)de);
+  snprintf(id, sizeof(id), "!%08lx", (unsigned long)of);
 
   // NodeInfo: Data{ 1: NODEINFO_APP, 2: User{ 1: id, 2: long_name,
   // 3: short_name, 5: hw_model, 7: role } }
-  static uint8_t user[128], dados[160];   // so o cliente do no le mapa: estatico, fora da pilha
+  static uint8_t user[128], data[160];   // so o cliente of no le mapa: estatico, fora of stack
   pb_escritor_t wu = pb_escritor(user, sizeof(user));
-  pb_w_texto(&wu, 1, id, sizeof(id));
+  pb_w_text(&wu, 1, id, sizeof(id));
   if (n_longo) { pb_w_bytes(&wu, 2, longo, n_longo); }
   if (n_curto) { pb_w_bytes(&wu, 3, curto, n_curto); }
   if (modelo)  { pb_w_num(&wu, 5, modelo); }
   if (papel)   { pb_w_num(&wu, 7, papel); }
-  pb_escritor_t wd = pb_escritor(dados, sizeof(dados));
+  pb_escritor_t wd = pb_escritor(data, sizeof(data));
   pb_w_num(&wd, 1, 4);
   pb_w_sub(&wd, 2, &wu);
-  entregar_pacote(s_fila, de, MESH_PB_DIFUSAO, &wd, true);
+  entregar_pacote(s_fila, of, MESH_PB_DIFUSAO, &wd, true);
 
   // Position: Data{ 1: POSITION_APP, 2: Position{ 1: lat, 2: lon } }
   if (lat || lon) {
@@ -418,26 +418,26 @@ static void processar_mapa(const uint8_t* d, size_t n)
     pb_escritor_t wp = pb_escritor(pos, sizeof(pos));
     pb_w_fixo32(&wp, 1, lat);
     pb_w_fixo32(&wp, 2, lon);
-    wd = pb_escritor(dados, sizeof(dados));
+    wd = pb_escritor(data, sizeof(data));
     pb_w_num(&wd, 1, 3);
     pb_w_sub(&wd, 2, &wp);
-    entregar_pacote(s_fila, de, MESH_PB_DIFUSAO, &wd, true);
+    entregar_pacote(s_fila, of, MESH_PB_DIFUSAO, &wd, true);
   }
 }
 
 // ServiceEnvelope{1: packet, 2: channel_id, 3: gateway_id} -> FromRadio.
-// Anel de (origem ^ id) ja vistos, um por cliente (cada um so e mexido pela
-// tarefa dele). O da internet e maior: ~40 pacotes novos por segundo la, e as
-// copias chegam ao longo de alguns segundos.
+// Anel of (origem ^ id) ja vistos, one por cliente (cada one so e mexido pela
+// tarefa dele). O of internet e maior: ~40 pacotes novos por segundo la, e as
+// copias chegam on longo of alguns segundos.
 #define VISTOS_NO  128
 #define VISTOS_INTERNET 512
 static uint32_t s_vistos_no[VISTOS_NO], s_vistos_internet[VISTOS_INTERNET];
 static int      s_prox_visto[2] = { 0, 0 };
 
-static bool ja_visto(int k, uint32_t de, uint32_t id)
+static bool ja_visto(int k, uint32_t of, uint32_t id)
 {
   if (id == 0) { return false; }
-  const uint32_t ch = (de * 2654435761u) ^ id;
+  const uint32_t ch = (of * 2654435761u) ^ id;
   uint32_t* v = k ? s_vistos_internet : s_vistos_no;
   const int n = k ? VISTOS_INTERNET : VISTOS_NO;
   for (int i = 0; i < n; ++i) { if (v[i] == ch) { return true; } }
@@ -456,86 +456,86 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   const char* e = nullptr;
   for (int i = 0; i + 5 <= n_top; ++i) { if (memcmp(topico + i, "/2/e/", 5) == 0) { e = topico + i + 5; } }
   if (!e) { return; }
-  const char* fim_nome = e;
-  while (fim_nome < topico + n_top && *fim_nome != '/') { ++fim_nome; }
+  const char* end_name = e;
+  while (end_name < topico + n_top && *end_name != '/') { ++end_name; }
 
-  // UM PAR DE BUFFERS POR CLIENTE. As tarefas do cliente do no e do cliente
-  // da internet chegam aqui AO MESMO TEMPO (cada uma com o seu pacote); com um
-  // par so, uma decifrava por cima do pacote que a outra montava. Estatico,
-  // e nao pilha: a do cliente da internet tem 3,5 KB.
+  // UM PAR DE BUFFERS POR CLIENTE. As tarefas of cliente of no e of cliente
+  // of internet chegam aqui AO MESMO TEMPO (cada uma com o seu pacote); com one
+  // par so, uma decifrava por top of pacote que a outra montava. Estatico,
+  // e nao stack: a of cliente of internet tem 3,5 KB.
   static uint8_t s_claro[2][QUADRO_MAX], s_pkt[2][QUADRO_MAX];
   uint8_t* const claro = s_claro[internet ? 1 : 0];
   uint8_t* const pkt   = s_pkt[internet ? 1 : 0];
   int idx;
   canal_t canal;
   if (internet) {
-    // Na rede de internet so o LongFast de fabrica: os canais aprendidos do no sao daqui.
-    const size_t nn = (size_t)(fim_nome - e);
+    // Na rede of internet so o LongFast of fabrica: os canais aprendidos of no sao daqui.
+    const size_t nn = (size_t)(end_name - e);
     idx = (nn == strlen(CANAL_INTERNET.name) && memcmp(e, CANAL_INTERNET.name, nn) == 0) ? 0 : -1;
     canal = CANAL_INTERNET;
   } else {
-    travar_cfg();
-    idx = canal_por_nome(e, (size_t)(fim_nome - e));
+    lock_cfg();
+    idx = canal_por_name(e, (size_t)(end_name - e));
     canal = idx >= 0 ? s_cfg.canais[idx] : canal_t{ };
     destravar_cfg();
   }
   if (idx < 0) { return; }
 
   pb_leitor_t l = pb_leitor(d, n);
-  pb_campo_t c;
+  pb_field_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
-  while (pb_campo(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
+  while (pb_field(&l, &c)) { if (c.num == 1 && c.type == 2) { mp = c.val; n_mp = c.n_val; } }
   if (!mp) { return; }
 
-  uint32_t de = 0, id = 0;
+  uint32_t of = 0, id = 0;
   const uint8_t* cif = nullptr; size_t n_cif = 0;
   const uint8_t* dec = nullptr; size_t n_dec = 0;
   l = pb_leitor(mp, n_mp);
-  while (pb_campo(&l, &c)) {
-    if      (c.num == 1 && c.type == 5) { de = (uint32_t)c.v; }
+  while (pb_field(&l, &c)) {
+    if      (c.num == 1 && c.type == 5) { of = (uint32_t)c.v; }
     else if (c.num == 6 && c.type == 5) { id = (uint32_t)c.v; }
     else if (c.num == 5 && c.type == 2) { cif = c.val; n_cif = c.n_val; }
     else if (c.num == 4 && c.type == 2) { dec = c.val; n_dec = c.n_val; }
   }
-  if (de == s_num && s_num) { return; }   // o nosso proprio envio voltando pelo servidor
+  if (of == s_num && s_num) { return; }   // o nosso proprio send_state voltando pelo servidor
   // O MESMO PACOTE DE VARIOS GATEWAYS: cada no com MQTT que o ouviu publica a
-  // sua copia. No servidor publico sao 3 de cada 4 mensagens (medido: 153/s,
+  // sua copia. No servidor publico sao 3 of cada 4 mensagens (measured: 153/s,
   // 75% repetidas) - e cada uma era decifrada, enfileirada e lida pelo
-  // servico a toa. Corta aqui, antes do AES, pelo par (origem, id).
-  if (ja_visto(internet ? 1 : 0, de, id)) { return; }
+  // servico a toa. Corta aqui, antes of AES, pelo par (origem, id).
+  if (ja_visto(internet ? 1 : 0, of, id)) { return; }
   if (cif) {
-    if (n_cif > QUADRO_MAX || !cifrar(canal, id, de, cif, n_cif, claro)) { return; }
-    // Chave errada (ou mensagem direta com PKI) da lixo: um Data de verdade
-    // comeca pelo campo 1 (portnum, varint).
+    if (n_cif > QUADRO_MAX || !cifrar(canal, id, of, cif, n_cif, claro)) { return; }
+    // Chave errada (ou message direta com PKI) of lixo: one Data of verdade
+    // comeca pelo field 1 (portnum, varint).
     if (n_cif == 0 || claro[0] != 0x08) { return; }
     dec = claro; n_dec = n_cif;
   }
   if (!dec) { return; }
-  // DA INTERNET SO TEXTO (1) E APRESENTACAO (4, o nome de quem fala). O resto -
-  // posicao, telemetria, traceroute - e a maior parte do LongFast de la, nao
+  // DA INTERNET SO TEXTO (1) E APRESENTACAO (4, o name of quem fala). O resto -
+  // position, telemetria, traceroute - e a maior parte of LongFast of la, nao
   // aparece em lugar nenhum daqui e enchia a fila. Data comeca pelo portnum
   // (0x08 <varint>), e as duas portas cabem num byte.
   if (internet && n_dec >= 2 && dec[1] != 1 && dec[1] != 4) { return; }
 
-  // MeshPacket de novo, como o radio entregaria: o resto dos campos cru, o
-  // canal como INDICE, o Data decifrado, a hora de chegada e via_mqtt.
+  // MeshPacket of novo, como o radio entregaria: o resto dos campos cru, o
+  // canal como INDICE, o Data decifrado, a hora of chegada e via_mqtt.
   pb_escritor_t w = pb_escritor(pkt, QUADRO_MAX);
   l = pb_leitor(mp, n_mp);
-  while (pb_campo(&l, &c)) {
+  while (pb_field(&l, &c)) {
     if (c.num == 3 || c.num == 4 || c.num == 5 || c.num == 7 || c.num == 14) { continue; }
     pb_w_cru(&w, c.ini, c.n_total);
   }
   pb_w_num(&w, 3, (uint64_t)idx);
   pb_w_bytes(&w, 4, dec, n_dec);
-  if (const uint32_t agora = tab5_time_epoch()) { pb_w_fixo32(&w, 7, agora); }
+  if (const uint32_t now = tab5_time_epoch()) { pb_w_fixo32(&w, 7, now); }
   pb_w_num(&w, 14, 1);                 // via_mqtt (o 13 e o obsoleto 'delayed')
   if (entregar_from_radio(fila, 2, &w) && internet) { ++s_rede_internet_recebidos; }   // FromRadio.packet
 }
 
-// O PUBACK do nosso envio: um Routing com erro 0 para o id, como o radio
-// manda quando um vizinho repete o pacote - aqui quer dizer "o servidor
+// O PUBACK of nosso send_state: one Routing com erro 0 para o id, como o radio
+// manda when one vizinho repete o pacote - aqui quer dizer "o servidor
 // recebeu".
-static void confirmar(uint32_t id, QueueHandle_t fila)
+static void confirm(uint32_t id, QueueHandle_t fila)
 {
   uint8_t data[24];
   pb_escritor_t d = pb_escritor(data, sizeof(data));
@@ -549,21 +549,21 @@ static void confirmar(uint32_t id, QueueHandle_t fila)
 static void assinar(void)
 {
   char raiz[48], topico[96];
-  travar_cfg();
+  lock_cfg();
   raiz_efetiva(raiz, sizeof(raiz));
   for (int i = 0; i < MAX_CANAIS; ++i) {
     if (!s_cfg.canais[i].papel || !s_cfg.canais[i].name[0]) { continue; }
     snprintf(topico, sizeof(topico), "%s/2/e/%s/#", raiz, s_cfg.canais[i].name);
     esp_mqtt_client_subscribe(s_cli, topico, 0);
     ESP_LOGI(TAG, "assinando %s", topico);
-    // Sub-raizes (msh/BR/SP/2/e/...): um nivel abaixo, onde os estados e
+    // Sub-raizes (msh/BR/SP/2/e/...): one level abaixo, onde os estados e
     // cidades publicam. Nao tem cifra diferente: e o mesmo canal.
     snprintf(topico, sizeof(topico), "%s/+/2/e/%s/#", raiz, s_cfg.canais[i].name);
     esp_mqtt_client_subscribe(s_cli, topico, 0);
     snprintf(topico, sizeof(topico), "%s/+/+/2/e/%s/#", raiz, s_cfg.canais[i].name);   // meshdev/<pais>/<regiao>/2/e/...
     esp_mqtt_client_subscribe(s_cli, topico, 0);
   }
-  // Relatorios de mapa: nomes e posicoes de nos que nunca mandaram NodeInfo.
+  // Relatorios of mapa: nomes e posicoes of nos que nunca mandaram NodeInfo.
   snprintf(topico, sizeof(topico), "%s/2/map/", raiz);
   esp_mqtt_client_subscribe(s_cli, topico, 0);
   snprintf(topico, sizeof(topico), "%s/+/2/map/", raiz);
@@ -573,14 +573,14 @@ static void assinar(void)
   destravar_cfg();
 }
 
-// AS ASSINATURAS DO PROXY: as mesmas do app do celular - cada canal com
-// downlink ligado no no, mais o topico PKI das mensagens diretas (o no
+// AS ASSINATURAS DO PROXY: as mesmas of app of celular - cada canal com
+// downlink enabled no no, mais o topico PKI das mensagens diretas (o no
 // decifra; para o Tab5 sao bytes). Canal sem downlink nao e assinado: o no
 // descartaria o que viesse dele, e o trafego entraria a toa.
 static void assinar_proxy(const char* raiz, bool desfazer)
 {
   char topico[96];
-  travar_cfg();
+  lock_cfg();
   for (int i = 0; i < MAX_CANAIS; ++i) {
     if (!s_cfg.canais[i].papel || !s_cfg.canais[i].name[0] || !s_downlink[i]) { continue; }
     snprintf(topico, sizeof(topico), "%s/2/e/%s/+", raiz, s_cfg.canais[i].name);
@@ -593,17 +593,17 @@ static void assinar_proxy(const char* raiz, bool desfazer)
   else          { esp_mqtt_client_subscribe(s_cli, topico, 0); }
 }
 
-// A raiz do proxy: a que o no usa de fato (aprendida do topico), senao a do
-// dump, senao "msh" - o padrao do firmware.
-static void raiz_proxy(char* out, size_t tam)
+// A raiz of proxy: a que o no usa of fato (aprendida of topico), senao a of
+// dump, senao "msh" - o default of firmware.
+static void raiz_proxy(char* out, size_t size)
 {
-  if (s_px_raiz_no[0]) { snprintf(out, tam, "%s", s_px_raiz_no); return; }
-  travar_cfg();
-  snprintf(out, tam, "%s", s_cfg.raiz[0] ? s_cfg.raiz : "msh");
+  if (s_px_raiz_no[0]) { snprintf(out, size, "%s", s_px_raiz_no); return; }
+  lock_cfg();
+  snprintf(out, size, "%s", s_cfg.raiz[0] ? s_cfg.raiz : "msh");
   destravar_cfg();
 }
 
-static void assinar_proxy_agora(void)
+static void assinar_proxy_now(void)
 {
   char raiz[48];
   raiz_proxy(raiz, sizeof(raiz));
@@ -612,13 +612,13 @@ static void assinar_proxy_agora(void)
   assinar_proxy(raiz, false);
 }
 
-// DESCIDA: o que chegou do servidor vira ToRadio{ 6: MqttClientProxyMessage
-// { 1 topic, 2 data, 4 retained } } e vai para a fila; o servico entrega ao
-// no. 512 e o teto de um ToRadio no firmware (MAX_TO_FROM_RADIO_SIZE), pelo
+// DESCIDA: o que chegou of servidor vira ToRadio{ 6: MqttClientProxyMessage
+// { 1 topic, 2 data, 4 retained } } e vai para a fila; o servico entrega on
+// no. 512 e o teto of one ToRadio no firmware (MAX_TO_FROM_RADIO_SIZE), pelo
 // cabo e pelo Bluetooth.
-static void proxy_descer(const char* topico, int n_top, const uint8_t* d, size_t n, bool retido)
+static void proxy_lower(const char* topico, int n_top, const uint8_t* d, size_t n, bool retido)
 {
-  static uint8_t msg[QUADRO_MAX], saida[QUADRO_MAX];   // so a tarefa do cliente MQTT desce
+  static uint8_t msg[QUADRO_MAX], saida[QUADRO_MAX];   // so a tarefa of cliente MQTT desce
   pb_escritor_t m = pb_escritor(msg, sizeof(msg));
   pb_w_bytes(&m, 1, topico, (size_t)n_top);
   pb_w_bytes(&m, 2, d, n);
@@ -629,30 +629,30 @@ static void proxy_descer(const char* topico, int n_top, const uint8_t* d, size_t
   if (k && entregar(saida, k)) { ++s_px_desceu; } else { ++s_px_perdeu; }
 }
 
-static void ao_evento(void*, esp_event_base_t, int32_t id_ev, void* dados)
+static void on_evento(void*, esp_event_base_t, int32_t id_ev, void* data)
 {
-  esp_mqtt_event_handle_t ev = (esp_mqtt_event_handle_t)dados;
+  esp_mqtt_event_handle_t ev = (esp_mqtt_event_handle_t)data;
   switch ((esp_mqtt_event_id_t)id_ev) {
     case MQTT_EVENT_CONNECTED:
-      if (!s_conectado) { tab5_mem_marco("MQTT conectado"); }
+      if (!s_conectado) { tab5_memory_marco("MQTT conectado"); }
       s_conectado = true;
-      s_conectou_agora = true;
-      if (s_proxy) { s_px_raiz[0] = 0; assinar_proxy_agora(); }   // sessao nova: nada assinado
+      s_conectou_now = true;
+      if (s_proxy) { s_px_raiz[0] = 0; assinar_proxy_now(); }   // sessao nova: nada assinado
       else         { assinar(); }
       break;
     case MQTT_EVENT_DISCONNECTED:
       s_conectado = false;
       break;
     case MQTT_EVENT_DATA:
-      // Pacote em pedacos (maior que o buffer) nao e Meshtastic de verdade.
+      // Pacote em pedacos (maior que o buffer) nao e Meshtastic of verdade.
       if (ev->current_data_offset == 0 && ev->data_len == ev->total_data_len) {
-        if (s_proxy) { proxy_descer(ev->topic, ev->topic_len, (const uint8_t*)ev->data, (size_t)ev->data_len, ev->retain); }
+        if (s_proxy) { proxy_lower(ev->topic, ev->topic_len, (const uint8_t*)ev->data, (size_t)ev->data_len, ev->retain); }
         else         { processar(ev->topic, ev->topic_len, (const uint8_t*)ev->data, (size_t)ev->data_len, s_fila, false); }
       } else if (s_proxy && ev->current_data_offset == 0) { ++s_px_perdeu; }
       break;
     case MQTT_EVENT_PUBLISHED:
       for (int i = 0; i < PENDENTES; ++i) {
-        if (s_pend[i].msg == ev->msg_id && s_pend[i].id) { confirmar(s_pend[i].id, s_fila); s_pend[i].id = 0; }
+        if (s_pend[i].msg == ev->msg_id && s_pend[i].id) { confirm(s_pend[i].id, s_fila); s_pend[i].id = 0; }
       }
       break;
     default: break;
@@ -662,7 +662,7 @@ static void ao_evento(void*, esp_event_base_t, int32_t id_ev, void* dados)
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
-void mesh_mqtt_definir_no(uint32_t num, const char* curto, const char* longo)
+void mesh_mqtt_set_no(uint32_t num, const char* curto, const char* longo)
 {
   s_num = num;
   snprintf(s_curto, sizeof(s_curto), "%s", curto ? curto : "");
@@ -670,38 +670,38 @@ void mesh_mqtt_definir_no(uint32_t num, const char* curto, const char* longo)
 }
 
 // Os dois papeis sobem pelo mesmo caminho; muda o servidor, a identidade e o
-// que se assina (no CONNECTED). Com o cliente de pe no OUTRO papel, recusa:
-// quem troca de papel e o laco do servico, parando antes.
-static bool iniciar_cliente(bool proxy)
+// que se assina (no CONNECTED). Com o cliente of pe no OUTRO papel, recusa:
+// quem troca of papel e o laco of servico, stopping antes.
+static bool start_cliente(bool proxy)
 {
   if (s_cli) { return s_proxy == proxy; }
-  // 16 quadros: a descida do proxy chega em rajada (um servidor publico
-  // entrega o canal inteiro), e o enlace com o no esvazia a fila a cada volta.
-  if (!s_fila) { s_fila = xQueueCreateWithCaps(32, sizeof(quadro_t), MALLOC_CAP_SPIRAM); }
-  tab5_mutex_criar(&s_trava_ent);
-  tab5_mutex_criar(&s_trava_env);
+  // 16 quadros: a press_start of proxy chega em rajada (one servidor publico
+  // entrega o canal inteiro), e o enlace com o no esvazia a fila a cada iteration.
+  if (!s_fila) { s_fila = xQueueCreateWithCaps(32, sizeof(frame_t), MALLOC_CAP_SPIRAM); }
+  tab5_mutex_create(&s_trava_ent);
+  tab5_mutex_create(&s_trava_env);
   if (!s_fila || !s_trava_ent || !s_trava_env) { return false; }
   xQueueReset(s_fila);
 
   static char uri[96], usr[32], pwd[32], raiz[48], srv[64];
   const bool tls = proxy && s_no_tls;
-  travar_cfg();
+  lock_cfg();
   garantir_cfg();
-  // O SERVIDOR: no proxy e o do NO, exatamente - endereco vazio e o padrao do
+  // O SERVIDOR: no proxy e o of NO, exatamente - endereco vazio e o default of
   // firmware (mqtt.meshtastic.org, meshdev/large4cats). No modo internet,
-  // vazio e o padrao oficial usado por este sistema.
-  const char* padrao = proxy ? "mqtt.meshtastic.org" : SRV_PADRAO;
-  snprintf(srv, sizeof(srv), "%s", s_cfg.srv[0] ? s_cfg.srv : padrao);
-  // "host" ou "host:porta", como o app do Meshtastic grava.
+  // vazio e o default oficial usado por este sistema.
+  const char* default_server = proxy ? "mqtt.meshtastic.org" : SRV_PADRAO;
+  snprintf(srv, sizeof(srv), "%s", s_cfg.srv[0] ? s_cfg.srv : default_server);
+  // "host" ou "host:porta", como o app of Meshtastic grava.
   snprintf(uri, sizeof(uri), strchr(srv, ':') ? (tls ? "mqtts://%s" : "mqtt://%s") : (tls ? "mqtts://%s:8883" : "mqtt://%s:1883"), srv);
   snprintf(usr, sizeof(usr), "%s", s_cfg.srv[0] ? s_cfg.usr : USR_PADRAO);
   snprintf(pwd, sizeof(pwd), "%s", s_cfg.srv[0] ? s_cfg.pwd : PWD_PADRAO);
-  if (proxy) { destravar_cfg(); raiz_proxy(raiz, sizeof(raiz)); travar_cfg(); }
+  if (proxy) { destravar_cfg(); raiz_proxy(raiz, sizeof(raiz)); lock_cfg(); }
   else       { raiz_efetiva(raiz, sizeof(raiz)); }
   destravar_cfg();
 
-  // Identidade propria do proxy: dois clientes com o mesmo id no servidor
-  // derrubariam um ao outro, e o modo internet pode ter ficado registrado.
+  // Identidade propria of proxy: dois clientes com o mesmo id no servidor
+  // derrubariam one on outro, e o modo internet pode ter ficado registrado.
   static char cliente[24];
   snprintf(cliente, sizeof(cliente), proxy ? "tab5px-%08lx" : "tab5-%08lx", (unsigned long)s_num);
   esp_mqtt_client_config_t c = { };
@@ -710,32 +710,32 @@ static bool iniciar_cliente(bool proxy)
   c.credentials.authentication.password = pwd;
   c.credentials.client_id = cliente;
   c.buffer.size = 1024;
-  // Pico medido de ~2,6 KB com 6 KB (pilhas-*.csv, horas conectado recebendo
-  // a malha). Os quadros e a decifragem usam buffers static, nao pilha.
+  // Pico measured of ~2,6 KB com 6 KB (pilhas-*.csv, horas conectado recebendo
+  // a malha). Os quadros e a decifragem usam buffers static, nao stack.
   c.task.stack_size = 4096;
   c.network.reconnect_timeout_ms = 15000;
   if (tls) { c.broker.verification.crt_bundle_attach = esp_crt_bundle_attach; }
   s_proxy = proxy;
   s_cli = esp_mqtt_client_init(&c);
   if (!s_cli) { return false; }
-  esp_mqtt_client_register_event(s_cli, MQTT_EVENT_ANY, ao_evento, nullptr);
+  esp_mqtt_client_register_event(s_cli, MQTT_EVENT_ANY, on_evento, nullptr);
   if (esp_mqtt_client_start(s_cli) != ESP_OK) {
     esp_mqtt_client_destroy(s_cli);
     s_cli = nullptr;
     return false;
   }
-  tab5_mem_marco("MQTT (cliente + tarefa)");
+  tab5_memory_marco("MQTT (cliente + tarefa)");
   snprintf(s_descr, sizeof(s_descr), "%s: %s (%s)", proxy ? "proxy" : "internet", srv, raiz);
   ESP_LOGI(TAG, "conectando a %s, raiz %s, como !%08lx%s", uri, raiz, (unsigned long)s_num,
            proxy ? " - proxy do no" : "");
   return true;
 }
 
-bool mesh_mqtt_iniciar(void)       { return iniciar_cliente(false); }
-bool mesh_mqtt_iniciar_proxy(void) { return iniciar_cliente(true); }
+bool mesh_mqtt_start(void)       { return start_cliente(false); }
+bool mesh_mqtt_start_proxy(void) { return start_cliente(true); }
 bool mesh_mqtt_em_proxy(void)      { return s_cli && s_proxy; }
 
-void mesh_mqtt_parar(void)
+void mesh_mqtt_stop(void)
 {
   if (!s_cli) { return; }
   esp_mqtt_client_stop(s_cli);
@@ -744,17 +744,17 @@ void mesh_mqtt_parar(void)
   s_conectado = false;
   s_proxy = false;
   s_px_raiz[0] = 0;
-  if (s_fila) { xQueueReset(s_fila); }   // descida do proxy para um no que nao vai mais receber
+  if (s_fila) { xQueueReset(s_fila); }   // press_start of proxy para one no que nao vai mais receber
   snprintf(s_descr, sizeof(s_descr), "internet: parado");
   ESP_LOGI(TAG, "desconectado do servidor");
 }
 
-bool mesh_mqtt_ativo(void)     { return s_cli != nullptr; }
+bool mesh_mqtt_active(void)     { return s_cli != nullptr; }
 bool mesh_mqtt_conectado(void) { return s_cli && s_conectado; }
-bool mesh_mqtt_conectou_agora(void)
+bool mesh_mqtt_conectou_now(void)
 {
-  if (!s_conectou_agora) { return false; }
-  s_conectou_agora = false;
+  if (!s_conectou_now) { return false; }
+  s_conectou_now = false;
   return true;
 }
 
@@ -768,15 +768,15 @@ const char* mesh_mqtt_descricao(void)
 size_t mesh_mqtt_receber(uint8_t* buf, size_t max, uint32_t espera_ms)
 {
   if (!s_fila || s_proxy) { if (espera_ms) { vTaskDelay(pdMS_TO_TICKS(espera_ms)); } return 0; }
-  static quadro_t q;   // so a tarefa do servico recebe
+  static frame_t q;   // so a tarefa of servico recebe
   if (xQueueReceive(s_fila, &q, pdMS_TO_TICKS(espera_ms)) != pdTRUE) { return 0; }
   const size_t n = q.n < max ? q.n : max;
   memcpy(buf, q.d, n);
   return n;
 }
 
-// O want_config de um radio: o que o dump dele traria de essencial - o nosso
-// numero, o nosso NodeInfo, os canais e o fim da configuracao.
+// O want_config of one radio: o que o dump dele traria of essencial - o nosso
+// numero, o nosso NodeInfo, os canais e o end of configuracao.
 static void responder_config(void)
 {
   // FromRadio{ 3: my_info MyNodeInfo{ 1: my_node_num } }
@@ -790,15 +790,15 @@ static void responder_config(void)
   snprintf(id, sizeof(id), "!%08lx", (unsigned long)s_num);
   uint8_t u[96];
   pb_escritor_t wu = pb_escritor(u, sizeof(u));
-  pb_w_texto(&wu, 1, id, sizeof(id));
-  if (s_longo[0]) { pb_w_texto(&wu, 2, s_longo, sizeof(s_longo)); }
-  if (s_curto[0]) { pb_w_texto(&wu, 3, s_curto, sizeof(s_curto)); }
+  pb_w_text(&wu, 1, id, sizeof(id));
+  if (s_longo[0]) { pb_w_text(&wu, 2, s_longo, sizeof(s_longo)); }
+  if (s_curto[0]) { pb_w_text(&wu, 3, s_curto, sizeof(s_curto)); }
   w = pb_escritor(a, sizeof(a));
   pb_w_num(&w, 1, s_num);
   pb_w_sub(&w, 2, &wu);
   entregar_from_radio(s_fila, 4, &w);
 
-  travar_cfg();
+  lock_cfg();
   garantir_cfg();
   const cfg_t cfg = s_cfg;
   destravar_cfg();
@@ -809,7 +809,7 @@ static void responder_config(void)
     uint8_t cs[64];
     pb_escritor_t ws = pb_escritor(cs, sizeof(cs));
     if (c.n_psk) { pb_w_bytes(&ws, 2, c.psk, c.n_psk); }
-    pb_w_texto(&ws, 3, c.name, sizeof(c.name));
+    pb_w_text(&ws, 3, c.name, sizeof(c.name));
     w = pb_escritor(a, sizeof(a));
     pb_w_num(&w, 1, (uint64_t)i);
     pb_w_sub(&w, 2, &ws);
@@ -824,16 +824,16 @@ static void responder_config(void)
   entregar(b, pb_tamanho(&f));
 }
 
-// Chamada da tarefa do servico (want_config, batimento) E da de interface
-// (o app enviando): os buffers de montagem sao estaticos, uma de cada vez.
-static bool enviar_travado(const uint8_t* toradio, size_t n);
+// Chamada of tarefa of servico (want_config, batimento) E of of interface
+// (o app enviando): os buffers of montagem sao estaticos, uma of cada vez.
+static bool send_travado(const uint8_t* toradio, size_t n);
 static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox, int n_pend,
                           const canal_t& canal, const char* raiz, uint32_t para,
                           const uint8_t* dec, size_t n_dec, uint32_t id, uint64_t saltos);
 
-// O QUE O SERVICO MANDA, lido de volta: ToRadio{ 1: packet MeshPacket{ 2: to,
+// O QUE O SERVICO MANDA, lido of iteration: ToRadio{ 1: packet MeshPacket{ 2: to,
 // 3: channel, 4: decoded, 6: id, 9: hop_limit }, 3: want_config_id }. As
-// duas saidas (no e internet) leem o mesmo envelope - um leitor so.
+// duas saidas (no e internet) leem o mesmo envelope - one leitor so.
 typedef struct {
   bool           quer_config;   // want_config_id: o servico pedindo o "dump"
   uint32_t       para, id;
@@ -842,19 +842,19 @@ typedef struct {
   size_t         n_data;
 } to_radio_t;
 
-static void ler_to_radio(const uint8_t* b, size_t n, to_radio_t* t)
+static void read_to_radio(const uint8_t* b, size_t n, to_radio_t* t)
 {
   *t = { false, MESH_PB_DIFUSAO, 0, 0, 3, nullptr, 0 };
   pb_leitor_t l = pb_leitor(b, n);
-  pb_campo_t c;
+  pb_field_t c;
   const uint8_t* mp = nullptr; size_t n_mp = 0;
-  while (pb_campo(&l, &c)) {
+  while (pb_field(&l, &c)) {
     if      (c.num == 1 && c.type == PB_LEN)    { mp = c.val; n_mp = c.n_val; }
     else if (c.num == 3 && c.type == PB_VARINT) { t->quer_config = true; }
   }
   if (!mp) { return; }
   l = pb_leitor(mp, n_mp);
-  while (pb_campo(&l, &c)) {
+  while (pb_field(&l, &c)) {
     if      (c.num == 2 && c.type == PB_FIXO32) { t->para = (uint32_t)c.v; }
     else if (c.num == 3 && c.type == PB_VARINT) { t->channel = c.v; }
     else if (c.num == 4 && c.type == PB_LEN)    { t->data = c.val; t->n_data = c.n_val; }
@@ -864,40 +864,40 @@ static void ler_to_radio(const uint8_t* b, size_t n, to_radio_t* t)
   if (t->id == 0) { t->id = esp_random() | 1u; }
 }
 
-bool mesh_mqtt_enviar(const uint8_t* toradio, size_t n)
+bool mesh_mqtt_send(const uint8_t* toradio, size_t n)
 {
-  // NO PROXY O CLIENTE E DO NO: nada do Tab5 sai por ele como se fosse um
-  // radio (cifrar com a chave do canal e publicar em nome do no daria a
-  // mesma mensagem duas vezes, quando o no publicar a dele).
+  // NO PROXY O CLIENTE E DO NO: nada of Tab5 exit por ele como se fosse one
+  // radio (cifrar com a chave of canal e publicar em name of no daria a
+  // mesma message duas vezes, when o no publicar a dele).
   if (!s_trava_env || s_proxy) { return false; }
   xSemaphoreTake(s_trava_env, portMAX_DELAY);
-  const bool ok = enviar_travado(toradio, n);
+  const bool ok = send_travado(toradio, n);
   xSemaphoreGive(s_trava_env);
   return ok;
 }
 
-static bool enviar_travado(const uint8_t* toradio, size_t n)
+static bool send_travado(const uint8_t* toradio, size_t n)
 {
   // SEM CLIENTE NAO HA PARA QUEM RESPONDER. O servico continua pedindo a
   // configuracao (a cada 2 min) mesmo com o Wi-Fi fora; a resposta ia para a
-  // fila, que so e lida com o cliente de pe, e enchia ("queue cheia").
+  // fila, que so e lida com o cliente of pe, e enchia ("queue cheia").
   if (!s_cli) { return false; }
   to_radio_t t;
-  ler_to_radio(toradio, n, &t);
+  read_to_radio(toradio, n, &t);
   if (t.quer_config) { responder_config(); return true; }
   if (!t.data) { return true; }                  // batimento e afins: nada a fazer aqui
   if (!mesh_mqtt_conectado() || s_num == 0) { return false; }
   if (t.channel >= MAX_CANAIS) { return false; }
   // MENSAGEM DIRETA NAO SAI POR AQUI. Sem a chave publica (PKI) so daria para
-  // cifrar com a chave do CANAL, que todo assinante do topico tem: a conversa
-  // particular apareceria para a malha inteira (e no bot do Telegram). Melhor
-  // recusar - o envio falha na tela - do que vazar.
+  // cifrar com a chave of CANAL, que todo assinante of topico tem: a conversa
+  // particular apareceria para a malha inteira (e no bot of Telegram). Melhor
+  // recusar - o send_state falha in screen - of que vazar.
   if (t.para != MESH_PB_DIFUSAO) {
     ESP_LOGW(TAG, "mensagem direta recusada: pela internet so vai mensagem de canal (falta PKI)");
     return false;
   }
 
-  travar_cfg();
+  lock_cfg();
   const canal_t canal = s_cfg.canais[t.channel];
   char raiz[48];
   raiz_efetiva(raiz, sizeof(raiz));
@@ -913,8 +913,8 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
                           const canal_t& canal, const char* raiz, uint32_t para,
                           const uint8_t* dec, size_t n_dec, uint32_t id, uint64_t saltos)
 {
-  // Data + bitfield OK_TO_MQTT (campo 9, bit 0): sem ele os gateways que
-  // respeitam a privacidade nao descem a mensagem para o radio.
+  // Data + bitfield OK_TO_MQTT (field 9, bit 0): sem ele os gateways que
+  // respeitam a privacidade nao descem a message para o radio.
   static uint8_t data[QUADRO_MAX], cif[QUADRO_MAX], pkt[QUADRO_MAX], env[QUADRO_MAX];
   pb_escritor_t wdata = pb_escritor(data, sizeof(data));
   pb_w_cru(&wdata, dec, n_dec);
@@ -922,7 +922,7 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
   const size_t n_data = pb_tamanho(&wdata);
   if (!n_data) { return false; }
   uint8_t chave[32];
-  const bool cifrado = chave_do_canal(canal, chave) > 0;
+  const bool cifrado = chave_of_canal(canal, chave) > 0;
   if (!cifrar(canal, id, s_num, data, n_data, cif)) { return false; }
 
   // MeshPacket{ 1: from, 2: to, 3: channel (hash), 4: decoded | 5: encrypted,
@@ -930,7 +930,7 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
   pb_escritor_t w = pb_escritor(pkt, sizeof(pkt));
   pb_w_fixo32(&w, 1, s_num);
   pb_w_fixo32(&w, 2, para);
-  pb_w_num(&w, 3, hash_do_canal(canal));
+  pb_w_num(&w, 3, hash_of_canal(canal));
   if (cifrado) { pb_w_bytes(&w, 5, cif, n_data); } else { pb_w_bytes(&w, 4, data, n_data); }
   pb_w_fixo32(&w, 6, id);
   pb_w_num(&w, 9, saltos);
@@ -941,16 +941,16 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
   snprintf(gw, sizeof(gw), "!%08lx", (unsigned long)s_num);
   pb_escritor_t e = pb_escritor(env, sizeof(env));
   pb_w_sub(&e, 1, &w);
-  pb_w_texto(&e, 2, canal.name, sizeof(canal.name));
-  pb_w_texto(&e, 3, gw, sizeof(gw));
+  pb_w_text(&e, 2, canal.name, sizeof(canal.name));
+  pb_w_text(&e, 3, gw, sizeof(gw));
   const size_t n_env = pb_tamanho(&e);
   if (!n_env) { return false; }
 
   char topico[112];
   snprintf(topico, sizeof(topico), "%s/2/e/%s/%s", raiz, canal.name, gw);
   // enqueue, e nao publish: o publish escreve no socket NA HORA e pode
-  // segurar quem chamou (a tarefa de interface) ate o prazo da rede. O
-  // enqueue so poe na fila do cliente, que manda na tarefa dele.
+  // hold quem chamou (a tarefa of interface) ate o prazo of rede. O
+  // enqueue so poe in fila of cliente, que manda in tarefa dele.
   const int msg = esp_mqtt_client_enqueue(cli, topico, (const char*)env, (int)n_env, 1, 0, true);
   if (msg < 0) { return false; }
   pend[*prox].msg = msg;
@@ -963,9 +963,9 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
 // ---------------------------------------------------------------------------
 // PROXY - API
 // ---------------------------------------------------------------------------
-void mesh_mqtt_aprender_no_mqtt(bool ligado, bool proxy, bool tls)
+void mesh_mqtt_aprender_no_mqtt(bool enabled, bool proxy, bool tls)
 {
-  s_no_mqtt = ligado; s_no_proxy = proxy; s_no_tls = tls;
+  s_no_mqtt = enabled; s_no_proxy = proxy; s_no_tls = tls;
 }
 
 void mesh_mqtt_aprender_downlink(int idx, bool downlink)
@@ -975,11 +975,11 @@ void mesh_mqtt_aprender_downlink(int idx, bool downlink)
 
 bool mesh_mqtt_no_tem_proxy(void) { return s_no_mqtt && s_no_proxy; }
 
-// "msh/BR/2/e/LongFast/!a1b2c3d4" -> "msh/BR": tudo antes do primeiro "/2/".
-static bool raiz_do_topico(const char* t, char* out, size_t tam)
+// "msh/BR/2/e/LongFast/!a1b2c3d4" -> "msh/BR": everything antes of first "/2/".
+static bool raiz_of_topico(const char* t, char* out, size_t size)
 {
   const char* p = strstr(t, "/2/");
-  if (!p || p == t || (size_t)(p - t) >= tam) { return false; }
+  if (!p || p == t || (size_t)(p - t) >= size) { return false; }
   memcpy(out, t, (size_t)(p - t));
   out[p - t] = 0;
   return true;
@@ -988,17 +988,17 @@ static bool raiz_do_topico(const char* t, char* out, size_t tam)
 bool mesh_mqtt_proxy_publicar(const char* topico, const uint8_t* d, size_t n, bool retido)
 {
   if (!s_proxy || !mesh_mqtt_conectado() || !topico || !topico[0]) { ++s_px_perdeu; return false; }
-  // A raiz que o no usa de verdade. Mudou (ou era o palpite do dump): refaz
-  // as assinaturas na raiz certa.
+  // A raiz que o no usa of verdade. Mudou (ou era o palpite of dump): refaz
+  // as assinaturas in raiz certa.
   char raiz[48];
-  if (raiz_do_topico(topico, raiz, sizeof(raiz)) && strcmp(raiz, s_px_raiz_no) != 0) {
+  if (raiz_of_topico(topico, raiz, sizeof(raiz)) && strcmp(raiz, s_px_raiz_no) != 0) {
     snprintf(s_px_raiz_no, sizeof(s_px_raiz_no), "%s", raiz);
     if (strcmp(raiz, s_px_raiz) != 0) {
       ESP_LOGI(TAG, "proxy: o no publica na raiz %s - assinando nela", raiz);
-      assinar_proxy_agora();
+      assinar_proxy_now();
     }
   }
-  // enqueue: nao segura a tarefa do servico esperando a rede (ver enviar_travado).
+  // enqueue: nao segura a tarefa of servico esperando a rede (ver enviar_travado).
   const int msg = esp_mqtt_client_enqueue(s_cli, topico, (const char*)d, (int)n, 1, retido ? 1 : 0, true);
   if (msg < 0) { ++s_px_perdeu; return false; }
   ++s_px_subiu;
@@ -1008,7 +1008,7 @@ bool mesh_mqtt_proxy_publicar(const char* topico, const uint8_t* d, size_t n, bo
 size_t mesh_mqtt_proxy_receber(uint8_t* buf, size_t max)
 {
   if (!s_fila || !s_proxy) { return 0; }
-  static quadro_t q;   // so a tarefa do servico recebe
+  static frame_t q;   // so a tarefa of servico recebe
   if (xQueueReceive(s_fila, &q, 0) != pdTRUE) { return 0; }
   if (q.n > max) { ++s_px_perdeu; return 0; }
   memcpy(buf, q.d, q.n);
@@ -1028,8 +1028,8 @@ void mesh_mqtt_proxy_contadores(uint32_t* subiu, uint32_t* desceu, uint32_t* per
 static void assinar_internet(void)
 {
   // Os gateways desta raiz publicam por estado e cidade (msh/US/GA/2/e/...,
-  // msh/US/KS/Topeka/2/e/...): ate tres niveis abaixo da raiz. Sem os relatorios
-  // de mapa - la eles trariam o pais inteiro para a tabela de nos.
+  // msh/US/KS/Topeka/2/e/...): ate tres niveis abaixo of raiz. Sem os relatorios
+  // of mapa - la eles trariam o pais inteiro para a tabela of nos.
   static const char* const NIVEL[] = { "", "/+", "/+/+", "/+/+/+" };
   char topico[96];
   for (size_t i = 0; i < sizeof(NIVEL) / sizeof(NIVEL[0]); ++i) {
@@ -1039,9 +1039,9 @@ static void assinar_internet(void)
   ESP_LOGI(TAG, "internet: assinando %s/.../2/e/%s", INTERNET_RAIZ, CANAL_INTERNET.name);
 }
 
-static void ao_evento_internet(void*, esp_event_base_t, int32_t id_ev, void* dados)
+static void on_evento_internet(void*, esp_event_base_t, int32_t id_ev, void* data)
 {
-  esp_mqtt_event_handle_t ev = (esp_mqtt_event_handle_t)dados;
+  esp_mqtt_event_handle_t ev = (esp_mqtt_event_handle_t)data;
   switch ((esp_mqtt_event_id_t)id_ev) {
     case MQTT_EVENT_CONNECTED:    s_rede_internet_conectado = true; assinar_internet(); break;
     case MQTT_EVENT_DISCONNECTED: s_rede_internet_conectado = false; break;
@@ -1052,19 +1052,19 @@ static void ao_evento_internet(void*, esp_event_base_t, int32_t id_ev, void* dad
       break;
     case MQTT_EVENT_PUBLISHED:
       for (size_t i = 0; i < sizeof(s_rede_internet_pend) / sizeof(s_rede_internet_pend[0]); ++i) {
-        if (s_rede_internet_pend[i].msg == ev->msg_id && s_rede_internet_pend[i].id) { confirmar(s_rede_internet_pend[i].id, s_rede_internet_fila); s_rede_internet_pend[i].id = 0; }
+        if (s_rede_internet_pend[i].msg == ev->msg_id && s_rede_internet_pend[i].id) { confirm(s_rede_internet_pend[i].id, s_rede_internet_fila); s_rede_internet_pend[i].id = 0; }
       }
       break;
     default: break;
   }
 }
 
-bool mesh_mqtt_internet_iniciar(void)
+bool mesh_mqtt_internet_start(void)
 {
   if (s_rede_internet_cli) { return true; }
-  if (!s_rede_internet_fila) { s_rede_internet_fila = xQueueCreateWithCaps(32, sizeof(quadro_t), MALLOC_CAP_SPIRAM); s_rede_internet_fila_ref = s_rede_internet_fila; }
-  tab5_mutex_criar(&s_trava_ent);
-  tab5_mutex_criar(&s_trava_env);
+  if (!s_rede_internet_fila) { s_rede_internet_fila = xQueueCreateWithCaps(32, sizeof(frame_t), MALLOC_CAP_SPIRAM); s_rede_internet_fila_ref = s_rede_internet_fila; }
+  tab5_mutex_create(&s_trava_ent);
+  tab5_mutex_create(&s_trava_env);
   if (!s_rede_internet_fila || !s_trava_ent || !s_trava_env) { return false; }
   xQueueReset(s_rede_internet_fila);
   static char cliente[24];
@@ -1075,28 +1075,28 @@ bool mesh_mqtt_internet_iniciar(void)
   c.credentials.authentication.password = PWD_PADRAO;
   c.credentials.client_id = cliente;
   // NO TAMANHO DO QUE PASSA: o envelope maior e ~400 bytes com o topico (o
-  // MeshPacket tem teto de 256), e o que sai e so texto nosso. Tudo isto e
-  // RAM interna (alocacoes < 4 KB nao vao para a PSRAM, e a pilha da tarefa da
+  // MeshPacket tem teto of 256), e o que exit e so text nosso. Tudo isto e
+  // RAM interna (alocacoes < 4 KB nao vao para a PSRAM, e a stack of tarefa of
   // biblioteca e sempre interna). Maior que o buffer chega em pedacos e e
   // descartado em ao_evento_internet - nao e Meshtastic.
   c.buffer.size = 768;
   c.buffer.out_size = 512;
-  c.task.stack_size = 3584;   // pico medido de ~2,6 KB no cliente igual a este
+  c.task.stack_size = 3584;   // pico measured of ~2,6 KB no cliente igual a este
   c.network.reconnect_timeout_ms = 15000;
   s_rede_internet_cli = esp_mqtt_client_init(&c);
   if (!s_rede_internet_cli) { return false; }
-  esp_mqtt_client_register_event(s_rede_internet_cli, MQTT_EVENT_ANY, ao_evento_internet, nullptr);
+  esp_mqtt_client_register_event(s_rede_internet_cli, MQTT_EVENT_ANY, on_evento_internet, nullptr);
   if (esp_mqtt_client_start(s_rede_internet_cli) != ESP_OK) {
     esp_mqtt_client_destroy(s_rede_internet_cli);
     s_rede_internet_cli = nullptr;
     return false;
   }
-  tab5_mem_marco("MQTT internet (cliente + tarefa)");
+  tab5_memory_marco("MQTT internet (cliente + tarefa)");
   ESP_LOGI(TAG, "internet: conectando a %s, raiz %s", INTERNET_SRV, INTERNET_RAIZ);
   return true;
 }
 
-void mesh_mqtt_internet_parar(void)
+void mesh_mqtt_internet_stop(void)
 {
   if (!s_rede_internet_cli) { return; }
   esp_mqtt_client_stop(s_rede_internet_cli);
@@ -1107,26 +1107,26 @@ void mesh_mqtt_internet_parar(void)
   ESP_LOGI(TAG, "internet: desconectado");
 }
 
-bool mesh_mqtt_internet_ativo(void)     { return s_rede_internet_cli != nullptr; }
+bool mesh_mqtt_internet_active(void)     { return s_rede_internet_cli != nullptr; }
 bool mesh_mqtt_internet_conectado(void) { return s_rede_internet_cli && s_rede_internet_conectado; }
 uint32_t mesh_mqtt_internet_recebidos(void) { return s_rede_internet_recebidos; }
 
 size_t mesh_mqtt_internet_receber(uint8_t* buf, size_t max)
 {
   if (!s_rede_internet_fila) { return 0; }
-  static quadro_t q;   // so a tarefa do servico recebe
+  static frame_t q;   // so a tarefa of servico recebe
   if (xQueueReceive(s_rede_internet_fila, &q, 0) != pdTRUE) { return 0; }
   const size_t n = q.n < max ? q.n : max;
   memcpy(buf, q.d, n);
   return n;
 }
 
-bool mesh_mqtt_internet_enviar(const uint8_t* toradio, size_t n)
+bool mesh_mqtt_internet_send(const uint8_t* toradio, size_t n)
 {
   if (!s_trava_env || !mesh_mqtt_internet_conectado() || s_num == 0) { return false; }
   to_radio_t t;
-  ler_to_radio(toradio, n, &t);
-  // So canal: a direta precisaria de PKI (ver mesh_mqtt_enviar).
+  read_to_radio(toradio, n, &t);
+  // So canal: a direta precisaria of PKI (ver mesh_mqtt_enviar).
   if (!t.data || t.para != MESH_PB_DIFUSAO) { return false; }
   xSemaphoreTake(s_trava_env, portMAX_DELAY);
   const bool ok = publicar_data(s_rede_internet_cli, s_rede_internet_pend, &s_rede_internet_prox_pend,

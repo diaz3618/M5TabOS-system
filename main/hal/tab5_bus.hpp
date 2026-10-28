@@ -12,13 +12,13 @@
 //   "when an underrun happens, the LCD display may already becomes blue,
 //    it's too late to recover the display, so we just print an error message
 //    as a hint to the user that he should optimize the memory bandwidth
-//    (with AXI-ICM)"                        (esp_lcd_panel_dpi.c, linha 113)
+//    (with AXI-ICM)"                        (esp_lcd_panel_dpi.c, line 113)
 //
 // THAT IS THE BLUE FLICKER. It is not an app bug; it is bus arbitration.
 //
 // WHAT WE HAD BEEN DOING WAS A WORKAROUND. Clearing in strips with pauses,
 // avoiding duplicate clears, and spacing out repaints all REDUCE CPU-side
-// demand and help. They do not solve it: every new app must remember every
+// demand and help. They of not solve it: every new app must remember every
 // rule, while the underlying contention remains.
 //
 // THE SOLUTION THE DRIVER ITSELF POINTS TO is AXI-ICM. The interconnect matrix

@@ -1,14 +1,14 @@
-// Animacoes da tela de bloqueio. Contrato e regras no lockscreen_anim.hpp.
+// Animacoes of screen of bloqueio. Contrato e regras no lockscreen_anim.hpp.
 //
 // Cada animacao tem tres funcoes (e uma quarta, opcional):
-//   iniciar()  - sorteia o estado inicial;
-//   passo(dt)  - move tudo e registra com rec() a caixa que cada objeto
+//   start()  - sorteia o estado inicial;
+//   passo(dt)  - move everything e registra com rec() a caixa que cada objeto
 //                ocupava e a que vai ocupar (essas caixas serao apagadas);
-//   desenhar() - pinta todos os objetos, depois da apagada;
-//   fundo()    - (opcional) pinta o fundo fixo dela; sem isso, o fundo e um
-//                desenho abstrato sorteado.
-// O quadro (bq_anim_quadro) liga as tres e guarda a lista de caixas para o
-// shell saber onde o texto precisa ser repintado.
+//   draw() - pinta todos os objetos, depois of apagada;
+//   fundo()    - (opcional) pinta o fundo fixo dela; sem isso, o fundo e one
+//                drawing abstrato sorteado.
+// O frame (bq_anim_quadro) liga as tres e guarda a lista of caixas para o
+// shell saber onde o text precisa ser repintado.
 
 #include "lockscreen_anim.hpp"
 
@@ -23,7 +23,7 @@
 // ---------------------------------------------------------------------------
 // Area, aleatorio, cores
 // ---------------------------------------------------------------------------
-static int s_ax, s_ay, s_W, s_H;   // area util (onde a animacao pode tocar)
+static int s_ax, s_ay, s_W, s_H;   // area util (onde a animacao pode touch)
 
 static uint32_t s_rng = 2463534242u;
 static inline uint32_t rnd(void)
@@ -59,19 +59,19 @@ static uint16_t matiz(uint8_t h, int v)
 }
 
 // ---------------------------------------------------------------------------
-// Lista de caixas mexidas neste quadro
+// Lista of caixas mexidas neste frame
 // ---------------------------------------------------------------------------
-// Caixas que se SOBREPOEM viram uma so (apagar o mesmo pixel duas vezes e
+// Caixas que se SOBREPOEM viram uma so (erase o mesmo pixel duas vezes e
 // desperdicio, e a chuva, por exemplo, gera duas por coluna quase iguais). O
-// resto vai como esta: o compositor aguenta muitas areas pequenas por quadro
-// (compositor.cpp, MAX_AREAS). MAX_RET e so o tamanho da lista; encher e
-// raro, e ai a nova se junta ao par que desperdica menos.
+// resto vai como esta: o compositor aguenta muitas areas pequenas por frame
+// (compositor.cpp, MAX_AREAS). MAX_RET e so o tamanho of lista; encher e
+// raro, e ai a nova se junta on par que desperdica menos.
 static const int MAX_RET = 160;
 static bq_ret_t s_ret[MAX_RET];
 static int      s_n_ret = 0;
-static bool     s_tudo  = false;   // desenhar tudo (nao so o que mudou)
+static bool     s_everything  = false;   // draw everything (nao so o que changed)
 
-static inline int area_de(const bq_ret_t& r) { return r.w * r.h; }
+static inline int area_of(const bq_ret_t& r) { return r.w * r.h; }
 
 static bq_ret_t envolver(const bq_ret_t& a, const bq_ret_t& b)
 {
@@ -81,11 +81,11 @@ static bq_ret_t envolver(const bq_ret_t& a, const bq_ret_t& b)
   return { (int16_t)x0, (int16_t)y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0) };
 }
 
-// Pixel NAO pedido que a juncao de a e b obriga a apagar (negativo = elas se
-// sobrepoem: juntar sai de graca).
+// Pixel NAO request que a juncao of a e b obriga a erase (negativo = elas se
+// sobrepoem: juntar exit of graca).
 static inline int desperdicio(const bq_ret_t& a, const bq_ret_t& b)
 {
-  return area_de(envolver(a, b)) - area_de(a) - area_de(b);
+  return area_of(envolver(a, b)) - area_of(a) - area_of(b);
 }
 
 static void rec(int x, int y, int w, int h)
@@ -98,7 +98,7 @@ static void rec(int x, int y, int w, int h)
   if (x1 <= x || y1 <= y) { return; }
   bq_ret_t r = { (int16_t)x, (int16_t)y, (int16_t)(x1 - x), (int16_t)(y1 - y) };
 
-  // Junta com quem ja se sobrepoe (de graca) - uma juncao pode abrir outra.
+  // Junta com quem ja se sobrepoe (of graca) - uma juncao pode open outra.
   for (bool juntou = true; juntou; ) {
     juntou = false;
     for (int i = 0; i < s_n_ret; ++i) {
@@ -129,11 +129,11 @@ static void rec(int x, int y, int w, int h)
     s_ret[bj] = r;
   }
   // Uma caixa juntada apaga objeto que nao se mexeu: quem desenha so o que
-  // mudou (a cobrinha) precisa desenhar tudo.
-  s_tudo = true;
+  // changed (a cobrinha) precisa draw everything.
+  s_everything = true;
 }
 
-// Caixa que cobre dois pontos, com folga 'r' em volta.
+// Caixa que cobre dois pontos, com folga 'r' em iteration.
 static void rec2(float x0, float y0, float x1, float y1, int r)
 {
   const int xa = (int)floorf(fminf(x0, x1)) - r;
@@ -144,23 +144,23 @@ static void rec2(float x0, float y0, float x1, float y1, int r)
 // ---------------------------------------------------------------------------
 // FUNDO
 // ---------------------------------------------------------------------------
-// Um desenho fixo atras da animacao: linhas finas e escuras sobre preto. Ele
-// e pintado UMA vez por bloqueio numa imagem do tamanho da area (PSRAM,
-// ~1,6 MB, so enquanto bloqueado) e o "apagar" de cada caixa passa a ser
-// copiar aquele pedaco da imagem em vez de pintar preto - o mesmo tanto de
-// escrita de antes, entao o fundo nao custa nada por quadro. Sem memoria,
-// fica o preto de sempre.
+// Um drawing fixo atras of animacao: lines finas e escuras sobre preto. Ele
+// e pintado UMA vez por bloqueio numa imagem of tamanho of area (PSRAM,
+// ~1,6 MB, so enquanto locked) e o "erase" of cada caixa passa a ser
+// copiar aquele pedaco of imagem em vez of paint preto - o mesmo tanto of
+// escrita of antes, entao o fundo nao custa nada por frame. Sem memoria,
+// stays o preto of sempre.
 static lgfx::LGFX_Sprite* s_fundo = nullptr;
-static bool s_fundo_falhou = false;   // neste bloqueio: nao tenta de novo a cada quadro
-static bool s_fundo_pintar = false;   // a imagem e nova: vai inteira para a tela
+static bool s_fundo_falhou = false;   // neste bloqueio: nao tenta of novo a cada frame
+static bool s_fundo_paint = false;   // a imagem e nova: vai inteira para a screen
 
-static void fundo_soltar(void)
+static void background_release(void)
 {
   delete s_fundo;
   s_fundo = nullptr;
 }
 
-// Ponto na borda da imagem, 't' de 0 a 1 dando a volta.
+// Ponto in borda of imagem, 't' of 0 a 1 dando a iteration.
 static void ponto_borda(int W, int H, float t, float* x, float* y)
 {
   t -= floorf(t);
@@ -173,7 +173,7 @@ static void ponto_borda(int W, int H, float t, float* x, float* y)
 
 // FIOS: "string art" - retas entre dois trilhos desenham curvas que nao
 // existem.
-static void fundo_fios(lgfx::LGFX_Sprite& s, int W, int H)
+static void background_fios(lgfx::LGFX_Sprite& s, int W, int H)
 {
   const int env = 3 + irand(3);
   const uint8_t h0 = (uint8_t)irand(256);
@@ -195,8 +195,8 @@ static void fundo_fios(lgfx::LGFX_Sprite& s, int W, int H)
   }
 }
 
-// ONDAS: curvas de nivel que escorrem de um lado ao outro.
-static void fundo_ondas(lgfx::LGFX_Sprite& s, int W, int H)
+// ONDAS: curvas of level que escorrem of one lado on outro.
+static void background_ondas(lgfx::LGFX_Sprite& s, int W, int H)
 {
   const int n = 30;
   const float k1 = frand(0.004f, 0.009f), k2 = frand(0.011f, 0.02f);
@@ -205,18 +205,18 @@ static void fundo_ondas(lgfx::LGFX_Sprite& s, int W, int H)
   const uint8_t h0 = (uint8_t)(120 + irand(80));
   for (int i = 0; i < n; ++i) {
     const float y0 = (i + 0.5f) * H / n;
-    const uint16_t cor = matiz((uint8_t)(h0 + i * 2), 40 + (i % 3) * 12);
+    const uint16_t color = matiz((uint8_t)(h0 + i * 2), 40 + (i % 3) * 12);
     int px = 0, py = 0;
     for (int x = 0; x <= W + 12; x += 12) {
       const int y = (int)(y0 + a1 * sinf(x * k1 + i * 0.28f + p1) + a2 * sinf(x * k2 - i * 0.17f + p2));
-      if (x > 0) { s.drawLine(px, py, x, y, cor); }
+      if (x > 0) { s.drawLine(px, py, x, y, color); }
       px = x; py = y;
     }
   }
 }
 
 // TEIA: pontos ligados aos vizinhos mais proximos.
-static void fundo_teia(lgfx::LGFX_Sprite& s, int W, int H)
+static void background_teia(lgfx::LGFX_Sprite& s, int W, int H)
 {
   const int n = 38;
   int16_t px[n], py[n];
@@ -243,8 +243,8 @@ static void fundo_teia(lgfx::LGFX_Sprite& s, int W, int H)
   for (int i = 0; i < n; ++i) { s.fillCircle(px[i], py[i], 2, matiz(h, 110)); }
 }
 
-// RAIOS: leque saindo de um ponto fora da tela, com aneis em volta (moire).
-static void fundo_raios(lgfx::LGFX_Sprite& s, int W, int H)
+// RAIOS: leque saindo of one ponto fora of screen, com aneis em iteration (moire).
+static void background_raios(lgfx::LGFX_Sprite& s, int W, int H)
 {
   float fx, fy;
   ponto_borda(W, H, frand(0, 1), &fx, &fy);
@@ -261,21 +261,21 @@ static void fundo_raios(lgfx::LGFX_Sprite& s, int W, int H)
   for (int r = 50; r < R; r += 46) { s.drawCircle((int)fx, (int)fy, r, matiz((uint8_t)(h + 128), 34)); }
 }
 
-// CIRCULOS: aneis de dois ou tres centros se cruzando (interferencia).
-static void fundo_circulos(lgfx::LGFX_Sprite& s, int W, int H)
+// CIRCULOS: aneis of dois ou tres centros se cruzando (interferencia).
+static void background_circulos(lgfx::LGFX_Sprite& s, int W, int H)
 {
   const int n = 2 + irand(2);
   const uint8_t h = (uint8_t)irand(256);
   const int R = (int)sqrtf((float)W * W + (float)H * H);
   for (int c = 0; c < n; ++c) {
     const int cx = irand(W), cy = irand(H);
-    const uint16_t cor = matiz((uint8_t)(h + c * 70), 40);
-    for (int r = 14; r < R; r += 22) { s.drawCircle(cx, cy, r, cor); }
+    const uint16_t color = matiz((uint8_t)(h + c * 70), 40);
+    for (int r = 14; r < R; r += 22) { s.drawCircle(cx, cy, r, color); }
   }
 }
 
-// Estrelas fixas, bem fracas (fundo do sistema solar).
-static void fundo_ceu(lgfx::LGFX_Sprite& s, int W, int H)
+// Estrelas fixas, bem fracas (fundo of sistema solar).
+static void background_ceu(lgfx::LGFX_Sprite& s, int W, int H)
 {
   for (int i = 0; i < 160; ++i) {
     const int v = 40 + irand(90);
@@ -283,14 +283,14 @@ static void fundo_ceu(lgfx::LGFX_Sprite& s, int W, int H)
   }
 }
 
-// Sobe a imagem inteira para a tela, em faixas (um pushSprite por faixa: a
-// mesma regra de nao despejar 1,6 MB de uma vez - ver tab5_screen_clear).
-static void fundo_pintar_tudo(lgfx::LovyanGFX& d)
+// Sobe a imagem inteira para a screen, em faixas (one pushSprite por faixa: a
+// mesma regra of nao despejar 1,6 MB of uma vez - ver tab5_screen_clear).
+static void background_paint_everything(lgfx::LovyanGFX& d)
 {
   const int FAIXA = 128;
   for (int y = 0; y < s_H; y += FAIXA) {
     const int h = (y + FAIXA <= s_H) ? FAIXA : s_H - y;
-    tela_virtual_cobrir(s_ax, s_ay + y, s_W, h);
+    virtual_screen_cover(s_ax, s_ay + y, s_W, h);
     d.setClipRect(s_ax, s_ay + y, s_W, h);
     s_fundo->pushSprite(&d, s_ax, s_ay);
   }
@@ -298,15 +298,15 @@ static void fundo_pintar_tudo(lgfx::LovyanGFX& d)
 }
 
 // Apaga uma caixa: devolve o fundo dela (ou preto, sem fundo).
-static void apagar(lgfx::LovyanGFX& d, const bq_ret_t& r)
+static void erase(lgfx::LovyanGFX& d, const bq_ret_t& r)
 {
   if (!s_fundo) {
     d.fillRect(r.x, r.y, r.w, r.h, TFT_BLACK);
     return;
   }
   // Cobrir antes: a caixa inteira vai ser escrita, entao o compositor nao
-  // precisa trazer o quadro anterior dela da outra pagina.
-  tela_virtual_cobrir(r.x, r.y, r.w, r.h);
+  // precisa trazer o frame anterior dela of outra pagina.
+  virtual_screen_cover(r.x, r.y, r.w, r.h);
   d.setClipRect(r.x, r.y, r.w, r.h);
   s_fundo->pushSprite(&d, s_ax, s_ay);
 }
@@ -315,7 +315,7 @@ static void apagar(lgfx::LovyanGFX& d, const bq_ret_t& r)
 // 1. BOLAS - quicam nas paredes e umas nas outras (choque elastico)
 // ---------------------------------------------------------------------------
 namespace {
-struct Bola { float x, y, vx, vy, r, ox, oy; uint16_t cor; };
+struct Bola { float x, y, vx, vy, r, ox, oy; uint16_t color; };
 struct Bolas { Bola b[7]; };
 }
 
@@ -326,7 +326,7 @@ namespace {
 static const int N_FOGUETES = 3;
 static const int N_PART     = 80;
 struct Foguete { float x, y, vy, alvo, oy; bool on; };
-// crep: ao apagar, solta uma chuvinha de faiscas pequenas (estalo).
+// crep: on erase, released uma chuvinha of faiscas pequenas (estalo).
 struct Part    { float x, y, vx, vy, vida, vida0, ox, oy; uint8_t h; bool on, crep; };
 struct Fogos   { Foguete f[N_FOGUETES]; Part p[N_PART]; float espera; };
 }
@@ -340,7 +340,7 @@ struct Chuva  { Coluna c[18]; };
 }
 
 // ---------------------------------------------------------------------------
-// 4. ESTRELAS - viagem pela velocidade da luz
+// 4. ESTRELAS - viagem pela velocidade of luz
 // ---------------------------------------------------------------------------
 namespace {
 struct Estrela { float ca, sa, r, k; };
@@ -356,19 +356,19 @@ struct Bolhas { Bolha b[14]; };
 }
 
 // ---------------------------------------------------------------------------
-// 6. COBRINHA - joga sozinha (homenagem ao CreazySnake)
+// 6. COBRINHA - joga sozinha (homenagem on CreazySnake)
 // ---------------------------------------------------------------------------
 namespace {
-static const int CEL = 40;   // lado da celula, px
+static const int CEL = 40;   // lado of celula, px
 struct Cobra {
   uint8_t sx[64], sy[64];    // anel: [cab] e a cabeca, [cab-1] o pescoco...
-  uint8_t occ[800];          // gx*gy: 1 = corpo
-  int     gx, gy, ox, oy;    // grade e origem na tela
+  uint8_t occ[800];          // gx*gy: 1 = body
+  int     gx, gy, ox, oy;    // grade e origem in screen
   int     cab, len;
   int     fx, fy;            // comida
   int     dx, dy;            // direcao
   float   acum;
-  bool    passou;            // deu um passo neste quadro
+  bool    passou;            // deu one passo neste frame
 };
 }
 
@@ -382,8 +382,8 @@ struct Lumes { Lume l[16]; };
 
 
 // ---------------------------------------------------------------------------
-// 8. PENDULOS - a "onda de pendulos": cada bola num ritmo um pouco diferente,
-//    e os desenhos (serpente, duas fileiras, caos, fileira de novo) se repetem
+// 8. PENDULOS - a "onda of pendulos": cada bola num ritmo one pouco diferente,
+//    e os desenhos (serpente, duas fileiras, caos, fileira of novo) se repetem
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_PEND = 18;
@@ -391,17 +391,17 @@ struct Pendulos { float t; float ox[N_PEND]; };
 }
 
 // ---------------------------------------------------------------------------
-// 9. NEVE - flocos de tres tamanhos (os pequenos, longe, caem devagar) e um
-//    vento que vai e volta
+// 9. NEVE - flocos of tres tamanhos (os pequenos, longe, caem devagar) e one
+//    vento que vai e iteration
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_FLOCO = 46;
-struct Floco { float x, y, vy, fase, ox, oy; uint8_t tam; };
+struct Floco { float x, y, vy, fase, ox, oy; uint8_t size; };
 struct Neve  { Floco f[N_FLOCO]; float tv; };
 }
 
 // ---------------------------------------------------------------------------
-// 10. COMETAS - tres cometas com cauda, cada um numa curva de Lissajous
+// 10. COMETAS - tres cometas com cauda, cada one numa curva of Lissajous
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_COMETA = 3;
@@ -411,24 +411,24 @@ struct Cometas { Cometa c[N_COMETA]; };
 }
 
 // ---------------------------------------------------------------------------
-// 11. SISTEMA SOLAR - sol pulsando, seis planetas (um com lua, um com anel)
+// 11. SISTEMA SOLAR - sol pulsando, seis planetas (one com lua, one com anel)
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_PLANETA = 6;
-struct Planeta { float orb, ang, w, ox, oy; int16_t r; uint16_t cor; };
+struct Planeta { float orb, ang, w, ox, oy; int16_t r; uint16_t color; };
 struct Solar   { Planeta p[N_PLANETA]; float t, lua, lox, loy; int cx, cy; };
 }
 
 // ---------------------------------------------------------------------------
-// 12. LOGO - o "M5tabOS" quicando nas bordas e trocando de cor a cada batida
-//     (homenagem ao descanso de tela do DVD; acertar o canto e raro)
+// 12. LOGO - o "M5tabOS" quicando nas bordas e trocando of color a cada batida
+//     (homenagem on descanso of screen of DVD; acertar o canto e raro)
 // ---------------------------------------------------------------------------
 namespace {
-struct Logo { float x, y, vx, vy, ox, oy; int w, h; uint8_t cor; bool repintar; uint8_t cantos; };
+struct Logo { float x, y, vx, vy, ox, oy; int w, h; uint8_t color; bool repintar; uint8_t cantos; };
 }
-static lgfx::LGFX_Sprite* s_logo = nullptr;   // o texto, pintado so quando a cor muda
+static lgfx::LGFX_Sprite* s_logo = nullptr;   // o text, pintado so when a color muda
 
-// O estado de TODAS as animacoes divide estes bytes: so a sorteada vive.
+// O estado of TODAS as animacoes divide estes bytes: so a sorteada vive.
 static union {
   Bolas    bolas;
   Fogos    fogos;
@@ -448,7 +448,7 @@ static union {
 // ===========================================================================
 // BOLAS
 // ===========================================================================
-static void bolas_iniciar(void)
+static void bolas_start(void)
 {
   Bolas& s = U.bolas;
   for (int i = 0; i < 7; ++i) {
@@ -459,7 +459,7 @@ static void bolas_iniciar(void)
     const float v = frand(240, 420), ang = frand(0, 6.2832f);
     b.vx = cosf(ang) * v;
     b.vy = sinf(ang) * v;
-    b.cor = matiz((uint8_t)(i * 37 + irand(16)), 225);
+    b.color = matiz((uint8_t)(i * 37 + irand(16)), 225);
     b.ox = b.x; b.oy = b.y;
   }
 }
@@ -503,12 +503,12 @@ static void bolas_passo(float dt)
   }
 }
 
-static void bolas_desenhar(lgfx::LovyanGFX& d)
+static void bolas_draw(lgfx::LovyanGFX& d)
 {
   const Bolas& s = U.bolas;
   for (int i = 0; i < 7; ++i) {
     const Bola& b = s.b[i];
-    d.fillCircle((int)b.x, (int)b.y, (int)b.r, b.cor);
+    d.fillCircle((int)b.x, (int)b.y, (int)b.r, b.color);
     const int hr = (int)fmaxf(2.0f, b.r * 0.22f);
     d.fillCircle((int)(b.x - b.r * 0.35f), (int)(b.y - b.r * 0.35f), hr, c565(235, 235, 235));
   }
@@ -517,12 +517,12 @@ static void bolas_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // FOGOS
 // ===========================================================================
-static void fogos_iniciar(void)
+static void fogos_start(void)
 {
   Fogos& s = U.fogos;
   memset(&s, 0, sizeof(s));
-  // Ja comeca com um foguete a meio caminho: sem isso a tela fica vazia por
-  // cerca de 1 s ate o primeiro subir e explodir.
+  // Ja comeca com one foguete a middle caminho: sem isso a screen stays vazia por
+  // cerca of 1 s ate o first raise e explodir.
   Foguete& f = s.f[0];
   f.x = frand(s_ax + s_W * 0.25f, s_ax + s_W * 0.75f);
   f.y = f.oy = s_ay + s_H * 0.6f;
@@ -532,8 +532,8 @@ static void fogos_iniciar(void)
   s.espera = 0.4f;
 }
 
-// Solta 'n' particulas a partir de (x, y). Anel: todas na mesma velocidade.
-static int fogos_soltar(Fogos& s, float x, float y, uint8_t h, int n, float vmin, float vmax,
+// Solta 'n' particulas a partir of (x, y). Anel: todas in mesma velocidade.
+static int fogos_release(Fogos& s, float x, float y, uint8_t h, int n, float vmin, float vmax,
                         float vida_min, float vida_max, bool anel, bool crep)
 {
   int k = 0;
@@ -560,15 +560,15 @@ static void fogos_explodir(Fogos& s, float x, float y)
   const uint8_t h = (uint8_t)irand(256);
   switch (irand(3)) {
     case 0:   // anel duplo
-      fogos_soltar(s, x, y, h, 22, 0, 330.0f, 1.0f, 1.5f, true, false);
-      fogos_soltar(s, x, y, (uint8_t)(h + 85), 14, 0, 190.0f, 0.9f, 1.3f, true, false);
+      fogos_release(s, x, y, h, 22, 0, 330.0f, 1.0f, 1.5f, true, false);
+      fogos_release(s, x, y, (uint8_t)(h + 85), 14, 0, 190.0f, 0.9f, 1.3f, true, false);
       break;
-    case 1:   // chuva de ouro: fica caindo e estalando
-      fogos_soltar(s, x, y, 40, 30, 100, 360, 1.3f, 2.0f, false, true);
+    case 1:   // chuva of ouro: stays caindo e estalando
+      fogos_release(s, x, y, 40, 30, 100, 360, 1.3f, 2.0f, false, true);
       break;
     default:  // esfera cheia, algumas estalam
-      fogos_soltar(s, x, y, h, 24, 80, 360, 1.0f, 1.6f, false, true);
-      fogos_soltar(s, x, y, (uint8_t)(h + 30), 10, 40, 170, 0.8f, 1.2f, false, false);
+      fogos_release(s, x, y, h, 24, 80, 360, 1.0f, 1.6f, false, true);
+      fogos_release(s, x, y, (uint8_t)(h + 30), 10, 40, 170, 0.8f, 1.2f, false, false);
       break;
   }
 }
@@ -595,7 +595,7 @@ static void fogos_passo(float dt)
     if (!f.on) { continue; }
     f.oy = f.y;
     f.y += f.vy * dt;
-    f.vy += 250 * dt;   // perde forca na subida
+    f.vy += 250 * dt;   // perde forca in subida
     if (f.y <= f.alvo || f.vy > -120) {
       f.on = false;
       rec(f.x - 3, f.oy - 3, 7, 30);
@@ -614,7 +614,7 @@ static void fogos_passo(float dt)
       p.on = false;
       rec2(p.ox, p.oy, p.ox, p.oy, 3);
       if (p.crep) {   // estalo: faiscas pequenas e curtas
-        fogos_soltar(s, p.x, p.y, p.h, 4, 30, 120, 0.3f, 0.6f, false, false);
+        fogos_release(s, p.x, p.y, p.h, 4, 30, 120, 0.3f, 0.6f, false, false);
       }
       continue;
     }
@@ -627,7 +627,7 @@ static void fogos_passo(float dt)
   }
 }
 
-static void fogos_desenhar(lgfx::LovyanGFX& d)
+static void fogos_draw(lgfx::LovyanGFX& d)
 {
   const Fogos& s = U.fogos;
   for (int i = 0; i < N_FOGUETES; ++i) {
@@ -641,8 +641,8 @@ static void fogos_desenhar(lgfx::LovyanGFX& d)
     if (!p.on) { continue; }
     const float f = p.vida / p.vida0;
     const int sz = f > 0.6f ? 4 : (f > 0.25f ? 3 : 2);
-    const uint16_t cor = f > 0.85f ? c565(255, 250, 235) : matiz(p.h, (int)(255 * f * f));
-    d.fillRect((int)p.x - sz / 2, (int)p.y - sz / 2, sz, sz, cor);
+    const uint16_t color = f > 0.85f ? c565(255, 250, 235) : matiz(p.h, (int)(255 * f * f));
+    d.fillRect((int)p.x - sz / 2, (int)p.y - sz / 2, sz, sz, color);
   }
 }
 
@@ -656,7 +656,7 @@ static void chuva_nova(Coluna& c, bool no_topo)
   c.y   = no_topo ? (s_ay - frand(0, 300)) : frand(s_ay, s_ay + s_H + c.len);
 }
 
-static void chuva_iniciar(void)
+static void chuva_start(void)
 {
   Chuva& s = U.chuva;
   for (int i = 0; i < 18; ++i) {
@@ -677,14 +677,14 @@ static void chuva_passo(float dt)
   }
 }
 
-static void chuva_desenhar(lgfx::LovyanGFX& d)
+static void chuva_draw(lgfx::LovyanGFX& d)
 {
   const Chuva& s = U.chuva;
   for (int i = 0; i < 18; ++i) {
     const Coluna& c = s.c[i];
     const int n = c.len / 10;
     for (int k = 0; k < n; ++k) {
-      if (k > 0 && ((i * 7 + k * 13) & 3) == 0) { continue; }   // buracos: parece texto
+      if (k > 0 && ((i * 7 + k * 13) & 3) == 0) { continue; }   // buracos: parece text
       const int yy = (int)c.y - k * 10 - 8;
       if (yy + 6 < s_ay || yy > s_ay + s_H) { continue; }
       const float f = 1.0f - (float)k / n;
@@ -706,7 +706,7 @@ static void estrela_nova(Estrela& e, bool espalhar)
   e.k  = frand(0.6f, 1.4f);
 }
 
-static void estrelas_iniciar(void)
+static void estrelas_start(void)
 {
   for (int i = 0; i < 40; ++i) { estrela_nova(U.estrelas.e[i], true); }
 }
@@ -728,7 +728,7 @@ static void estrelas_passo(float dt)
   }
 }
 
-static void estrelas_desenhar(lgfx::LovyanGFX& d)
+static void estrelas_draw(lgfx::LovyanGFX& d)
 {
   const float cx = s_ax + s_W * 0.5f, cy = s_ay + s_H * 0.5f;
   for (int i = 0; i < 40; ++i) {
@@ -736,10 +736,10 @@ static void estrelas_desenhar(lgfx::LovyanGFX& d)
     const int x1 = (int)(cx + e.ca * e.r), y1 = (int)(cy + e.sa * e.r);
     const int x0 = (int)(cx + e.ca * e.r * 0.88f), y0 = (int)(cy + e.sa * e.r * 0.88f);
     const int v = (int)fminf(255.0f, 70.0f + e.r * 0.8f);
-    const uint16_t cor = c565(v * 3 / 4, v * 7 / 8, v);
-    d.drawLine(x0, y0, x1, y1, cor);
-    if (e.r > 180) { d.drawLine(x0 + 1, y0, x1 + 1, y1, cor); }
-    if (e.r > 320) { d.drawLine(x0, y0 + 1, x1, y1 + 1, cor); }
+    const uint16_t color = c565(v * 3 / 4, v * 7 / 8, v);
+    d.drawLine(x0, y0, x1, y1, color);
+    if (e.r > 180) { d.drawLine(x0 + 1, y0, x1 + 1, y1, color); }
+    if (e.r > 320) { d.drawLine(x0, y0 + 1, x1, y1 + 1, color); }
   }
 }
 
@@ -755,11 +755,11 @@ static void bolha_nova(Bolha& b, bool espalhar)
   b.vy   = frand(40, 110);
   b.fase = frand(0, 6.2832f);
   b.fv   = frand(1.0f, 2.2f);
-  b.h    = (uint8_t)(110 + irand(60));   // do verde ao azul, com um toque de roxo
+  b.h    = (uint8_t)(110 + irand(60));   // of verde on azul, com one touch of roxo
   b.ox   = b.x0; b.oy = b.y;
 }
 
-static void bolhas_iniciar(void)
+static void bolhas_start(void)
 {
   for (int i = 0; i < 14; ++i) { bolha_nova(U.bolhas.b[i], true); }
 }
@@ -777,14 +777,14 @@ static void bolhas_passo(float dt)
   }
 }
 
-static void bolhas_desenhar(lgfx::LovyanGFX& d)
+static void bolhas_draw(lgfx::LovyanGFX& d)
 {
   for (int i = 0; i < 14; ++i) {
     const Bolha& b = U.bolhas.b[i];
     const int x = (int)(b.x0 + b.amp * sinf(b.fase)), y = (int)b.y, r = (int)b.r;
-    const uint16_t cor = matiz(b.h, 210);
-    d.drawCircle(x, y, r, cor);
-    d.drawCircle(x, y, r - 1, cor);
+    const uint16_t color = matiz(b.h, 210);
+    d.drawCircle(x, y, r, color);
+    d.drawCircle(x, y, r - 1, color);
     d.fillCircle(x - (int)(b.r * 0.45f), y - (int)(b.r * 0.45f), (int)fmaxf(2.0f, b.r * 0.12f),
                  c565(235, 245, 255));
   }
@@ -793,7 +793,7 @@ static void bolhas_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // COBRINHA
 // ===========================================================================
-static inline int cobra_i(const Cobra& s, int k) { return (s.cab - k) & 63; }   // k-esimo segmento a partir da cabeca
+static inline int cobra_i(const Cobra& s, int k) { return (s.cab - k) & 63; }   // k-esimo segmento a partir of cabeca
 
 static void cobra_comida(Cobra& s)
 {
@@ -806,7 +806,7 @@ static void cobra_comida(Cobra& s)
 
 static void cobra_reiniciar(Cobra& s)
 {
-  // Apaga o que ainda esta na tela, celula por celula (nada de limpar a area).
+  // Apaga o que ainda esta in screen, celula por celula (nada of limpar a area).
   if (s.len > 0) {
     for (int k = 0; k < s.len; ++k) {
       const int i = cobra_i(s, k);
@@ -827,10 +827,10 @@ static void cobra_reiniciar(Cobra& s)
   }
   cobra_comida(s);
   s.acum = 0;
-  s_tudo = true;
+  s_everything = true;
 }
 
-static void cobra_iniciar(void)
+static void cobra_start(void)
 {
   Cobra& s = U.cobra;
   memset(&s, 0, sizeof(s));
@@ -878,7 +878,7 @@ static void cobra_passo(float dt)
   const int nx = hx + DX[melhor], ny = hy + DY[melhor];
   s.dx = DX[melhor]; s.dy = DY[melhor];
   const bool come = nx == s.fx && ny == s.fy;
-  rec(s.ox + hx * CEL, s.oy + hy * CEL, CEL, CEL);   // o pescoco troca de cor
+  rec(s.ox + hx * CEL, s.oy + hy * CEL, CEL, CEL);   // o pescoco troca of color
   if (!come) {
     s.occ[ty * s.gx + tx] = 0;
     rec(s.ox + tx * CEL, s.oy + ty * CEL, CEL, CEL);
@@ -896,19 +896,19 @@ static void cobra_passo(float dt)
   }
 }
 
-static void cobra_celula(lgfx::LovyanGFX& d, const Cobra& s, int gx, int gy, uint16_t cor)
+static void cobra_celula(lgfx::LovyanGFX& d, const Cobra& s, int gx, int gy, uint16_t color)
 {
-  d.fillRoundRect(s.ox + gx * CEL + 2, s.oy + gy * CEL + 2, CEL - 4, CEL - 4, 9, cor);
+  d.fillRoundRect(s.ox + gx * CEL + 2, s.oy + gy * CEL + 2, CEL - 4, CEL - 4, 9, color);
 }
 
-static void cobra_desenhar(lgfx::LovyanGFX& d)
+static void cobra_draw(lgfx::LovyanGFX& d)
 {
   Cobra& s = U.cobra;
-  if (!s.passou && !s_tudo) { return; }
+  if (!s.passou && !s_everything) { return; }
   d.fillCircle(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + CEL / 2 + 1, 12, c565(255, 70, 70));
   d.fillRect(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + 5, 3, 7, c565(120, 200, 80));
-  // Corpo: da cauda ao pescoco, em listras; so os dois ultimos se nao for tudo.
-  const int ate = s_tudo ? s.len : 2;
+  // Corpo: of cauda on pescoco, em listras; so os dois ultimos se nao for everything.
+  const int ate = s_everything ? s.len : 2;
   for (int k = ate - 1; k >= 1; --k) {
     const int i = cobra_i(s, k);
     cobra_celula(d, s, s.sx[i], s.sy[i], (k & 1) ? c565(30, 170, 60) : c565(20, 125, 45));
@@ -926,7 +926,7 @@ static void cobra_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // VAGA-LUMES
 // ===========================================================================
-static void lumes_iniciar(void)
+static void lumes_start(void)
 {
   for (int i = 0; i < 16; ++i) {
     Lume& l = U.lumes.l[i];
@@ -958,7 +958,7 @@ static void lumes_passo(float dt)
   }
 }
 
-static void lumes_desenhar(lgfx::LovyanGFX& d)
+static void lumes_draw(lgfx::LovyanGFX& d)
 {
   for (int i = 0; i < 16; ++i) {
     const Lume& l = U.lumes.l[i];
@@ -975,8 +975,8 @@ static void lumes_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // PENDULOS
 // ===========================================================================
-// Bola i faz (K + i) idas e vindas a cada CICLO segundos: no fim do ciclo
-// todas voltam juntas, e no meio passam pelas figuras.
+// Bola i faz (K + i) idas e vindas a cada CICLO segundos: no end of ciclo
+// todas voltam juntas, e no middle passam pelas figuras.
 static const float PEND_CICLO = 60.0f;
 static const int   PEND_K     = 12;
 static const int   PEND_R     = 12;
@@ -991,7 +991,7 @@ static float pend_y(int i)
   return s_ay + 50 + (float)i * (s_H - 100) / (N_PEND - 1);
 }
 
-static void pendulos_iniciar(void)
+static void pendulos_start(void)
 {
   Pendulos& s = U.pendulos;
   s.t = 0;   // todas juntas, comecando a se separar
@@ -1010,7 +1010,7 @@ static void pendulos_passo(float dt)
   }
 }
 
-static void pendulos_desenhar(lgfx::LovyanGFX& d)
+static void pendulos_draw(lgfx::LovyanGFX& d)
 {
   const Pendulos& s = U.pendulos;
   for (int i = 0; i < N_PEND; ++i) {
@@ -1026,15 +1026,15 @@ static void pendulos_desenhar(lgfx::LovyanGFX& d)
 static void floco_novo(Floco& f, bool espalhar)
 {
   const int r = irand(10);
-  f.tam  = (uint8_t)(r < 5 ? 1 : (r < 8 ? 2 : 3));   // muitos pequenos, poucos grandes
-  f.vy   = frand(30, 50) * f.tam;
+  f.size  = (uint8_t)(r < 5 ? 1 : (r < 8 ? 2 : 3));   // muitos pequenos, poucos grandes
+  f.vy   = frand(30, 50) * f.size;
   f.x    = frand(s_ax, s_ax + s_W);
   f.y    = espalhar ? frand(s_ay, s_ay + s_H) : s_ay - frand(4, 60);
   f.fase = frand(0, 6.2832f);
   f.ox = f.x; f.oy = f.y;
 }
 
-static void neve_iniciar(void)
+static void neve_start(void)
 {
   Neve& s = U.neve;
   for (int i = 0; i < N_FLOCO; ++i) { floco_novo(s.f[i], true); }
@@ -1050,7 +1050,7 @@ static void neve_passo(float dt)
     Floco& f = s.f[i];
     const float ox = f.x, oy = f.y;
     f.fase += 1.7f * dt;
-    f.x += (vento * f.tam / 3.0f + 18.0f * sinf(f.fase)) * dt;
+    f.x += (vento * f.size / 3.0f + 18.0f * sinf(f.fase)) * dt;
     f.y += f.vy * dt;
     bool pulou = false;
     if (f.x < s_ax - 4)            { f.x += s_W + 8; pulou = true; }
@@ -1065,13 +1065,13 @@ static void neve_passo(float dt)
   }
 }
 
-static void neve_desenhar(lgfx::LovyanGFX& d)
+static void neve_draw(lgfx::LovyanGFX& d)
 {
   const Neve& s = U.neve;
   for (int i = 0; i < N_FLOCO; ++i) {
     const Floco& f = s.f[i];
     const int x = (int)f.x, y = (int)f.y;
-    switch (f.tam) {
+    switch (f.size) {
       case 1:
         d.fillRect(x, y, 2, 2, c565(150, 160, 185));
         break;
@@ -1094,7 +1094,7 @@ static void neve_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // COMETAS
 // ===========================================================================
-static const float CAUDA_PASSO = 0.035f;   // "tempo" entre dois pontos da cauda
+static const float CAUDA_PASSO = 0.035f;   // "time" entre dois pontos of cauda
 
 static void cometa_pos(const Cometa& c, float t, float* x, float* y)
 {
@@ -1104,7 +1104,7 @@ static void cometa_pos(const Cometa& c, float t, float* x, float* y)
 
 static int cauda_raio(int k) { return k < 2 ? 6 - k : (k < 6 ? 3 : 2); }
 
-static void cometas_iniciar(void)
+static void cometas_start(void)
 {
   static const uint8_t PARES[][2] = { { 3, 2 }, { 5, 4 }, { 4, 3 }, { 2, 3 }, { 5, 3 }, { 3, 4 } };
   for (int i = 0; i < N_COMETA; ++i) {
@@ -1137,16 +1137,16 @@ static void cometas_passo(float dt)
   }
 }
 
-static void cometas_desenhar(lgfx::LovyanGFX& d)
+static void cometas_draw(lgfx::LovyanGFX& d)
 {
   for (int i = 0; i < N_COMETA; ++i) {
     const Cometa& c = U.cometas.c[i];
-    for (int k = N_CAUDA - 1; k >= 0; --k) {   // a cabeca por ultimo, por cima
+    for (int k = N_CAUDA - 1; k >= 0; --k) {   // a cabeca por ultimo, por top
       const int x = (int)c.ox[k], y = (int)c.oy[k], r = cauda_raio(k);
-      const uint16_t cor = k == 0 ? c565(255, 250, 235)
+      const uint16_t color = k == 0 ? c565(255, 250, 235)
                                   : matiz((uint8_t)(c.h + k * 3), 250 - k * 17);
-      if (r >= 3) { d.fillCircle(x, y, r, cor); }
-      else        { d.fillRect(x - r, y - r, 2 * r, 2 * r, cor); }
+      if (r >= 3) { d.fillCircle(x, y, r, color); }
+      else        { d.fillRect(x - r, y - r, 2 * r, 2 * r, color); }
     }
   }
 }
@@ -1156,11 +1156,11 @@ static void cometas_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 static const int SOL_R = 30;
 
-static void solar_iniciar(void)
+static void solar_start(void)
 {
   Solar& s = U.solar;
   s.cx = s_ax + s_W / 2;
-  s.cy = s_ay + (int)(s_H * 0.6f);   // abaixo do relogio
+  s.cy = s_ay + (int)(s_H * 0.6f);   // abaixo of clock
   float rmax = fminf(s_W * 0.5f, s_H * 0.4f) - 22;
   if (rmax < 120) { rmax = 120; }
   static const float   ORB[N_PLANETA] = { 0.21f, 0.34f, 0.49f, 0.64f, 0.81f, 1.0f };
@@ -1174,7 +1174,7 @@ static void solar_iniciar(void)
     p.ang = frand(0, 6.2832f);
     p.w   = 1.4f * powf(70.0f / p.orb, 1.5f);   // Kepler: longe e mais devagar
     p.r   = RAD[i];
-    p.cor = c565(COR[i][0], COR[i][1], COR[i][2]);
+    p.color = c565(COR[i][0], COR[i][1], COR[i][2]);
     p.ox  = s.cx + cosf(p.ang) * p.orb;
     p.oy  = s.cy + sinf(p.ang) * p.orb;
   }
@@ -1185,7 +1185,7 @@ static void solar_iniciar(void)
 
 static void solar_fundo(lgfx::LGFX_Sprite& sp, int W, int H)
 {
-  fundo_ceu(sp, W, H);
+  background_ceu(sp, W, H);
   const Solar& s = U.solar;
   for (int i = 0; i < N_PLANETA; ++i) {
     sp.drawCircle(s.cx - s_ax, s.cy - s_ay, (int)s.p[i].orb, c565(38, 40, 58));
@@ -1196,25 +1196,25 @@ static void solar_passo(float dt)
 {
   Solar& s = U.solar;
   s.t += dt;
-  // O sol pulsa: a caixa dele (com a coroa) se refaz todo quadro.
+  // O sol pulsa: a caixa dele (com a coroa) se refaz todo frame.
   rec(s.cx - SOL_R - 7, s.cy - SOL_R - 7, 2 * SOL_R + 15, 2 * SOL_R + 15);
   for (int i = 0; i < N_PLANETA; ++i) {
     Planeta& p = s.p[i];
     p.ang += p.w * dt;
     if (p.ang > 6.2832f) { p.ang -= 6.2832f; }
     const float x = s.cx + cosf(p.ang) * p.orb, y = s.cy + sinf(p.ang) * p.orb;
-    const int folga = p.r + (i == 4 ? 12 : 2);   // o anel passa do planeta
+    const int folga = p.r + (i == 4 ? 12 : 2);   // o anel passa of planeta
     rec2(p.ox, p.oy, x, y, folga);
     p.ox = x; p.oy = y;
   }
-  // A lua da terra (planeta 2).
+  // A lua of terra (planeta 2).
   s.lua += 3.2f * dt;
   const float lx = s.p[2].ox + cosf(s.lua) * 18, ly = s.p[2].oy + sinf(s.lua) * 18;
   rec2(s.lox, s.loy, lx, ly, 5);
   s.lox = lx; s.loy = ly;
 }
 
-static void solar_desenhar(lgfx::LovyanGFX& d)
+static void solar_draw(lgfx::LovyanGFX& d)
 {
   const Solar& s = U.solar;
   const int pulso = (int)(2.5f * sinf(s.t * 2.2f));
@@ -1225,7 +1225,7 @@ static void solar_desenhar(lgfx::LovyanGFX& d)
     const Planeta& p = s.p[i];
     const int x = (int)p.ox, y = (int)p.oy;
     if (i == 4) { d.drawEllipse(x, y, p.r + 9, 4, c565(170, 150, 110)); }
-    d.fillCircle(x, y, p.r, p.cor);
+    d.fillCircle(x, y, p.r, p.color);
     if (i == 4) { d.drawFastHLine(x - p.r + 2, y, 2 * p.r - 4, c565(170, 150, 110)); }
   }
   d.fillCircle((int)s.lox, (int)s.loy, 3, c565(200, 200, 205));
@@ -1234,21 +1234,21 @@ static void solar_desenhar(lgfx::LovyanGFX& d)
 // ===========================================================================
 // LOGO
 // ===========================================================================
-static void logo_pintar(Logo& s)
+static void logo_paint(Logo& s)
 {
   if (!s_logo) { return; }
-  const uint16_t cor = matiz(s.cor, 255);
+  const uint16_t color = matiz(s.color, 255);
   s_logo->fillScreen(TFT_BLACK);
-  s_logo->drawRoundRect(0, 0, s.w, s.h, 12, cor);
-  s_logo->drawRoundRect(1, 1, s.w - 2, s.h - 2, 11, cor);
-  tab5_fonte_corpo(*s_logo);
-  tab5_texto(*s_logo, 5.0f);
+  s_logo->drawRoundRect(0, 0, s.w, s.h, 12, color);
+  s_logo->drawRoundRect(1, 1, s.w - 2, s.h - 2, 11, color);
+  tab5_fonte_body(*s_logo);
+  tab5_text(*s_logo, 5.0f);
   s_logo->setTextDatum(middle_center);
-  s_logo->setTextColor(cor, TFT_BLACK);
+  s_logo->setTextColor(color, TFT_BLACK);
   s_logo->drawString("M5tabOS", s.w / 2, s.h / 2);
 }
 
-static void logo_iniciar(void)
+static void logo_start(void)
 {
   Logo& s = U.logo;
   s.w = 230; s.h = 76;
@@ -1264,9 +1264,9 @@ static void logo_iniciar(void)
   s.vx = (irand(2) ? v : -v) * frand(0.8f, 1.1f);
   s.vy = (irand(2) ? v : -v) * frand(0.8f, 1.1f);
   s.ox = s.x; s.oy = s.y;
-  s.cor = (uint8_t)irand(256);
+  s.color = (uint8_t)irand(256);
   s.cantos = 0;
-  logo_pintar(s);
+  logo_paint(s);
 }
 
 static void logo_passo(float dt)
@@ -1281,22 +1281,22 @@ static void logo_passo(float dt)
   if (s.y < s_ay)                { s.y = (float)s_ay;              s.vy =  fabsf(s.vy); ++bateu; }
   else if (s.y > s_ay + s_H - s.h) { s.y = (float)(s_ay + s_H - s.h); s.vy = -fabsf(s.vy); ++bateu; }
   if (bateu) {
-    s.cor = (uint8_t)(s.cor + 45 + irand(40));
+    s.color = (uint8_t)(s.color + 45 + irand(40));
     s.repintar = true;
-    if (bateu == 2) { ++s.cantos; }   // o canto! (fica so na memoria, de trofeu)
+    if (bateu == 2) { ++s.cantos; }   // o canto! (stays so in memoria, of trofeu)
   }
   const int x0 = (int)fminf(s.ox, s.x) - 1, y0 = (int)fminf(s.oy, s.y) - 1;
   rec(x0, y0, s.w + (int)ceilf(fabsf(s.x - s.ox)) + 3, s.h + (int)ceilf(fabsf(s.y - s.oy)) + 3);
 }
 
-static void logo_desenhar(lgfx::LovyanGFX& d)
+static void logo_draw(lgfx::LovyanGFX& d)
 {
   Logo& s = U.logo;
-  if (s.repintar) { logo_pintar(s); s.repintar = false; }
+  if (s.repintar) { logo_paint(s); s.repintar = false; }
   if (s_logo) {
     s_logo->pushSprite(&d, (int)s.x, (int)s.y, (uint16_t)0);   // preto = transparente
   } else {
-    d.drawRoundRect((int)s.x, (int)s.y, s.w, s.h, 12, matiz(s.cor, 255));
+    d.drawRoundRect((int)s.x, (int)s.y, s.w, s.h, 12, matiz(s.color, 255));
   }
 }
 
@@ -1304,44 +1304,44 @@ static void logo_desenhar(lgfx::LovyanGFX& d)
 // O QUADRO
 // ===========================================================================
 typedef struct {
-  void (*iniciar)(void);
+  void (*start)(void);
   void (*passo)(float dt);
-  void (*desenhar)(lgfx::LovyanGFX& d);
+  void (*draw)(lgfx::LovyanGFX& d);
   void (*fundo)(lgfx::LGFX_Sprite& s, int W, int H);   // nullptr = abstrato sorteado
 } anim_t;
 
 static const anim_t ANIMS[] = {
-  { bolas_iniciar,    bolas_passo,    bolas_desenhar,    nullptr     },
-  { fogos_iniciar,    fogos_passo,    fogos_desenhar,    nullptr     },
-  { chuva_iniciar,    chuva_passo,    chuva_desenhar,    nullptr     },
-  { estrelas_iniciar, estrelas_passo, estrelas_desenhar, nullptr     },
-  { bolhas_iniciar,   bolhas_passo,   bolhas_desenhar,   nullptr     },
-  { cobra_iniciar,    cobra_passo,    cobra_desenhar,    nullptr     },
-  { lumes_iniciar,    lumes_passo,    lumes_desenhar,    nullptr     },
-  { pendulos_iniciar, pendulos_passo, pendulos_desenhar, nullptr     },
-  { neve_iniciar,     neve_passo,     neve_desenhar,     nullptr     },
-  { cometas_iniciar,  cometas_passo,  cometas_desenhar,  nullptr     },
-  { solar_iniciar,    solar_passo,    solar_desenhar,    solar_fundo },
-  { logo_iniciar,     logo_passo,     logo_desenhar,     nullptr     },
+  { bolas_start,    bolas_passo,    bolas_draw,    nullptr     },
+  { fogos_start,    fogos_passo,    fogos_draw,    nullptr     },
+  { chuva_start,    chuva_passo,    chuva_draw,    nullptr     },
+  { estrelas_start, estrelas_passo, estrelas_draw, nullptr     },
+  { bolhas_start,   bolhas_passo,   bolhas_draw,   nullptr     },
+  { cobra_start,    cobra_passo,    cobra_draw,    nullptr     },
+  { lumes_start,    lumes_passo,    lumes_draw,    nullptr     },
+  { pendulos_start, pendulos_passo, pendulos_draw, nullptr     },
+  { neve_start,     neve_passo,     neve_draw,     nullptr     },
+  { cometas_start,  cometas_passo,  cometas_draw,  nullptr     },
+  { solar_start,    solar_passo,    solar_draw,    solar_fundo },
+  { logo_start,     logo_passo,     logo_draw,     nullptr     },
 };
 static const int N_ANIMS = (int)(sizeof(ANIMS) / sizeof(ANIMS[0]));
 
 static void (* const FUNDOS[])(lgfx::LGFX_Sprite&, int, int) = {
-  fundo_fios, fundo_ondas, fundo_teia, fundo_raios, fundo_circulos,
+  background_fios, background_ondas, background_teia, background_raios, background_circulos,
 };
 
 static const int N_FUNDOS = (int)(sizeof(FUNDOS) / sizeof(FUNDOS[0]));
 
-static int  s_atual = 0;
-static int  s_fundo_atual = 0;
+static int  s_current = 0;
+static int  s_fundo_current = 0;
 static bool s_pronta = false;   // a sorteada ja foi iniciada
 
-// O dt vem do ritmo de quadro do sistema (kernel/frame_pacing.hpp): o tempo entre as
-// varreduras em que dois quadros vao ao ar. Limitado aqui: depois de uma
-// pausa (despertar), a animacao continua de onde estava em vez de saltar.
+// O dt vem of ritmo of frame of sistema (kernel/frame_pacing.hpp): o time entre as
+// varreduras em que dois quadros vao on ar. Limitado aqui: depois of uma
+// pausa (despertar), a animacao continua of onde estava em vez of saltar.
 static float passo_dt(void)
 {
-  float dt = sistema_quadro_dt();
+  float dt = system_frame_dt();
   if (dt < 0.005f) { dt = 0.005f; }
   if (dt > 0.10f)  { dt = 0.10f; }
   return dt;
@@ -1352,79 +1352,79 @@ void bq_anim_sortear(void)
   s_rng ^= esp_random();
   if (s_rng == 0) { s_rng = 2463534242u; }
   int nova = irand(N_ANIMS - 1);
-  if (nova >= s_atual) { ++nova; }   // nunca a mesma duas vezes seguidas
+  if (nova >= s_current) { ++nova; }   // nunca a mesma duas vezes seguidas
   int fundo = irand(N_FUNDOS - 1);
-  if (fundo >= s_fundo_atual) { ++fundo; }
-  s_atual       = nova;
-  s_fundo_atual = fundo;
+  if (fundo >= s_fundo_current) { ++fundo; }
+  s_current       = nova;
+  s_fundo_current = fundo;
   s_pronta      = false;
   s_fundo_falhou = false;
-  fundo_soltar();   // desenho novo a cada bloqueio
-  if (ANIMS[s_atual].iniciar != logo_iniciar) { delete s_logo; s_logo = nullptr; }
+  background_release();   // drawing novo a cada bloqueio
+  if (ANIMS[s_current].start != logo_start) { delete s_logo; s_logo = nullptr; }
 }
 
-void bq_anim_soltar(void)
+void bq_anim_release(void)
 {
-  fundo_soltar();
+  background_release();
   delete s_logo;
   s_logo = nullptr;
-  s_pronta = false;   // o logo (se for ele) precisa da imagem de volta
+  s_pronta = false;   // o logo (se for ele) precisa of imagem of iteration
 }
 
-// Cria e pinta a imagem do fundo. false = sem memoria (fica o preto).
-static bool fundo_criar(void)
+// Cria e pinta a imagem of fundo. false = sem memoria (stays o preto).
+static bool background_create(void)
 {
   auto* sp = new lgfx::LGFX_Sprite();
   if (!sp) { return false; }
-  // O MESMO formato das paginas do painel: a copia vira memcpy puro.
+  // O MESMO formato das paginas of panel: a copia vira memcpy puro.
   sp->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
   sp->setPsram(true);
   if (!sp->createSprite(s_W, s_H)) { delete sp; return false; }
   sp->fillScreen(TFT_BLACK);
-  if (ANIMS[s_atual].fundo) { ANIMS[s_atual].fundo(*sp, s_W, s_H); }
-  else                      { FUNDOS[s_fundo_atual](*sp, s_W, s_H); }
+  if (ANIMS[s_current].fundo) { ANIMS[s_current].fundo(*sp, s_W, s_H); }
+  else                      { FUNDOS[s_fundo_current](*sp, s_W, s_H); }
   s_fundo = sp;
   return true;
 }
 
-void bq_anim_iniciar(const area_t& a)
+void bq_anim_start(const area_t& a)
 {
-  const bool mudou_area = a.x != s_ax || a.y != s_ay || a.largura != s_W || a.altura != s_H;
-  s_ax = a.x; s_ay = a.y; s_W = a.largura; s_H = a.altura;
+  const bool changed_area = a.x != s_ax || a.y != s_ay || a.width != s_W || a.height != s_H;
+  s_ax = a.x; s_ay = a.y; s_W = a.width; s_H = a.height;
   s_n_ret  = 0;
-  if (!s_pronta || mudou_area) {
-    ANIMS[s_atual].iniciar();
+  if (!s_pronta || changed_area) {
+    ANIMS[s_current].start();
     s_pronta = true;
-    fundo_soltar();
+    background_release();
   }
-  if (!s_fundo && !s_fundo_falhou) { s_fundo_falhou = !fundo_criar(); }
-  s_fundo_pintar = s_fundo != nullptr;
-  s_tudo = true;   // a tela foi limpa: tudo precisa ser pintado
+  if (!s_fundo && !s_fundo_falhou) { s_fundo_falhou = !background_create(); }
+  s_fundo_paint = s_fundo != nullptr;
+  s_everything = true;   // a screen foi limpa: everything precisa ser pintado
 }
 
-void bq_anim_quadro(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
+void bq_anim_frame(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
                     const bq_ret_t* caixas, int n_caixas, bq_ret_t* clips)
 {
   const float dt = passo_dt();
 
   s_n_ret = 0;
   for (int i = 0; i < n_extras; ++i) { rec(extras[i].x, extras[i].y, extras[i].w, extras[i].h); }
-  if (n_extras > 0) { s_tudo = true; }
+  if (n_extras > 0) { s_everything = true; }
 
-  ANIMS[s_atual].passo(dt);
+  ANIMS[s_current].passo(dt);
 
-  // ONDE O TEXTO PRECISA SER REPINTADO: para cada caixa de texto, a caixa que
-  // cobre tudo que a animacao mexeu dentro dela. Essa caixa INTEIRA entra na
-  // lista de apagar. O texto e suavizado (borda translucida): pintado duas
-  // vezes no mesmo pixel ele engrossa a cada quadro. Apagando a caixa toda
-  // antes, cada pixel recebe o texto uma unica vez.
+  // ONDE O TEXTO PRECISA SER REPINTADO: para cada caixa of text, a caixa que
+  // cobre everything que a animacao mexeu dentro dela. Essa caixa INTEIRA entra in
+  // lista of erase. O text e suavizado (borda translucida): pintado duas
+  // vezes no mesmo pixel ele engrossa a cada frame. Apagando a caixa toda
+  // antes, cada pixel recebe o text uma unica vez.
   //
-  // Em passadas: a juncao das caixas (rec) pode crescer uma delas por cima de
-  // outro texto. Cada passada refaz o clip de cada texto com TUDO que vai ser
-  // apagado dentro dele, e o proprio clip entra na lista - ate parar de mudar.
+  // Em passes: a juncao das caixas (rec) pode crescer uma delas por top of
+  // outro text. Cada pass refaz o clip of cada text com TUDO que vai ser
+  // apagado dentro dele, e o proprio clip entra in lista - ate stop of mudar.
   for (int j = 0; j < n_caixas; ++j) { clips[j] = { 0, 0, 0, 0 }; }
-  for (int passada = 0; passada < 4; ++passada) {
-    bool mudou = false;
+  for (int pass = 0; pass < 4; ++pass) {
+    bool changed = false;
     for (int j = 0; j < n_caixas; ++j) {
       const bq_ret_t& cx = caixas[j];
       bq_ret_t env = { 0, 0, 0, 0 };
@@ -1440,41 +1440,41 @@ void bq_anim_quadro(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
       if (env.w <= 0 || memcmp(&env, &clips[j], sizeof(env)) == 0) { continue; }
       clips[j] = env;
       rec(env.x, env.y, env.w, env.h);
-      s_tudo = true;   // o que estava nessa caixa foi apagado: tudo se redesenha
-      mudou = true;
+      s_everything = true;   // o que estava nessa caixa foi apagado: everything se redesenha
+      changed = true;
     }
-    if (!mudou) { break; }
+    if (!changed) { break; }
   }
 
-  if (s_fundo_pintar) {
-    fundo_pintar_tudo(d);
-    s_fundo_pintar = false;
+  if (s_fundo_paint) {
+    background_paint_everything(d);
+    s_fundo_paint = false;
   }
-  for (int i = 0; i < s_n_ret; ++i) { apagar(d, s_ret[i]); }
+  for (int i = 0; i < s_n_ret; ++i) { erase(d, s_ret[i]); }
   d.setClipRect(s_ax, s_ay, s_W, s_H);   // nunca encosta nas barras
-  ANIMS[s_atual].desenhar(d);
+  ANIMS[s_current].draw(d);
   d.clearClipRect();
-  s_tudo = false;
+  s_everything = false;
 }
 
 // ---------------------------------------------------------------------------
 // O MESMO DESENHO COMO PAPEL DE PAREDE (home). Declarada no .hpp. A imagem
-// so existe durante a chamada: pintada, copiada para a tela e devolvida - a
-// home so e desenhada inteira (abrir, trocar de pagina, voltar de um app),
-// entao nao ha por que segurar 1,6 MB o tempo todo. A mesma semente faz o
-// desenho sair igual toda vez.
-// O PAPEL DE PAREDE GUARDADO. Gerar o desenho procedural num sprite do
-// tamanho da area (~1,6 MB) a cada passada completa da home - todo fechar de
-// app, todo despertar - era o mesmo trabalho, com o mesmo resultado (mesma
-// semente), repetido na transicao mais pesada do sistema. Agora o sprite
-// pronto fica enquanto estilo/semente/area forem os mesmos; o kernel solta
-// ao abrir um app e no repouso, quando a home nao esta na tela.
+// so existe durante a chamada: pintada, copiada para a screen e devolvida - a
+// home so e desenhada inteira (open, switch of pagina, voltar of one app),
+// entao nao ha por que hold 1,6 MB o time todo. A mesma semente faz o
+// drawing exit igual toda vez.
+// O PAPEL DE PAREDE GUARDADO. Gerar o drawing procedural num sprite of
+// tamanho of area (~1,6 MB) a cada pass complete of home - todo close of
+// app, todo despertar - era o mesmo work, com o mesmo resultado (mesma
+// semente), repetido in transicao mais pesada of sistema. Agora o sprite
+// pronto stays enquanto estilo/semente/area forem os mesmos; o kernel released
+// on open one app e no sleep, when a home nao esta in screen.
 static lgfx::LGFX_Sprite* s_parede = nullptr;
 static int      s_parede_estilo = -1;
 static uint32_t s_parede_semente = 0;
 static int      s_parede_l = 0, s_parede_a = 0;
 
-void bq_parede_soltar(void)
+void bq_parede_release(void)
 {
   delete s_parede;
   s_parede = nullptr;
@@ -1484,36 +1484,36 @@ void bq_parede_soltar(void)
 bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t semente)
 {
   if (estilo < 0 || estilo >= N_FUNDOS) { return false; }
-  if (a.largura <= 0 || a.altura <= 0) { return false; }
+  if (a.width <= 0 || a.height <= 0) { return false; }
   const bool mesma = s_parede && s_parede_estilo == estilo && s_parede_semente == semente
-                  && s_parede_l == a.largura && s_parede_a == a.altura;
+                  && s_parede_l == a.width && s_parede_a == a.height;
   if (!mesma) {
-    bq_parede_soltar();
+    bq_parede_release();
     auto* sp = new lgfx::LGFX_Sprite();
     if (!sp) { return false; }
     sp->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
     sp->setPsram(true);
-    if (!sp->createSprite(a.largura, a.altura)) { delete sp; return false; }
+    if (!sp->createSprite(a.width, a.height)) { delete sp; return false; }
     sp->fillScreen(TFT_BLACK);
-    // A semente e do papel de parede, nao da animacao: o gerador comum e
+    // A semente e of papel of parede, nao of animacao: o gerador comum e
     // emprestado e devolvido como estava.
     const uint32_t rng = s_rng;
     s_rng = semente ? semente : 2463534242u;
-    FUNDOS[estilo](*sp, a.largura, a.altura);
+    FUNDOS[estilo](*sp, a.width, a.height);
     s_rng = rng;
     s_parede = sp;
     s_parede_estilo = estilo; s_parede_semente = semente;
-    s_parede_l = a.largura; s_parede_a = a.altura;
+    s_parede_l = a.width; s_parede_a = a.height;
   }
 
   // EM FAIXAS, como toda escrita grande (ver tab5_screen_clear): a imagem
-  // inteira de uma vez seca o FIFO do painel. E coberta: o compositor nao
-  // precisa trazer da pagina da frente o que vai ser sobrescrito.
+  // inteira of uma vez seca o FIFO of panel. E coberta: o compositor nao
+  // precisa trazer of pagina of frente o que vai ser sobrescrito.
   const int FAIXA = 128;
-  for (int y = 0; y < a.altura; y += FAIXA) {
-    const int h = (y + FAIXA <= a.altura) ? FAIXA : a.altura - y;
-    tela_virtual_cobrir(a.x, a.y + y, a.largura, h);
-    d.setClipRect(a.x, a.y + y, a.largura, h);
+  for (int y = 0; y < a.height; y += FAIXA) {
+    const int h = (y + FAIXA <= a.height) ? FAIXA : a.height - y;
+    virtual_screen_cover(a.x, a.y + y, a.width, h);
+    d.setClipRect(a.x, a.y + y, a.width, h);
     s_parede->pushSprite(&d, a.x, a.y);
   }
   d.clearClipRect();

@@ -1,4 +1,4 @@
-// Redes do Wi-Fi do no - ver tab5_mesh_wifi_node.hpp.
+// Redes of Wi-Fi of no - ver tab5_mesh_wifi_node.hpp.
 #include "tab5_mesh_wifi_node.hpp"
 
 #include <stdio.h>
@@ -21,24 +21,24 @@ static bool     s_carregado = false;
 static volatile bool s_gravar_pend = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// Roda na tarefa "cartao" (carona): reescreve o arquivo quando algo mudou.
-static void na_carona(void)
+// Roda in tarefa "cartao" (carona): reescreve o arquivo when algo changed.
+static void in_carona(void)
 {
-  // A lista so e reescrita depois de lida do cartao (ver mesh_wifi_no_salvar).
+  // A lista so e reescrita depois of lida of cartao (ver mesh_wifi_no_salvar).
   if (!s_carregado) { mesh_wifi_no_carregar(); return; }
   if (!s_gravar_pend) { return; }
   s_gravar_pend = false;
-  // Copia da lista com a trava e escreve fora dela (cartao e lento).
+  // Copia of lista com a trava e escreve fora dela (cartao e lento).
   static mesh_wifi_rede_t copia[MESH_WIFI_REDES_MAX];
   int n;
   taskENTER_CRITICAL(&s_mux);
   n = s_n;
   memcpy(copia, s_r, sizeof(copia));
   taskEXIT_CRITICAL(&s_mux);
-  // O arquivo inteiro na memoria e UMA troca pela porta do sistema
-  // (tab5_sd_replace): nunca meio arquivo, e com o cartao emprestado ao
-  // computador vai para o diario. SIGILOSO: as senhas do arquivo antigo sao
-  // zeradas antes de ele sair.
+  // O arquivo inteiro in memoria e UMA troca pela porta of sistema
+  // (tab5_sd_replace): nunca middle arquivo, e com o cartao emprestado on
+  // computador vai para o diario. SIGILOSO: as senhas of arquivo antigo sao
+  // zeradas antes of ele exit.
   const size_t cap = 64 + (size_t)MESH_WIFI_REDES_MAX * (sizeof(copia[0].ssid) + TAB5_WIFI_CIPHER_HEX + 2);
   char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
   if (!txt) { s_gravar_pend = true; memset(copia, 0, sizeof(copia)); return; }
@@ -50,19 +50,19 @@ static void na_carona(void)
     k += (size_t)snprintf(txt + k, cap - k, "%s\n%s\n", copia[i].ssid, hex);
   }
   if (!tab5_sd_replace(PASTA, ARQ, txt, k < cap ? k : cap - 1, TAB5_SD_SIGILOSO)) {
-    s_gravar_pend = true;   // sem cartao: tenta de novo na proxima volta
+    s_gravar_pend = true;   // sem cartao: tenta of novo in next iteration
   }
   heap_caps_free(txt);
-  memset(copia, 0, sizeof(copia));   // senhas em texto: nao deixa copia na RAM
+  memset(copia, 0, sizeof(copia));   // senhas em text: nao deixa copia in RAM
 }
 
 void mesh_wifi_no_carregar(void)
 {
   if (s_carregado) { return; }
   static bool carona = false;
-  if (!carona) { carona = tab5_sd_piggyback(na_carona); }
-  // Sem cartao NAO marca como carregado: a lista vazia da RAM nao pode virar
-  // o arquivo. Tenta de novo na carona, ate o cartao aparecer.
+  if (!carona) { carona = tab5_sd_piggyback(in_carona); }
+  // Sem cartao NAO marca como carregado: a lista vazia of RAM nao pode virar
+  // o arquivo. Tenta of novo in carona, ate o cartao aparecer.
   if (!tab5_sd_mount()) { return; }
   FILE* f = tab5_sd_open(PASTA, ARQ, "r");
   if (f) {
@@ -105,14 +105,14 @@ bool mesh_wifi_no_rede(int i, mesh_wifi_rede_t* o)
   return ok;
 }
 
-// Poe 'r' no topo, removendo a anterior de mesmo nome. Com a trava tomada.
+// Poe 'r' no topo, removendo a anterior of mesmo name. Com a trava tomada.
 static void topo_locked(const mesh_wifi_rede_t& r)
 {
   int onde = -1;
   for (int i = 0; i < s_n; ++i) { if (strcmp(s_r[i].ssid, r.ssid) == 0) { onde = i; break; } }
   if (onde < 0) {
     if (s_n < MESH_WIFI_REDES_MAX) { onde = s_n++; }
-    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // cheia: sai a mais antiga
+    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // cheia: exit a mais antiga
   }
   for (int k = onde; k > 0; --k) { s_r[k] = s_r[k - 1]; }
   s_r[0] = r;
@@ -155,7 +155,7 @@ bool mesh_wifi_no_esquecer(int i)
   return ok;
 }
 
-int mesh_wifi_no_trazer_do_tab5(void)
+int mesh_wifi_no_trazer_of_tab5(void)
 {
   if (tab5_wifi_known_count() == 0) { return -1; }
   int novas = 0;
@@ -165,7 +165,7 @@ int mesh_wifi_no_trazer_do_tab5(void)
     bool ja = false;
     for (int k = 0; k < s_n; ++k) { if (strcmp(s_r[k].ssid, ssid) == 0) { ja = true; break; } }
     if (ja) { continue; }
-    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // cheia: nao expulsa as do no
+    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // cheia: nao expulsa as of no
     mesh_wifi_no_salvar(ssid, senha);
     ++novas;
   }

@@ -1,11 +1,11 @@
-// GERADO por generate_hw.py a partir do HardwareModel oficial do
-// Meshtastic (meshtastic/protobufs, mesh.proto). Nao editar a mao -
-// rode o script de novo se a lista oficial crescer.
+// GERADO por generate_hw.py a partir of HardwareModel oficial of
+// Meshtastic (meshtastic/protobufs, mesh.proto). Nao edit a mao -
+// rode o script of novo se a lista oficial crescer.
 #include "tab5_mesh.hpp"
 
-// 256 ponteiros, a maioria nulos - endereca direto pelo byte do codigo,
+// 256 ponteiros, a maioria nulos - endereca direto pelo byte of code,
 // sem busca. O nulo E o dado: mesh_hw_nome() o devolve para quem chama
-// decidir como mostrar um numero que a tabela oficial ainda nao tem.
+// decidir como mostrar one numero que a tabela oficial ainda nao tem.
 const char* const TAB5_MESH_HW_NOMES[256] = {
   [0] = nullptr,
   [1] = "Tlora V2",

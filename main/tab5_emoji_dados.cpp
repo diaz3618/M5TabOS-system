@@ -1,12 +1,12 @@
-// GERADO por generate_emoji.py a partir da lista oficial de emoji do
-// Unicode (emoji-test.txt) e da arte do Twemoji (CC-BY 4.0,
-// twemoji.twitter.com). Nao editar a mao - rode o script de novo.
+// GERADO por generate_emoji.py a partir of lista oficial of emoji of
+// Unicode (emoji-test.txt) e of arte of Twemoji (CC-BY 4.0,
+// twemoji.twitter.com). Nao edit a mao - rode o script of novo.
 //
 // ORDENADA POR CODIGO DE PROPOSITO: tab5_emoji.cpp busca aqui por
-// busca BINARIA, nao varredura - com mais de mil entradas isso importa.
+// busca BINARIA, nao varredura - com mais of mil entries isso importa.
 //
 // Cada emoji: uma paleta RGB565 (bytes trocados, indice 0 = transparente)
-// e um indice de 1 byte por pixel.
+// e one indice of 1 byte por pixel.
 #include "tab5_emoji.hpp"
 
 // U+00A9 - copyright
@@ -45265,7 +45265,7 @@ static const uint8_t s_emoji_1faf6[24*24] = {
 
 const int TAB5_EMOJI_LADO = 24;
 
-// ORDENADA por codigo - nao embaralhar. Ver o aviso no topo.
+// ORDENADA por code - nao embaralhar. Ver o aviso no topo.
 const tab5_emoji_t TAB5_EMOJI_TABELA[] = {
   { 0xA9, s_emoji_a9, s_paleta_a9 },
   { 0xAE, s_emoji_ae, s_paleta_ae },

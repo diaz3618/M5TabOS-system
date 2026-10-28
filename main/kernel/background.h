@@ -1,60 +1,60 @@
-// PARTE DE FUNDO DE UM APP - trabalho que continua quando a janela fecha
+// PARTE DE FUNDO DE UM APP - work que continua when a window fecha
 // .
 //
 // -------------------------------------------------------------------------
 // O PROBLEMA
 // -------------------------------------------------------------------------
-// Um app vive enquanto esta na tela: ao_fechar() libera tudo. Mas existe o app
-// cujo TRABALHO nao e a tela - gravar a trilha do GPS, mandar a posicao pela
-// internet, um calculo longo. A Trilha resolvia isso virando um servico feito
-// a mao (services/tab5_trilha, com tarefa, notificacao e parada proprias). O
-// segundo app assim teria que repetir tudo - e cada um repetiria diferente.
+// Um app vive enquanto esta in screen: ao_fechar() libera everything. Mas existe o app
+// cujo TRABALHO nao e a screen - gravar a track of GPS, mandar a position pela
+// internet, one calculo longo. A Trilha resolvia isso virando one servico feito
+// a mao (services/tab5_trilha, com tarefa, notification e parada proprias). O
+// segundo app assim teria que repetir everything - e cada one repetiria diferente.
 //
 // -------------------------------------------------------------------------
 // O MODELO
 // -------------------------------------------------------------------------
 // O app se divide em duas metades:
-//   - a JANELA: o app de sempre (desenha, toca, nasce e morre com a tela);
-//   - a PARTE DE FUNDO: um loop que o KERNEL roda numa tarefa DELE. O app so
-//     descreve (fundo_def_t) e pede para ligar/desligar. Fechar a janela nao
+//   - a JANELA: o app of sempre (desenha, toca, nasce e morre com a screen);
+//   - a PARTE DE FUNDO: one loop que o KERNEL roda numa tarefa DELE. O app so
+//     descreve (fundo_def_t) e pede para enable/disable. Fechar a window nao
 //     para o fundo.
 //
-// O que o SISTEMA garante a toda parte de fundo, sem o app escrever nada:
-//   - TAREFA propria, prioridade 1 (abaixo da interface, dos radios e do
-//     worker) - o loop mais pesado nunca trava o toque;
-//   - VISIVEL SEMPRE: enquanto roda, uma notificacao NOTIF_ESTADO com o nome
-//     dela (pastilha cinza na barra). Nada roda escondido do usuario;
-//   - ENERGIA somada: o perfil declarado entra no perfil efetivo do aparelho
-//     (junto do app da tela, ou da home) enquanto ela rodar - WiFi pedido
-//     aqui fica de pe com qualquer app na tela e em repouso;
-//   - PARADA LIMPA: pedir para parar ACORDA o loop (fundo_esperar volta na
-//     hora) e o sistema espera ele sair antes de chamar ao_parar();
-//   - quem para: a janela, o console ("fundo parar <nome>"), e - quando
-//     existir - a tela de Em execucao.
+// O que o SISTEMA garante a toda parte of fundo, sem o app write nada:
+//   - TAREFA propria, priority 1 (abaixo of interface, dos radios e of
+//     worker) - o loop mais pesado nunca trava o touch;
+//   - VISIVEL SEMPRE: enquanto roda, uma notification NOTIF_ESTADO com o name
+//     dela (pastilha cinza in barra). Nada roda escondido of user;
+//   - ENERGIA somada: o profile declarado entra no profile efetivo of aparelho
+//     (junto of app of screen, ou of home) enquanto ela rodar - WiFi request
+//     aqui stays of pe com qualquer app in screen e em sleep;
+//   - PARADA LIMPA: request para stop ACORDA o loop (fundo_esperar iteration in
+//     hora) e o sistema espera ele exit antes of chamar ao_parar();
+//   - quem para: a window, o console ("fundo stop <name>"), e - when
+//     existir - a screen of Em execucao.
 //
 // -------------------------------------------------------------------------
-// O CONTRATO DO LOOP (corpo)
+// O CONTRATO DO LOOP (body)
 // -------------------------------------------------------------------------
 //   static void meu_laco(fundo_t* f) {
 //       while (fundo_esperar(f, 5000)) {       // dorme 5 s; false = pare
-//           ...trabalho com esperas LIMITADAS...
-//           fundo_estado(f, n, "42 envios");    // o texto da pastilha
+//           ...work com esperas LIMITADAS...
+//           fundo_estado(f, n, "42 envios");    // o text of pastilha
 //       }
 //   }                                           // retornou: o sistema limpa
 //
-//   - NUNCA espere para sempre (portMAX_DELAY): o pedido de parada precisa
-//     conseguir chegar. Espera de verdade e fundo_esperar().
-//   - Loop de CALCULO (sem esperar nada) chama fundo_ceder(f) a cada volta:
+//   - NUNCA espere para sempre (portMAX_DELAY): o request of parada precisa
+//     conseguir chegar. Espera of verdade e fundo_esperar().
+//   - Loop of CALCULO (sem wait nada) chama fundo_ceder(f) a cada iteration:
 //     sem isso a tarefa ocupa o core inteiro, o IDLE dele nunca roda, o
-//     watchdog dispara e o aparelho nao dorme. fundo_ceder so cede de fato
+//     watchdog dispara e o aparelho nao dorme. fundo_ceder so cede of fato
 //     a cada ~20 ms, entao pode ser chamado em loop apertado.
-//   - O loop NAO desenha. O que a janela precisa mostrar, o fundo guarda em
-//     estado proprio (protegido) e a janela le por copia - igual servico.
-//   - Memoria do fundo e do fundo: estatica ou alocada no ao_iniciar() e
-//     liberada no ao_parar(). NUNCA um buffer da janela - ela pode fechar a
+//   - O loop NAO desenha. O que a window precisa mostrar, o fundo guarda em
+//     estado proprio (protegido) e a window le por copia - igual servico.
+//   - Memoria of fundo e of fundo: estatica ou alocada no ao_iniciar() e
+//     liberada no ao_parar(). NUNCA one buffer of window - ela pode close a
 //     qualquer momento.
-//   - Retornar do loop sozinho (terminou o trabalho) e permitido: o sistema
-//     percebe e limpa como numa parada pedida.
+//   - Retornar of loop sozinho (terminou o work) e permitido: o sistema
+//     percebe e limpa como numa parada requested.
 #pragma once
 
 #include <stdint.h>
@@ -62,44 +62,44 @@
 #include "tab5_power.hpp"
 #include "notification.h"
 
-#define FUNDO_MAX 4   // partes de fundo rodando ao mesmo tempo
+#define FUNDO_MAX 4   // partes of fundo running on mesmo time
 
-typedef struct fundo_s fundo_t;
-typedef void (*fundo_corpo_t)(fundo_t* f);
+typedef struct background_s background_t;
+typedef void (*background_body_t)(background_t* f);
 
 typedef struct {
-  const char*   name;       // literal: nome da tarefa (<=15), da notificacao e nas listas
-  fundo_corpo_t corpo;
-  uint32_t      pilha;      // bytes; 0 = 4096
-  tab5_profile_t perfil;     // o que precisa LIGADO enquanto roda (soma no perfil efetivo)
-  int           piso_repouso_mhz;   // 0 = o padrao do sistema
-  // Opcionais. Rodam na tarefa de quem pediu (a interface, na pratica).
-  bool (*ao_iniciar)(void); // prepara o estado; false = recusa ligar
-  void (*ao_parar)(void);   // depois que o loop saiu: fecha e libera
-  bool (*com_som)(void);    // preferencia de beep da notificacao; nullptr = com som
-} fundo_def_t;
+  const char*   name;       // literal: name of tarefa (<=15), of notification e nas listas
+  background_body_t body;
+  uint32_t      stack;      // bytes; 0 = 4096
+  tab5_profile_t profile;     // o que precisa LIGADO enquanto roda (soma no profile efetivo)
+  int           piso_sleep_mhz;   // 0 = o default of sistema
+  // Opcionais. Rodam in tarefa of quem pediu (a interface, in pratica).
+  bool (*on_start)(void); // prepara o estado; false = recusa enable
+  void (*on_stop)(void);   // depois que o loop exited: fecha e libera
+  bool (*com_sound)(void);    // preferencia of beep of notification; nullptr = com sound
+} background_def_t;
 
-// ---- para a janela (e qualquer um) -----------------------------------------
-bool sistema_fundo_iniciar(const fundo_def_t* d);   // false: ja rodando, sem vaga ou recusou
-bool sistema_fundo_parar(const fundo_def_t* d);     // ESPERA o loop sair (ate 3 s)
-bool sistema_fundo_ativo(const fundo_def_t* d);
+// ---- para a window (e qualquer one) -----------------------------------------
+bool system_fundo_start(const background_def_t* d);   // false: ja running, sem vaga ou recusou
+bool system_fundo_stop(const background_def_t* d);     // ESPERA o loop exit (ate 3 s)
+bool system_fundo_active(const background_def_t* d);
 
 typedef struct {
   const char* name;
-  uint32_t    ha_s;                  // rodando ha quantos segundos
-  char        resumo[NOTIF_RESUMO];  // o ultimo fundo_estado()
-} fundo_info_t;
-int  sistema_fundo_listar(fundo_info_t* out, int max);
-bool sistema_fundo_parar_nome(const char* nome);
+  uint32_t    ha_s;                  // running ha quantos segundos
+  char        summary[NOTIF_RESUMO];  // o ultimo fundo_estado()
+} background_info_t;
+int  system_fundo_listar(background_info_t* out, int max);
+bool system_fundo_stop_name(const char* name);
 
 // ---- para o loop ----------------------------------------------------------
-bool fundo_esperar(fundo_t* f, uint32_t ms);   // dorme ate ms; false = pediram para parar
-bool fundo_ceder(fundo_t* f);                  // loop de calculo; false = pediram para parar
-bool fundo_rodando(const fundo_t* f);
-void fundo_estado(fundo_t* f, int quantidade, const char* resumo);
+bool background_wait(background_t* f, uint32_t ms);   // dorme ate ms; false = pediram para stop
+bool background_yield(background_t* f);                  // loop of calculo; false = pediram para stop
+bool background_running(const background_t* f);
+void background_estado(background_t* f, int count, const char* summary);
 
 // ---- para o kernel --------------------------------------------------------
-void fundo_somar_perfil(tab5_profile_t& p);   // chamado por sistema_impor_preferencias()
-int  fundo_piso_repouso(void);               // maior piso pedido (0 = nenhum)
-void fundo_manter(void);                     // no loop da interface: limpa quem terminou sozinho,
-                                             // reaplica o perfil quando o conjunto mudou
+void background_somar_profile(tab5_profile_t& p);   // chamado por sistema_impor_preferencias()
+int  background_piso_sleep(void);               // maior piso request (0 = nenhum)
+void background_manter(void);                     // no loop of interface: limpa quem terminou sozinho,
+                                             // reaplica o profile when o conjunto changed

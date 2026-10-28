@@ -3,29 +3,29 @@
 
 #include <string.h>
 
-void pintura_iniciar(pintura_t* p)
+void paint_start(paint_t* p)
 {
-  // A ordem importa: consultamos sistema_area_foi_limpa() SEMPRE, mesmo que ja
-  // saibamos que a passada e completa, porque ela e valida apenas durante esta
-  // chamada de desenhar() - nao da para adiar a leitura.
-  const bool limpou = sistema_area_foi_limpa();
-  p->complete = limpou || p->pedido || !p->ja_desenhou;
-  p->pedido      = false;
+  // A order importa: consultamos sistema_area_foi_limpa() SEMPRE, mesmo que ja
+  // saibamos que a pass e complete, porque ela e valida apenas durante esta
+  // chamada of draw() - nao of para adiar a leitura.
+  const bool limpou = system_area_foi_limpa();
+  p->complete = limpou || p->request || !p->ja_desenhou;
+  p->request      = false;
   p->ja_desenhou = true;
 }
 
-void pintura_pedir(pintura_t* p) { p->pedido = true; }
+void paint_request(paint_t* p) { p->request = true; }
 
-bool pintura_mudou_i(const pintura_t* p, int* mem, int agora)
+bool paint_changed_i(const paint_t* p, int* memory, int now)
 {
-  if (p->complete || *mem != agora) { *mem = agora; return true; }
+  if (p->complete || *memory != now) { *memory = now; return true; }
   return false;
 }
 
-bool pintura_mudou_s(const pintura_t* p, char* mem, size_t tam, const char* agora)
+bool paint_changed_s(const paint_t* p, char* memory, size_t size, const char* now)
 {
-  if (p->complete || strncmp(mem, agora, tam - 1) != 0) {
-    snprintf(mem, tam, "%s", agora);
+  if (p->complete || strncmp(memory, now, size - 1) != 0) {
+    snprintf(memory, size, "%s", now);
     return true;
   }
   return false;

@@ -3,12 +3,12 @@
 #include <string.h>
 
 // ---------------------------------------------------------------------------
-// O registro na flash
+// O registro in flash
 // ---------------------------------------------------------------------------
-//   [header 36 B][app][file][header do file][data][0xFF ate multiplo de 4]
+//   [header 36 B][app][file][header of file][data][0xFF ate multiplo of 4]
 //
-// O CRC cobre o header ate 'crc' (exclusive) e o resto do registro, menos o
-// enchimento. 'aplicado' fica de fora: e o unico byte regravado depois.
+// O CRC cobre o header ate 'crc' (exclusive) e o resto of registro, menos o
+// enchimento. 'aplicado' stays of fora: e o unico byte regravado depois.
 #define RESERVA_MAGIA 0x31565352u   // "RSV1" em little endian
 
 typedef struct {
@@ -16,7 +16,7 @@ typedef struct {
   uint8_t  type, flags, n_app, n_arq;
   uint16_t n_cab, livre1;
   uint32_t data_size;
-  uint32_t base_tam, base_data;
+  uint32_t base_size, base_data;
   uint8_t  base_existia, livre2[3];
   uint32_t crc;
   uint8_t  aplicado;      // 0xFF = pending, 0x00 = ja esta no cartao
@@ -41,35 +41,35 @@ static uint32_t crc32_mais(uint32_t crc, const void* data, size_t n)
 static uint32_t arredonda4(uint32_t n) { return (n + 3u) & ~3u; }
 static uint32_t prox_setor(uint32_t p) { return (p / JOURNAL_SECTOR + 1u) * JOURNAL_SECTOR; }
 
-static uint32_t corpo(const reserva_cab_t* c)
+static uint32_t body(const reserva_cab_t* c)
 {
   return (uint32_t)c->n_app + c->n_arq + c->n_cab + c->data_size;
 }
 
-static bool tudo_ff(const void* b, size_t n)
+static bool everything_ff(const void* b, size_t n)
 {
   const uint8_t* p = (const uint8_t*)b;
   for (size_t i = 0; i < n; ++i) { if (p[i] != 0xFF) { return false; } }
   return true;
 }
 
-// Cabecalho com cara de registro e cabendo no storage a partir de 'pos'.
+// Cabecalho com cara of registro e cabendo no storage a partir of 'pos'.
 static bool cab_plausivel(const journal_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   if (c->magia != RESERVA_MAGIA) { return false; }
   if (c->type != JOURNAL_APPEND && c->type != JOURNAL_REPLACE) { return false; }
   if (c->n_app == 0 || c->n_arq == 0) { return false; }
   if (c->aplicado != 0xFF && c->aplicado != 0x00) { return false; }
-  const uint64_t size = (uint64_t)sizeof(reserva_cab_t) + corpo(c);
+  const uint64_t size = (uint64_t)sizeof(reserva_cab_t) + body(c);
   return (uint64_t)pos + size <= r->storage.size;
 }
 
-// CRC do corpo lendo a flash em blocos (sem precisar do registro inteiro na RAM).
+// CRC of body lendo a flash em blocos (sem precisar of registro inteiro in RAM).
 static bool crc_confere(const journal_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   uint32_t crc = crc32_mais(0, c, CRC_ATE);
   uint8_t bloco[256];
-  uint32_t falta = corpo(c), p = pos + (uint32_t)sizeof(reserva_cab_t);
+  uint32_t falta = body(c), p = pos + (uint32_t)sizeof(reserva_cab_t);
   while (falta) {
     const uint32_t k = falta < sizeof(bloco) ? falta : (uint32_t)sizeof(bloco);
     if (!r->storage.read(r->storage.ctx, p, bloco, k)) { return false; }
@@ -79,7 +79,7 @@ static bool crc_confere(const journal_t* r, uint32_t pos, const reserva_cab_t* c
   return crc == c->crc;
 }
 
-static bool apagar_tudo(journal_t* r)
+static bool erase_everything(journal_t* r)
 {
   if (r->end == 0) { return true; }
   const uint32_t ate = (r->end % JOURNAL_SECTOR) ? prox_setor(r->end) : r->end;
@@ -92,9 +92,9 @@ static bool apagar_tudo(journal_t* r)
 // ---------------------------------------------------------------------------
 // Varredura
 // ---------------------------------------------------------------------------
-// Para cada position: header todo 0xFF = end do diario; registro inteiro e
-// com CRC certo = vale; qualquer outra coisa = lixo de uma gravacao
-// interrompida, e a busca segue no proximo setor (onde a gravacao seguinte
+// Para cada position: header todo 0xFF = end of diario; registro inteiro e
+// com CRC certo = vale; qualquer outra coisa = lixo of uma gravacao
+// interrompida, e a busca segue no next setor (onde a gravacao seguinte
 // recomecou). Termina com 'end' sempre numa area apagada.
 static bool scan(journal_t* r, uint32_t* valid_entries, uint32_t* pending, uint32_t* end, bool* dirty)
 {
@@ -103,11 +103,11 @@ static bool scan(journal_t* r, uint32_t* valid_entries, uint32_t* pending, uint3
   while (pos + sizeof(reserva_cab_t) <= r->storage.size) {
     reserva_cab_t c;
     if (!r->storage.read(r->storage.ctx, pos, &c, sizeof(c))) { return false; }
-    if (tudo_ff(&c, sizeof(c))) { break; }
+    if (everything_ff(&c, sizeof(c))) { break; }
     if (cab_plausivel(r, pos, &c) && crc_confere(r, pos, &c)) {
       ++*valid_entries;
       if (c.aplicado == 0xFF) { ++*pending; }
-      pos += arredonda4((uint32_t)sizeof(reserva_cab_t) + corpo(&c));
+      pos += arredonda4((uint32_t)sizeof(reserva_cab_t) + body(&c));
       continue;
     }
     *dirty = true;
@@ -122,9 +122,9 @@ bool journal_open(journal_t* r, const journal_storage_t* storage)
   memset(r, 0, sizeof(*r));
   r->storage = *storage;
   if (!scan(r, &r->valid_entries, &r->pending, &r->end, &r->dirty)) { return false; }
-  // Nada a aplicar mas algo escrito (tudo ja aplicado antes de um reinicio,
+  // Nada a aplicar mas algo escrito (everything ja aplicado antes of one reinicio,
   // ou so lixo): apaga ja - o diario vazio e o state normal.
-  if (r->pending == 0 && r->end > 0 && !apagar_tudo(r)) { return false; }
+  if (r->pending == 0 && r->end > 0 && !erase_everything(r)) { return false; }
   r->ready = true;
   return true;
 }
@@ -147,11 +147,11 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   c.n_cab = reg->header ? reg->header_size : 0;
   c.livre1 = 0xFFFF;
   c.data_size = reg->data ? reg->data_size : 0;
-  c.base_tam = reg->base_tamanho; c.base_data = reg->base_data;
+  c.base_size = reg->base_tamanho; c.base_data = reg->base_data;
   c.base_existia = reg->base_existia ? 1 : 0;
   c.aplicado = 0xFF;
 
-  const uint32_t size = arredonda4((uint32_t)sizeof(c) + corpo(&c));
+  const uint32_t size = arredonda4((uint32_t)sizeof(c) + body(&c));
   if ((uint64_t)r->end + size > r->storage.size) { return false; }   // cheio
 
   uint32_t crc = crc32_mais(0, &c, CRC_ATE);
@@ -161,8 +161,8 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   if (c.data_size) { crc = crc32_mais(crc, reg->data, c.data_size); }
   c.crc = crc;
 
-  // Em sequencia: uma queda em qualquer point deixa um registro que failure o
-  // CRC, e a varredura pula para o proximo setor.
+  // Em sequencia: uma queda em qualquer point deixa one registro que failure o
+  // CRC, e a varredura pula para o next setor.
   uint32_t p = r->end;
   bool ok = r->storage.write(r->storage.ctx, p, &c, sizeof(c));
   p += sizeof(c);
@@ -171,14 +171,14 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   if (ok && c.n_cab)   { ok = r->storage.write(r->storage.ctx, p, reg->header, c.n_cab); p += c.n_cab; }
   if (ok && c.data_size) { ok = r->storage.write(r->storage.ctx, p, reg->data, c.data_size); }
   if (!ok) {
-    // O que chegou a ser gravado nao volta a 0xFF: o proximo registro
-    // comeca no primeiro setor ainda apagado, como depois de uma queda (um
-    // registro grande pode ter sujado mais de um).
+    // O que chegou a ser gravado nao iteration a 0xFF: o next registro
+    // comeca no first setor ainda apagado, como depois of uma queda (one
+    // registro grande pode ter sujado mais of one).
     r->dirty = true;
     uint32_t q = prox_setor(r->end);
     while (q + sizeof(reserva_cab_t) <= r->storage.size) {
       reserva_cab_t t;
-      if (!r->storage.read(r->storage.ctx, q, &t, sizeof(t)) || tudo_ff(&t, sizeof(t))) { break; }
+      if (!r->storage.read(r->storage.ctx, q, &t, sizeof(t)) || everything_ff(&t, sizeof(t))) { break; }
       q = prox_setor(q);
     }
     r->end = q < r->storage.size ? q : r->storage.size;
@@ -202,17 +202,17 @@ int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
     reserva_cab_t c;
     if (!r->storage.read(r->storage.ctx, pos, &c, sizeof(c))) { return -1; }
     if (!cab_plausivel(r, pos, &c) || !crc_confere(r, pos, &c)) { pos = prox_setor(pos); continue; }
-    const uint32_t size = arredonda4((uint32_t)sizeof(c) + corpo(&c));
+    const uint32_t size = arredonda4((uint32_t)sizeof(c) + body(&c));
     if (c.aplicado != 0xFF) { pos += size; continue; }
 
-    // O registro inteiro na memoria, com NUL depois de cada text:
+    // O registro inteiro in memoria, com NUL depois of cada text:
     //   [app][0][file][0][header][data]
-    // Os nomes ficam no MESMO bloco, nao na stack: who aplica pode ser
-    // qualquer tarefa que le o cartao (tab5_sd_open aplica antes de abrir),
-    // e a descida ate o FAT ja e funda - 512 B a menos nela.
-    const uint32_t n = corpo(&c);
+    // Os nomes ficam no MESMO bloco, nao in stack: who aplica pode ser
+    // qualquer tarefa que le o cartao (tab5_sd_open aplica antes of open),
+    // e a press_start ate o FAT ja e funda - 512 B a menos nela.
+    const uint32_t n = body(&c);
     uint8_t* b = (uint8_t*)r->storage.allocate((size_t)n + 2);
-    if (!b) { return aplicados; }   // sem memoria agora: tenta depois, na mesma ordem
+    if (!b) { return aplicados; }   // sem memoria now: tenta depois, in mesma order
     const uint32_t ini = pos + (uint32_t)sizeof(c);
     char* app = (char*)b;
     char* arq = app + c.n_app + 1;
@@ -234,7 +234,7 @@ int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
     reg.data       = resto + c.n_cab;
     reg.data_size     = c.data_size;
     reg.base_existia = c.base_existia == 1;
-    reg.base_tamanho = c.base_tam;
+    reg.base_tamanho = c.base_size;
     reg.base_data    = c.base_data;
     const bool ok = fn(&reg, ctx);
     r->storage.release(b);
@@ -246,6 +246,6 @@ int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
     aplicados++;
     pos += size;
   }
-  if (r->pending == 0 && !apagar_tudo(r)) { return -1; }
+  if (r->pending == 0 && !erase_everything(r)) { return -1; }
   return aplicados;
 }

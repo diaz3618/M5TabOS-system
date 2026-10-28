@@ -1,4 +1,4 @@
-// Diario de reinicios do no - ver o aviso em tab5_mesh_reboot_log.hpp.
+// Diario of reinicios of no - ver o aviso em tab5_mesh_reboot_log.hpp.
 #include "tab5_mesh_reboot_log.hpp"
 
 #include <stdio.h>
@@ -17,12 +17,12 @@ static const char* TAG = "mesh_diario";
 
 #define PASTA "Meshtastic"
 #define ARQ   "reinicios.txt"
-// A foto vale ate aqui: depois disso o contexto ja nao e o do reinicio.
+// A foto vale ate aqui: depois disso o context ja nao e o of reinicio.
 #define FOTO_VALE_MS 180000u
-// Janela do veredito: o no leva ~5 s para subir e o Tab5 percebe em seguida.
+// Janela of veredito: o no leva ~5 s para raise e o Tab5 percebe em seguida.
 #define JANELA_S 30
 
-EXT_RAM_BSS_ATTR static mesh_reinicio_t s_e[MESH_DIARIO_MAX];   // do mais velho (0) ao mais novo
+EXT_RAM_BSS_ATTR static mesh_reinicio_t s_e[MESH_DIARIO_MAX];   // of mais velho (0) on mais novo
 static int      s_n = 0;
 static uint32_t s_ult_cont = 0;
 static uint32_t s_versao = 0;
@@ -30,40 +30,40 @@ static bool     s_carregado = false;
 static volatile bool s_limpar_pend = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-static uint32_t s_envio_ms = 0;      // ultimo envio que nao foi batimento
-static uint8_t  s_envio_tipo = 0;
+static uint32_t s_send_state_ms = 0;      // ultimo send_state que nao foi batimento
+static uint8_t  s_send_state_tipo = 0;
 
 typedef struct { bool tem; uint32_t ms; uint32_t up_no_s; } foto_t;
 static foto_t s_foto;
 
 
-void mesh_diario_nota_envio(uint8_t tipo)
+void mesh_diario_nota_send_state(uint8_t tipo)
 {
   if (tipo == MESH_ENV_HEARTBEAT || tipo == MESH_ENV_NENHUM) { return; }   // a cada 30 s: so ruido
-  s_envio_ms = tab5_now_ms() | 1u;
-  s_envio_tipo = tipo;
+  s_send_state_ms = tab5_now_ms() | 1u;
+  s_send_state_tipo = tipo;
 }
 
-static int32_t ha_s(uint32_t ms_do_evento)
+static int32_t ha_s(uint32_t ms_of_evento)
 {
-  if (ms_do_evento == 0) { return -1; }
-  return (int32_t)((tab5_now_ms() - ms_do_evento) / 1000u);
+  if (ms_of_evento == 0) { return -1; }
+  return (int32_t)((tab5_now_ms() - ms_of_evento) / 1000u);
 }
 
-static void linha_de(const mesh_reinicio_t* r, char* o, size_t n)
+static void line_of(const mesh_reinicio_t* r, char* o, size_t n)
 {
   snprintf(o, n, "%lu|%lu|%lu|%lu|%u|%u|%u|%ld|%ld|%ld|%ld\n",
            (unsigned long)r->epoch, (unsigned long)r->up_tab5_s, (unsigned long)r->contador,
-           (unsigned long)r->up_no_s, (unsigned)r->origem, (unsigned)r->envio_tipo,
-           (unsigned)r->centivolts, (long)r->ma, (long)r->envio_s, (long)r->grove_s, (long)r->perfil_s);
+           (unsigned long)r->up_no_s, (unsigned)r->origem, (unsigned)r->send_state_tipo,
+           (unsigned)r->centivolts, (long)r->ma, (long)r->send_state_s, (long)r->grove_s, (long)r->profile_s);
 }
 
-static bool le_linha(const char* l, mesh_reinicio_t* r)
+static bool le_line(const char* l, mesh_reinicio_t* r)
 {
   unsigned long e, ut, c, un; unsigned o, et, cv; long ma, es, gs, ps;
   if (sscanf(l, "%lu|%lu|%lu|%lu|%u|%u|%u|%ld|%ld|%ld|%ld", &e, &ut, &c, &un, &o, &et, &cv, &ma, &es, &gs, &ps) != 11) { return false; }
   r->epoch = e; r->up_tab5_s = ut; r->contador = c; r->up_no_s = un; r->origem = (uint8_t)o;
-  r->envio_tipo = (uint8_t)et; r->centivolts = (uint16_t)cv; r->ma = ma; r->envio_s = es; r->grove_s = gs; r->perfil_s = ps;
+  r->send_state_tipo = (uint8_t)et; r->centivolts = (uint16_t)cv; r->ma = ma; r->send_state_s = es; r->grove_s = gs; r->profile_s = ps;
   return true;
 }
 
@@ -76,13 +76,13 @@ static void juntar(const mesh_reinicio_t& r)
   ++s_versao;
 }
 
-// Roda na tarefa "cartao" (carona): apaga o arquivo quando a tela pediu.
-static void na_carona(void)
+// Roda in tarefa "cartao" (carona): apaga o arquivo when a screen pediu.
+static void in_carona(void)
 {
   if (!s_limpar_pend) { return; }
   s_limpar_pend = false;
-  // Arquivo vazio pela porta do sistema: com o cartao emprestado, vai para o
-  // diario - e o substituir grava antes as linhas que estavam para entrar.
+  // Arquivo vazio pela porta of sistema: com o cartao emprestado, vai para o
+  // diario - e o substituir grava antes as lines que estavam para entrar.
   if (!tab5_sd_replace(PASTA, ARQ, "", 0)) { s_limpar_pend = true; }
 }
 
@@ -90,14 +90,14 @@ void mesh_diario_carregar(void)
 {
   if (s_carregado) { return; }
   static bool carona = false;
-  if (!carona) { carona = tab5_sd_piggyback(na_carona); }
+  if (!carona) { carona = tab5_sd_piggyback(in_carona); }
   if (!tab5_sd_mount()) { s_carregado = true; return; }   // sem cartao: so a RAM desta sessao
   FILE* f = tab5_sd_open(PASTA, ARQ, "r");
   if (f) {
     char l[160];
     mesh_reinicio_t r;
     while (fgets(l, sizeof(l), f)) {
-      if (!le_linha(l, &r)) { continue; }
+      if (!le_line(l, &r)) { continue; }
       juntar(r);
       if (r.contador) { s_ult_cont = r.contador; }
     }
@@ -111,11 +111,11 @@ void mesh_diario_carregar(void)
 void mesh_diario_foto(uint32_t up_no_s)
 {
   s_foto.tem = true; s_foto.ms = tab5_now_ms() | 1u; s_foto.up_no_s = up_no_s;
-  // O contexto do Tab5 e lido na hora do REGISTRO, mas o tempo dos eventos e
-  // relativo a ela: a foto so marca quando o aviso chegou.
+  // O context of Tab5 e lido in hora of REGISTRO, mas o time dos eventos e
+  // relativo a ela: a foto so marca when o aviso chegou.
 }
 
-void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_antes, bool pedido_nosso)
+void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_antes, bool request_nosso)
 {
   if (contador == 0 || !s_carregado) { return; }
   const uint32_t ant = s_ult_cont;
@@ -128,42 +128,42 @@ void mesh_diario_contador(uint32_t contador, uint32_t up_no_s, bool conectados_a
   r.contador = contador;
 
   const bool foto_fresca = s_foto.tem && (tab5_now_ms() - s_foto.ms) < FOTO_VALE_MS;
-  // Uptime de ANTES de cair: o da foto (tirada ao chegar o aviso, antes da
+  // Uptime of ANTES of cair: o of foto (tirada on chegar o aviso, antes of
   // telemetria nova) ou, sem foto, o que o servico ainda guarda.
   r.up_no_s = foto_fresca ? s_foto.up_no_s : up_no_s;
 
   if (ant == 0 || contador < ant) { r.origem = MESH_REI_BASE; }   // sem referencia, ou o no foi zerado/regravado
-  else if (pedido_nosso)          { r.origem = MESH_REI_PEDIDO; }
+  else if (request_nosso)          { r.origem = MESH_REI_PEDIDO; }
   else if (!conectados_antes)     { r.origem = MESH_REI_AUSENTE; }
   else                            { r.origem = MESH_REI_SOZINHO; }
 
   const tab5_measurement_t m = tab5_power_latest();
   r.centivolts = (uint16_t)(m.volts > 0 ? m.volts * 100.0f : 0);
   r.ma = (int32_t)m.mA;
-  r.envio_s = ha_s(s_envio_ms);
-  r.envio_tipo = s_envio_tipo;
+  r.send_state_s = ha_s(s_send_state_ms);
+  r.send_state_tipo = s_send_state_tipo;
   r.grove_s = ha_s(tab5_power_grove_touch_ms());
-  r.perfil_s = ha_s(tab5_power_apply_ms());
-  // O aviso chegou "foto" depois do reinicio: os tempos acima contam desde o
-  // REGISTRO; tira o intervalo ja corrido para ficarem relativos ao reinicio.
+  r.profile_s = ha_s(tab5_power_apply_ms());
+  // O aviso chegou "foto" depois of reinicio: os tempos acima contam since o
+  // REGISTRO; tira o intervalo ja corrido para ficarem relativos on reinicio.
   if (foto_fresca) {
     const int32_t atraso = (int32_t)((tab5_now_ms() - s_foto.ms) / 1000u);
-    if (r.envio_s >= 0) { r.envio_s = r.envio_s > atraso ? r.envio_s - atraso : 0; }
+    if (r.send_state_s >= 0) { r.send_state_s = r.send_state_s > atraso ? r.send_state_s - atraso : 0; }
     if (r.grove_s >= 0) { r.grove_s = r.grove_s > atraso ? r.grove_s - atraso : 0; }
-    if (r.perfil_s >= 0) { r.perfil_s = r.perfil_s > atraso ? r.perfil_s - atraso : 0; }
+    if (r.profile_s >= 0) { r.profile_s = r.profile_s > atraso ? r.profile_s - atraso : 0; }
   }
   s_foto.tem = false;
   s_ult_cont = contador;
   juntar(r);
 
-  char linha[160];
-  linha_de(&r, linha, sizeof(linha));
-  tab5_sd_enqueue_append(PASTA, ARQ, linha);
+  char line[160];
+  line_of(&r, line, sizeof(line));
+  tab5_sd_enqueue_append(PASTA, ARQ, line);
   ESP_LOGW(TAG, "no reiniciou (contador %lu -> %lu, origem %u): %s", (unsigned long)ant, (unsigned long)contador,
            (unsigned)r.origem, mesh_diario_veredito(&r));
 }
 
-int mesh_diario_ler(mesh_reinicio_t* o, int max)
+int mesh_diario_read(mesh_reinicio_t* o, int max)
 {
   int k = 0;
   taskENTER_CRITICAL(&s_mux);
@@ -181,7 +181,7 @@ void mesh_diario_limpar(void)
   taskEXIT_CRITICAL(&s_mux);
   s_limpar_pend = true;
   ++s_versao;
-  // o contador de referencia fica: apagar o diario nao faz o proximo reinicio virar "base"
+  // o contador of referencia stays: erase o diario nao faz o next reinicio virar "base"
 }
 
 const char* mesh_diario_veredito(const mesh_reinicio_t* r)
@@ -193,10 +193,10 @@ const char* mesh_diario_veredito(const mesh_reinicio_t* r)
     default: break;
   }
   if (r->grove_s >= 0 && r->grove_s <= JANELA_S) { return "o Tab5 mexeu no 5V do Grove na hora - provável causa"; }
-  if (r->perfil_s >= 0 && r->perfil_s <= JANELA_S) { return "o Tab5 reaplicou o perfil de energia na hora - suspeito"; }
-  if (r->envio_s >= 0 && r->envio_s <= 10) {
-    return r->envio_tipo == MESH_ENV_ADMIN ? "logo depois de um comando de admin do Tab5 - suspeito"
-         : r->envio_tipo == MESH_ENV_CONFIG ? "logo depois do pedido de configuração do Tab5 - suspeito"
+  if (r->profile_s >= 0 && r->profile_s <= JANELA_S) { return "o Tab5 reaplicou o perfil de energia na hora - suspeito"; }
+  if (r->send_state_s >= 0 && r->send_state_s <= 10) {
+    return r->send_state_tipo == MESH_ENV_ADMIN ? "logo depois de um comando de admin do Tab5 - suspeito"
+         : r->send_state_tipo == MESH_ENV_CONFIG ? "logo depois do pedido de configuração do Tab5 - suspeito"
          : "logo depois de um pacote enviado pelo Tab5 - suspeito";
   }
   if (r->centivolts && r->centivolts < 650) { return "bateria do Tab5 baixa na hora - veja a alimentação"; }

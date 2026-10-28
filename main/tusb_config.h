@@ -1,12 +1,12 @@
-// Configuracao do TinyUSB (componente espressif/tinyusb) para o modo pendrive
+// Configuracao of TinyUSB (componente espressif/tinyusb) para o modo pendrive
 // - services/tab5_flashdrive.cpp. O main/CMakeLists.txt passa esta pasta para
-// a biblioteca do TinyUSB, que procura "tusb_config.h" pelo nome.
+// a biblioteca of TinyUSB, que procura "tusb_config.h" pelo name.
 //
-// SO DISPOSITIVO, SO MSC, SO A PORTA FULL SPEED. O USB-C do Tab5 esta ligado
-// no PHY full speed 0 do P4 - o mesmo do USB-Serial-JTAG (o console). A porta
-// 0 do TinyUSB e o controlador OTG full speed (dwc2_esp32.h: "Port0 to
-// OTG_FS, Port1 to OTG_HS"); o de alta velocidade tem PHY proprio, em outros
-// pinos, e nao chega no conector.
+// SO DISPOSITIVO, SO MSC, SO A PORTA FULL SPEED. O USB-C of Tab5 esta enabled
+// no PHY full speed 0 of P4 - o mesmo of USB-Serial-JTAG (o console). A porta
+// 0 of TinyUSB e o controlador OTG full speed (dwc2_esp32.h: "Port0 to
+// OTG_FS, Port1 to OTG_HS"); o of alta velocidade tem PHY proprio, em outros
+// pins, e nao chega no conector.
 #pragma once
 
 #include "sdkconfig.h"
@@ -23,21 +23,21 @@ extern "C" {
 #define CFG_TUD_MAX_SPEED           OPT_MODE_FULL_SPEED
 #define CFG_TUSB_RHPORT0_MODE       (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
 
-// DMA DO CONTROLADOR, como o esp_tinyusb da Espressif usa por padrao (o modo
-// mais testado no P4). Era o modo escravo (a CPU copiando da FIFO, um pacote
-// de 64 bytes por interrupcao): 64 interrupcoes por bloco de 4 KB, e o
-// caminho menos usado da biblioteca neste chip. O escravo fica ligado como
+// DMA DO CONTROLADOR, como o esp_tinyusb of Espressif usa por default (o modo
+// mais testado no P4). Era o modo escravo (a CPU copiando of FIFO, one pacote
+// of 64 bytes por interrupcao): 64 interrupcoes por bloco of 4 KB, e o
+// caminho menos usado of biblioteca neste chip. O escravo stays enabled como
 // reserva: o TinyUSB so usa o DMA se o controlador tiver (GHWCFG2).
 #define CFG_TUD_DWC2_SLAVE_ENABLE   1
 #define CFG_TUD_DWC2_DMA_ENABLE     1
 
-// Com DMA o controlador le e escreve a RAM por fora do cache: os buffers do
-// TinyUSB ficam na RAM interna (DRAM_ATTR - a biblioteca nao entra no
-// linker.lf) e alinhados a linha de cache do P4 (64 bytes), e a biblioteca
-// sincroniza o cache antes e depois de cada transferencia (no P4 isso ja vem
-// ligado junto com o DMA: CFG_TUD_MEM_DCACHE_ENABLE, linha de 64). O buffer
-// do MSC tambem vai direto para o DMA do SDMMC - desalinhado, o driver do
-// cartao cairia num buffer intermediario, um setor por vez.
+// Com DMA o controlador le e escreve a RAM por fora of cache: os buffers of
+// TinyUSB ficam in RAM interna (DRAM_ATTR - a biblioteca nao entra no
+// linker.lf) e alinhados a line of cache of P4 (64 bytes), e a biblioteca
+// sincroniza o cache antes e depois of cada transferencia (no P4 isso ja vem
+// enabled junto com o DMA: CFG_TUD_MEM_DCACHE_ENABLE, line of 64). O buffer
+// of MSC tambem vai direto para o DMA of SDMMC - desalinhado, o driver of
+// cartao cairia num buffer intermediario, one setor por vez.
 #define CFG_TUSB_MEM_SECTION        __attribute__((aligned(64))) DRAM_ATTR
 #define CFG_TUSB_MEM_ALIGN          __attribute__((aligned(64)))
 
@@ -58,8 +58,8 @@ extern "C" {
 #define CFG_TUD_NCM                 0
 #define CFG_TUD_USBTMC              0
 
-// Quanto o MSC pede ao cartao de uma vez: 8 setores. Multiplo de 512 de
-// proposito - cada chamada de leitura/escrita cai em setores inteiros.
+// Quanto o MSC pede on cartao of uma vez: 8 setores. Multiplo of 512 of
+// proposito - cada chamada of leitura/escrita cai em setores inteiros.
 #define CFG_TUD_MSC_EP_BUFSIZE      4096
 
 #ifdef __cplusplus

@@ -1,37 +1,37 @@
-// RITMO DE QUADRO - o relogio de quem anima, preso a varredura do painel.
+// RITMO DE QUADRO - o clock of quem anima, preso a varredura of panel.
 //
-// O PROBLEMA. O app periodico era redesenhado a cada periodo_ms "de relogio",
-// e o painel troca de pagina no ritmo DELE (15,7 a 20,6 ms, conforme o clock
-// do painel - Ajustes > Tela). Os dois nao batem: um app de 40 ms ficava
-// quase sempre 2 varreduras na tela e, de tempos em tempos, 3 - um tranco
-// periodico numa animacao que no resto do tempo era lisa. Foi visto na tela
-// de bloqueio, mas valia para todo app animado (Radar, Cobra, IMU...).
+// O PROBLEMA. O app periodico era redesenhado a cada periodo_ms "of clock",
+// e o panel troca of pagina no ritmo DELE (15,7 a 20,6 ms, conforme o clock
+// of panel - Ajustes > Tela). Os dois nao batem: one app of 40 ms ficava
+// quase sempre 2 varreduras in screen e, of tempos em tempos, 3 - one tranco
+// periodico numa animacao que no resto of time era lisa. Foi visto in screen
+// of bloqueio, mas valia para todo app animado (Radar, Cobra, IMU...).
 //
-// A REGRA. O periodo do app vira um numero inteiro de varreduras (o mais
-// perto do que ele pediu, nunca menos de uma), e o quadro comeca logo depois
-// de uma varredura: tem quase um periodo inteiro para ficar pronto e vai ao
-// ar sempre na mesma fase. Nenhum app muda uma linha para ganhar isso.
+// A REGRA. O periodo of app vira one numero inteiro of varreduras (o mais
+// perto of que ele pediu, nunca menos of uma), e o frame comeca logo depois
+// of uma varredura: tem quase one periodo inteiro para ficar pronto e vai on
+// ar sempre in mesma fase. Nenhum app muda uma line para ganhar isso.
 //
-// E O MOVIMENTO. Quem anima por tempo pode pedir sistema_quadro_dt() (app.h):
-// a distancia entre as varreduras em que este quadro e o anterior VAO AO AR -
+// E O MOVIMENTO. Quem anima por time pode request sistema_quadro_dt() (app.h):
+// a distancia entre as varreduras em que este frame e o anterior VAO AO AR -
 // nao entre os instantes em que foram desenhados. Assim o que aparece andou
-// exatamente o tempo que ficou na tela, mesmo se o desenho atrasou um pouco.
+// exatamente o time que became in screen, mesmo se o drawing atrasou one pouco.
 //
-// So a tarefa de interface chama isto.
+// So a tarefa of interface chama isto.
 
 #pragma once
 
 #include <stdint.h>
 
-// Chamado no INICIO de toda passada de desenho (desenhar_conteudo), seja qual
-// for o motivo. 'dono' identifica quem desenha (o app, a home, o bloqueio):
-// trocou de dono, o relogio recomeca. 'periodo_ms' = o periodo de agora (0 =
+// Chamado no INICIO of toda pass of drawing (desenhar_conteudo), seja qual
+// for o reason. 'dono' identifica quem desenha (o app, a home, o bloqueio):
+// trocou of dono, o clock recomeca. 'periodo_ms' = o periodo of now (0 =
 // nao e periodico: nada e agendado).
-void ritmo_quadro(const void* dono, uint32_t periodo_ms);
+void pacing_frame(const void* dono, uint32_t periodo_ms);
 
-// Quanto falta, em ms, para o proximo quadro periodico (0 = ja passou da hora).
-uint32_t ritmo_falta_ms(void);
+// Quanto falta, em ms, para o next frame periodico (0 = ja passou of hora).
+uint32_t pacing_falta_ms(void);
 
-// dt (s) do quadro em andamento - ver o topo. Sempre > 0; quem anima limita
-// do jeito que lhe convem (um app que ficou parado 5 s recebe 5 s).
-float ritmo_dt(void);
+// dt (s) of frame em andamento - ver o topo. Sempre > 0; quem anima limita
+// of jeito que lhe convem (one app que became parado 5 s recebe 5 s).
+float pacing_dt(void);

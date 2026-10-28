@@ -5,8 +5,8 @@
 // ---------------------------------------------------------------------------
 // UTF-8
 // ---------------------------------------------------------------------------
-// Devolve quantos bytes o caractere ocupa; 0 = sequencia cortada no fim da
-// string (para ali); -1 = byte que nao comeca caractere (pula um).
+// Devolve quantos bytes o caractere ocupa; 0 = sequencia cortada no end of
+// string (para ali); -1 = byte que nao comeca caractere (pula one).
 static int decodificar(const unsigned char* p, uint32_t* code)
 {
   int n;
@@ -38,7 +38,7 @@ static int codificar(uint32_t c, char* b)
 // TABELAS DE TROCA
 // ---------------------------------------------------------------------------
 // U+00C0..U+00FF sem o acento - so para o que a FONTE nao tiver (Ì, Ù, Å, Ø,
-// ý...); o que ela tem passa reto antes de chegar aqui. '#' = caso especial.
+// ý...); o que ela tem passa reto antes of chegar aqui. '#' = caso especial.
 static const char LATIN1_BASE[] = "AAAAAA#CEEEEIIIIDNOOOOOxOUUUUY##aaaaaa#ceeeeiiiidnooooo/ouuuuy#y";
 
 // U+0100..U+017F (Latin Extended-A: polones, tcheco, turco, romeno...).
@@ -52,7 +52,7 @@ static const char* const CIRILICO[32] = {
 };
 
 // Grego U+0391..U+03A9 (minusculas U+03B1..U+03C9; U+03A2 nao existe e o
-// U+03C2, sigma final, cai na mesma vaga).
+// U+03C2, sigma final, cai in mesma vaga).
 static const char* const GREGO[25] = {
   "A", "V", "G", "D", "E", "Z", "I", "Th", "I", "K", "L", "M", "N", "X", "O", "P",
   "R", "S", "S", "T", "Y", "F", "Ch", "Ps", "O",
@@ -60,7 +60,7 @@ static const char* const GREGO[25] = {
 
 typedef struct { uint32_t c; const char* s; } troca_t;
 
-// ORDENADA por codigo (busca binaria).
+// ORDENADA por code (busca binaria).
 static const troca_t TROCAS[] = {
   { 0x00A2, "c" },   { 0x00A3, "GBP" }, { 0x00A5, "JPY" }, { 0x00A6, "|" },  { 0x00A7, "S" },
   { 0x00A8, "\"" },  { 0x00A9, "(c)" }, { 0x00AC, "-" },   { 0x00AE, "(R)" }, { 0x00AF, "-" },
@@ -96,24 +96,24 @@ static const troca_t TROCAS[] = {
 
 static const char* buscar_troca(uint32_t c)
 {
-  int ini = 0, fim = (int)(sizeof(TROCAS) / sizeof(TROCAS[0])) - 1;
-  while (ini <= fim) {
-    const int m = ini + (fim - ini) / 2;
+  int ini = 0, end = (int)(sizeof(TROCAS) / sizeof(TROCAS[0])) - 1;
+  while (ini <= end) {
+    const int m = ini + (end - ini) / 2;
     if (TROCAS[m].c == c) { return TROCAS[m].s; }
-    if (TROCAS[m].c < c) { ini = m + 1; } else { fim = m - 1; }
+    if (TROCAS[m].c < c) { ini = m + 1; } else { end = m - 1; }
   }
   return nullptr;
 }
 
-// Sem desenho e sem largura: some.
+// Sem drawing e sem width: some.
 static bool invisivel(uint32_t c)
 {
   return c == 0x00AD || c == 0x034F || c == 0x061C || c == 0x180E
       || (c >= 0x200B && c <= 0x200F) || (c >= 0x202A && c <= 0x202E)
       || (c >= 0x2060 && c <= 0x206F) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0xFEFF
-      || (c >= 0x20D0 && c <= 0x20FF)       // combinantes de simbolo (o keycap 1️⃣ e U+20E3)
-      || (c >= 0x1F3FB && c <= 0x1F3FF)     // tom de pele: o emoji base fica, na cor padrao
-      || (c >= 0xE0000 && c <= 0xE01EF);    // tags (bandeiras de subdivisao) e seletores
+      || (c >= 0x20D0 && c <= 0x20FF)       // combinantes of simbolo (o keycap 1️⃣ e U+20E3)
+      || (c >= 0x1F3FB && c <= 0x1F3FF)     // tom of pele: o emoji base stays, in color default
+      || (c >= 0xE0000 && c <= 0xE01EF);    // tags (bandeiras of subdivisao) e seletores
 }
 
 static bool espaco(uint32_t c)
@@ -122,11 +122,11 @@ static bool espaco(uint32_t c)
       || c == 0x205F || c == 0x3000;
 }
 
-// Uma letra/numero de equivalente direto (estilizados, largura cheia,
+// Uma letra/numero of equivalente direto (estilizados, width cheia,
 // circulados...). 0 = nao e desse tipo.
 static uint32_t equivalente(uint32_t c)
 {
-  // Simbolos Alfanumericos Matematicos: 13 estilos de A-Z a-z, em blocos de 52.
+  // Simbolos Alfanumericos Matematicos: 13 estilos of A-Z a-z, em blocos of 52.
   if (c >= 0x1D400 && c <= 0x1D6A3) {
     const uint32_t l = (c - 0x1D400) % 52;
     return l < 26 ? 'A' + l : 'a' + (l - 26);
@@ -134,7 +134,7 @@ static uint32_t equivalente(uint32_t c)
   if (c == 0x1D6A4) { return 'i'; }
   if (c == 0x1D6A5) { return 'j'; }
   if (c >= 0x1D7CE && c <= 0x1D7FF) { return '0' + (c - 0x1D7CE) % 10; }
-  if (c >= 0xFF01 && c <= 0xFF5E)   { return c - 0xFEE0; }       // largura cheia
+  if (c >= 0xFF01 && c <= 0xFF5E)   { return c - 0xFEE0; }       // width cheia
   if (c >= 0x24B6 && c <= 0x24CF)   { return 'A' + (c - 0x24B6); }   // Ⓐ
   if (c >= 0x24D0 && c <= 0x24E9)   { return 'a' + (c - 0x24D0); }   // ⓐ
   if (c >= 0x249C && c <= 0x24B5)   { return 'a' + (c - 0x249C); }   // ⒜
@@ -173,7 +173,7 @@ static uint32_t compor(char base, uint32_t marca)
   }
 }
 
-// O texto que substitui 'c' (ASCII), em 'buf'. nullptr = nao ha.
+// O text que substitui 'c' (ASCII), em 'buf'. nullptr = nao ha.
 static const char* transliterar(uint32_t c, char buf[8])
 {
   const uint32_t eq = equivalente(c);
@@ -215,19 +215,19 @@ static const char* transliterar(uint32_t c, char buf[8])
 // ---------------------------------------------------------------------------
 // A PASSADA
 // ---------------------------------------------------------------------------
-void tab5_unicode_preparar(const char* in, char* out, size_t out_tam, tab5_unicode_desenha_t desenha)
+void tab5_unicode_prepare(const char* in, char* out, size_t out_size, tab5_unicode_desenha_t desenha)
 {
-  if (out_tam == 0) { return; }
+  if (out_size == 0) { return; }
   if (!in) { out[0] = 0; return; }
   size_t o = 0;
   size_t ult = (size_t)-1;   // onde comeca o ultimo caractere escrito (para compor acento)
   const unsigned char* p = (const unsigned char*)in;
-  uint32_t anterior = 0;     // o ultimo codigo LIDO (ver ZWJ em tab5_emoji_preparar)
+  uint32_t anterior = 0;     // o ultimo code LIDO (ver ZWJ em tab5_emoji_preparar)
 
-  // Poe 'n' bytes; false = nao cabe (para tudo, na fronteira).
+  // Poe 'n' bytes; false = nao cabe (para everything, in fronteira).
   auto por = [&](const char* s, size_t n) -> bool {
     if (n == 0) { return true; }
-    if (o + n >= out_tam) { return false; }
+    if (o + n >= out_size) { return false; }
     memcpy(out + o, s, n);
     ult = o;
     o += n;
@@ -243,7 +243,7 @@ void tab5_unicode_preparar(const char* in, char* out, size_t out_tam, tab5_unico
     const bool colado = (anterior == 0x200D);
     anterior = c;
 
-    // Cadeia ZWJ (familia, profissao...): fica so o primeiro emoji.
+    // Cadeia ZWJ (familia, profissao...): stays so o first emoji.
     if (c == 0x200D || colado) { p = prox; continue; }
 
     bool ok = true;
@@ -254,13 +254,13 @@ void tab5_unicode_preparar(const char* in, char* out, size_t out_tam, tab5_unico
     } else if (c < 0x80) {
       ok = por((const char*)p, 1);
     } else if (c >= 0x0300 && c <= 0x036F) {
-      // Acento combinado: junta no anterior, se der; senao some (a letra fica).
+      // Acento combinado: junta no anterior, se der; senao some (a letra stays).
       if (ult != (size_t)-1 && o - ult == 1) {
         const uint32_t pronto = compor(out[ult], c);
         if (pronto && desenha && desenha(pronto)) {
           char b[4];
           const int k = codificar(pronto, b);
-          if (ult + (size_t)k < out_tam) { o = ult; ok = por(b, (size_t)k); }
+          if (ult + (size_t)k < out_size) { o = ult; ok = por(b, (size_t)k); }
         }
       }
     } else if (desenha && desenha(c)) {

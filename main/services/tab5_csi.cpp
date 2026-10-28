@@ -3,7 +3,7 @@
 #include "tab5_sniffer.hpp"     // tab5_farejo_caps_c6: o que o C6 gravado sabe fazer
 #include "tab5_wifi.hpp"
 #include "task_pool.h"
-#include "service_stop.hpp"      // pedir/confirmar a saida da tarefa (o mesmo do GPS e do Mesh)
+#include "service_stop.hpp"      // request/confirm a saida of tarefa (o mesmo of GPS e of Mesh)
 #include "tab5_mutex.hpp"
 #include "eh_host_feat_peer_data.h"
 #include "esp_wifi.h"
@@ -20,49 +20,49 @@ static const char* TAG = "csi";
 
 // O C6 desliga o CSI sozinho em C6_RADIO_VALIDADE_MS sem renovacao.
 #define RENOVA_MS      3000
-// Fonte de trafego: o DOBRO do ritmo pedido ao C6 (1 record a cada 100 ms).
-// Com a fonte no mesmo ritmo do limite, o atraso variavel do ar faz quadros
-// cairem a menos de 100 ms do anterior e serem descartados.
+// Fonte of trafego: o DOBRO of ritmo request on C6 (1 record a cada 100 ms).
+// Com a fonte no mesmo ritmo of limit, o atraso variavel of ar faz quadros
+// cairem a menos of 100 ms of anterior e serem descartados.
 #define PING_MS        50
 #define CSI_PASSO_MS   100
 
 // ---------------------------------------------------------------------------
 // A MEDIDA DE MOVIMENTO
 // ---------------------------------------------------------------------------
-// Usa so o L-LTF, a parte que todo quadro OFDM traz (11g e HT) e que vem
-// primeiro no buffer: 64 subportadoras, 2 bytes cada, na ordem 0..31, -32..-1.
-// Valem +-1..+-26; o resto e DC e banda de guarda (quase zero, e normalizar
+// Usa so o L-LTF, a parte que todo frame OFDM traz (11g e HT) e que vem
+// first no buffer: 64 subportadoras, 2 bytes cada, in order 0..31, -32..-1.
+// Valem +-1..+-26; o resto e DC e banda of guarda (quase zero, e normalizar
 // dividiria ruido por ruido). Indices validos no buffer: 1..26 e 38..63.
 //
-// 1. Amplitude por subportadora, NORMALIZADA pela media do quadro: o ganho
-//    automatico (AGC) do C6 muda de quadro para quadro e moveria tudo junto.
-// 2. Desvio = media de |a - ref| sobre as 52 subportadoras, onde ref e a media
-//    movel do proprio canal (~1 s). Parado, o canal e estavel e o desvio e so
-//    ruido; algo se mexendo muda o padrao de reflexos e o desvio sobe.
-// 3. O "parado" de cada lugar e diferente (paredes, distancia ao roteador): o
+// 1. Amplitude por subportadora, NORMALIZADA pela media of frame: o ganho
+//    automatico (AGC) of C6 muda of frame para frame e moveria everything junto.
+// 2. Desvio = media of |a - ref| sobre as 52 subportadoras, onde ref e a media
+//    movel of proprio canal (~1 s). Parado, o canal e estavel e o desvio e so
+//    ruido; algo se mexendo muda o default of reflexos e o desvio sobe.
+// 3. O "parado" of cada lugar e diferente (paredes, distancia on roteador): o
 //    servico APRENDE o desvio tipico parado nos primeiros segundos e depois o
-//    segue devagar, so para baixo depressa. O nivel sai da RAZAO entre o
-//    desvio agora e o do parado - um numero que vale em qualquer casa.
+//    segue devagar, so para bottom depressa. O level exit of RAZAO entre o
+//    desvio now e o of parado - one numero que vale em qualquer casa.
 #define SC_N           52
-#define REF_ALFA       0.10f    // media movel do canal: ~1 s a 10 records/s
+#define REF_ALFA       0.10f    // media movel of canal: ~1 s a 10 records/s
 #define DESV_ALFA      0.30f    // suaviza o desvio (~0,3 s)
-#define APRENDER_N     30       // ~3 s de records para o primeiro "parado"
-#define BASE_DESCE     0.20f    // o parado acompanha depressa para baixo...
-#define BASE_SOBE      0.003f   // ...e devagar para cima (~30 s): movimento longo nao vira "normal" logo
+#define APRENDER_N     30       // ~3 s of records para o first "parado"
+#define BASE_DESCE     0.20f    // o parado acompanha depressa para bottom...
+#define BASE_SOBE      0.003f   // ...e devagar para top (~30 s): movimento longo nao vira "normal" logo
 #define BASE_MIN       0.004f
 #define RAZAO_LEVE     2.0f
 #define RAZAO_FORTE    4.0f
-#define HISTERESE      0.85f    // para descer de nivel a razao cai 15% abaixo do limiar
+#define HISTERESE      0.85f    // para lower of level a razao cai 15% abaixo of limiar
 
 static uint8_t s_idx[SC_N];
 
-// Estado da medida: so a tarefa de eventos (o callback) escreve.
+// Estado of measurement: so a tarefa of eventos (o callback) escreve.
 static float    s_ref[SC_N];
 static bool     s_tem_ref = false;
 static float    s_desv = 0, s_base = 0, s_base_soma = 0;
 static int      s_aprendidos = 0;
 static volatile float   s_razao = 1.0f;
-static volatile uint8_t s_nivel = TAB5_CSI_PARADO;
+static volatile uint8_t s_level = TAB5_CSI_PARADO;
 static volatile int8_t  s_rssi = 0;
 static volatile uint32_t s_cont = 0;
 static volatile uint16_t s_por_s = 0;
@@ -70,31 +70,31 @@ static int64_t  s_t_seg = 0;
 static uint32_t s_cont_seg = 0;
 
 static volatile bool s_mexendo = false;
-static volatile bool s_zerar = false;      // pedido de recomecar a referencia (outra tarefa)
+static volatile bool s_reset = false;      // request of recomecar a referencia (outra tarefa)
 static tab5_listener_t<tab5_csi_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
 
 // Servico.
 static volatile uint32_t s_quem = 0;
 // LIGAR E DESLIGAR, SEM CORRIDA. Antes 's_rodando' so virava true DENTRO
-// da tarefa: dois 'ligar' seguidos criavam duas tarefas, e ligar logo depois
-// de desligar caia numa tarefa que ja estava saindo. Agora e o parada_t do
-// kernel: desligar (o ultimo 'quem') PEDE a saida; ligar com uma execucao
-// saindo ESPERA ela confirmar (no semaforo) e so entao cria a nova. Os dois
+// of tarefa: dois 'enable' seguidos criavam duas tarefas, e enable logo depois
+// of disable caia numa tarefa que ja estava saindo. Agora e o parada_t of
+// kernel: disable (o ultimo 'quem') PEDE a saida; enable com uma execucao
+// saindo ESPERA ela confirm (no semaforo) e so entao cria a nova. Os dois
 // passam pela mesma trava.
-static parada_t          s_parada = { };
+static stop_t          s_parada = { };
 static SemaphoreHandle_t s_trava_cmd = nullptr;
 static volatile tab5_csi_fase_t s_fase = TAB5_CSI_DESLIGADO;
-static pool_id_t         s_id = POOL_ID_VAZIO;
+static pool_id_t         s_id = POOL_ID_EMPTY;
 static bool              s_registrado = false;
 
 static void medir(const c6_csi_cab_t& c, const uint8_t* d, uint16_t n)
 {
-  // So 11g e HT: comecam pelo L-LTF. HE tem outro arranjo de subportadoras.
+  // So 11g e HT: comecam pelo L-LTF. HE tem outro arranjo of subportadoras.
   const uint8_t fmt = C6_CSI_FORMATO(c.flags);
   if ((fmt != 1 && fmt != 2) || n < 128) { return; }
 
-  if (s_zerar || s_mexendo) {
-    s_zerar = false;
+  if (s_reset || s_mexendo) {
+    s_reset = false;
     s_tem_ref = false;
     s_desv = 0;
     return;
@@ -112,7 +112,7 @@ static void medir(const c6_csi_cab_t& c, const uint8_t* d, uint16_t n)
     soma += a[k];
     ++validos;
   }
-  if (validos < SC_N - 2 || soma < (float)validos) { return; }   // quadro sem energia: nao mede
+  if (validos < SC_N - 2 || soma < (float)validos) { return; }   // frame sem energia: nao mede
   const float m = soma / (float)validos;
   for (int k = 0; k < SC_N; ++k) { if (a[k] >= 0) { a[k] /= m; } }
 
@@ -143,16 +143,16 @@ static void medir(const c6_csi_cab_t& c, const uint8_t* d, uint16_t n)
 
   const float r = s_desv / s_base;
   s_razao = r;
-  uint8_t nv = s_nivel;
+  uint8_t nv = s_level;
   if      (r >= RAZAO_FORTE)                            { nv = TAB5_CSI_FORTE; }
   else if (r >= RAZAO_LEVE && nv == TAB5_CSI_PARADO)    { nv = TAB5_CSI_LEVE; }
   else if (nv == TAB5_CSI_FORTE && r < RAZAO_FORTE * HISTERESE) { nv = r >= RAZAO_LEVE ? TAB5_CSI_LEVE : TAB5_CSI_PARADO; }
   else if (nv == TAB5_CSI_LEVE  && r < RAZAO_LEVE * HISTERESE)  { nv = TAB5_CSI_PARADO; }
-  s_nivel = nv;
+  s_level = nv;
 }
 
-// Na tarefa de eventos do esp_hosted: mede e sai.
-static void ao_peer_data(uint32_t msg_id, const uint8_t* d, size_t n, void*)
+// Na tarefa of eventos of esp_hosted: mede e exit.
+static void on_peer_data(uint32_t msg_id, const uint8_t* d, size_t n, void*)
 {
   if (msg_id != C6_MSG_CSI || n < sizeof(c6_csi_cab_t)) { return; }
   c6_csi_cab_t c;
@@ -163,16 +163,16 @@ static void ao_peer_data(uint32_t msg_id, const uint8_t* d, size_t n, void*)
 
   s_cont = s_cont + 1;
   s_rssi = c.rssi;
-  const int64_t agora = esp_timer_get_time();
+  const int64_t now = esp_timer_get_time();
   ++s_cont_seg;
-  if (agora - s_t_seg >= 1000000) { s_por_s = (uint16_t)s_cont_seg; s_cont_seg = 0; s_t_seg = agora; }
+  if (now - s_t_seg >= 1000000) { s_por_s = (uint16_t)s_cont_seg; s_cont_seg = 0; s_t_seg = now; }
 
   medir(c, bytes, len);
   tab5_listener_call(&s_ouvinte, (const c6_csi_cab_t*)&c, bytes, len);
 }
 
 // ---------------------------------------------------------------------------
-// Renovacao + fonte de trafego - vaga do pool, so enquanto ligado.
+// Renovacao + fonte of trafego - vaga of pool, so enquanto enabled.
 // ---------------------------------------------------------------------------
 static void mandar(const c6_csi_cfg_t& cfg)
 {
@@ -182,7 +182,7 @@ static void mandar(const c6_csi_cfg_t& cfg)
   eh_host_peer_data_send(C6_MSG_HOST_RADIO, b, sizeof(b));
 }
 
-static esp_ping_handle_t ping_iniciar(uint32_t gw)
+static esp_ping_handle_t ping_start(uint32_t gw)
 {
   esp_ping_config_t cfg = ESP_PING_DEFAULT_CONFIG();
   cfg.target_addr.type = IPADDR_TYPE_V4;
@@ -198,7 +198,7 @@ static esp_ping_handle_t ping_iniciar(uint32_t gw)
   return h;
 }
 
-static void ping_parar(esp_ping_handle_t* h)
+static void ping_stop(esp_ping_handle_t* h)
 {
   if (!*h) { return; }
   esp_ping_stop(*h);
@@ -213,8 +213,8 @@ static void vTarefa(void*)
   bool pediu_c6 = false;
   tab5_wifi_keep_awake(TAB5_AWAKE_CSI, true);   // em modem sleep o C6 perde quadros
 
-  while (!parada_pedida(&s_parada)) {
-    // Ha de onde medir? Firmware nosso com CSI, e WiFi conectado ao roteador.
+  while (!stop_requested(&s_parada)) {
+    // Ha of onde medir? Firmware nosso com CSI, e WiFi conectado on roteador.
     const bool c6_ok = tab5_wifi_c6_is_ours() && tab5_wifi_c6_link()
                        && (tab5_farejo_caps_c6() & C6_CAP_CSI);
     uint32_t gw = 0;
@@ -235,7 +235,7 @@ static void vTarefa(void*)
 
     if (c6_ok && gw && tem_ap) {
       if (s_fase == TAB5_CSI_SEM_C6 || s_fase == TAB5_CSI_SEM_ROTEADOR) { s_fase = TAB5_CSI_APRENDENDO; }
-      // So o CSI que vem DO ROTEADOR: e o elo fixo que serve de referencia.
+      // So o CSI que vem DO ROTEADOR: e o elo fixo que serve of referencia.
       c6_csi_cfg_t cfg = { };
       cfg.liga = 1;
       cfg.so_alvo = 1;
@@ -243,69 +243,69 @@ static void vTarefa(void*)
       cfg.min_intervalo_ms = CSI_PASSO_MS;
       mandar(cfg);
       pediu_c6 = true;
-      if (gw != gw_ping) { ping_parar(&ping); gw_ping = 0; }
-      if (!ping) { ping = ping_iniciar(gw); if (ping) { gw_ping = gw; } }
+      if (gw != gw_ping) { ping_stop(&ping); gw_ping = 0; }
+      if (!ping) { ping = ping_start(gw); if (ping) { gw_ping = gw; } }
     } else {
       if (pediu_c6) { c6_csi_cfg_t off = { }; mandar(off); pediu_c6 = false; }
-      ping_parar(&ping);
+      ping_stop(&ping);
       gw_ping = 0;
-      s_zerar = true;
+      s_reset = true;
     }
 
-    for (int i = 0; i < RENOVA_MS / 100 && !parada_pedida(&s_parada); ++i) { vTaskDelay(pdMS_TO_TICKS(100)); }
+    for (int i = 0; i < RENOVA_MS / 100 && !stop_requested(&s_parada); ++i) { vTaskDelay(pdMS_TO_TICKS(100)); }
   }
 
-  ping_parar(&ping);
+  ping_stop(&ping);
   if (pediu_c6) { c6_csi_cfg_t off = { }; mandar(off); }
   tab5_wifi_keep_awake(TAB5_AWAKE_CSI, false);
   s_fase = TAB5_CSI_DESLIGADO;
   ESP_LOGI(TAG, "CSI desligado");
-  parada_confirmar(&s_parada);   // a ULTIMA coisa: daqui em diante um ligar pode criar outra
+  stop_confirm(&s_parada);   // a ULTIMA coisa: daqui em diante one enable pode create outra
 }
 
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
-static void preparar(void)
+static void prepare(void)
 {
   if (s_registrado) { return; }
-  // Os 52 indices validos do L-LTF no buffer (ver A MEDIDA DE MOVIMENTO).
+  // Os 52 indices validos of L-LTF no buffer (ver A MEDIDA DE MOVIMENTO).
   int k = 0;
   for (int i = 1; i <= 26; ++i)  { s_idx[k++] = (uint8_t)i; }
   for (int i = 38; i <= 63; ++i) { s_idx[k++] = (uint8_t)i; }
-  eh_host_peer_data_register(C6_MSG_CSI, ao_peer_data, nullptr);
+  eh_host_peer_data_register(C6_MSG_CSI, on_peer_data, nullptr);
   s_registrado = true;
 }
 
-void tab5_csi_ligar(uint32_t quem)
+void tab5_csi_enable(uint32_t quem)
 {
-  preparar();
-  tab5_mutex_travar(&s_trava_cmd);
-  if (parada_rodando(&s_parada)) {
-    if (!parada_pedida(&s_parada)) {     // de pe e ficando: so soma quem quer
+  prepare();
+  tab5_mutex_lock(&s_trava_cmd);
+  if (stop_running(&s_parada)) {
+    if (!stop_requested(&s_parada)) {     // of pe e ficando: so soma quem quer
       s_quem = s_quem | quem;
       tab5_mutex_destravar(&s_trava_cmd);
       return;
     }
     // Saindo (o ultimo desligou ha pouco): espera a saida, depois sobe outra.
-    if (!parada_pedir(&s_parada, 1500)) {
+    if (!stop_request(&s_parada, 1500)) {
       tab5_mutex_destravar(&s_trava_cmd);
       ESP_LOGE(TAG, "a tarefa anterior do CSI ainda nao saiu - nao liguei");
       return;
     }
   }
   s_quem = s_quem | quem;
-  // Medida do zero: o "parado" aprendido vale para o lugar de antes.
-  s_zerar = true;
+  // Medida of zero: o "parado" aprendido vale para o lugar of antes.
+  s_reset = true;
   s_aprendidos = 0;
   s_base_soma = 0;
   s_base = 0;
   s_razao = 1.0f;
-  s_nivel = TAB5_CSI_PARADO;
+  s_level = TAB5_CSI_PARADO;
   s_fase = TAB5_CSI_APRENDENDO;
-  if (!parada_preparar(&s_parada)
-   || !pool_criar(&s_id, vTarefa, nullptr, "csi", 3072, 3, OWNER_SERVICE, "CSI")) {
-    parada_desistir(&s_parada);
+  if (!stop_prepare(&s_parada)
+   || !pool_create(&s_id, vTarefa, nullptr, "csi", 3072, 3, OWNER_SERVICE, "CSI")) {
+    stop_abandon(&s_parada);
     s_quem = 0;
     s_fase = TAB5_CSI_DESLIGADO;
     tab5_mutex_destravar(&s_trava_cmd);
@@ -316,23 +316,23 @@ void tab5_csi_ligar(uint32_t quem)
   ESP_LOGI(TAG, "CSI ligado");
 }
 
-void tab5_csi_desligar(uint32_t quem)
+void tab5_csi_disable(uint32_t quem)
 {
-  tab5_mutex_travar(&s_trava_cmd);
+  tab5_mutex_lock(&s_trava_cmd);
   s_quem = s_quem & ~quem;
-  // O ultimo saiu: PEDE a saida (nao espera - quem desliga e a tela). A
-  // tarefa ve o pedido na volta seguinte; o acordar tira ela do vTaskDelay.
-  if (!s_quem && parada_rodando(&s_parada)) { s_parada.pedido = true; pool_acordar(&s_id); }
+  // O ultimo exited: PEDE a saida (nao espera - quem desliga e a screen). A
+  // tarefa ve o request in iteration seguinte; o wake tira ela of vTaskDelay.
+  if (!s_quem && stop_running(&s_parada)) { s_parada.request = true; pool_wake(&s_id); }
   tab5_mutex_destravar(&s_trava_cmd);
 }
 
-bool tab5_csi_ativo(void) { return s_quem != 0; }
+bool tab5_csi_active(void) { return s_quem != 0; }
 
 void tab5_csi_aparelho_mexendo(bool sim) { s_mexendo = sim; }
 
 void tab5_csi_ouvinte(tab5_csi_ouvinte_t cb)
 {
-  preparar();
+  prepare();
   tab5_listener_set(&s_ouvinte, cb);
 }
 
@@ -342,10 +342,10 @@ void tab5_csi_estado(tab5_csi_estado_t* out)
   out->por_s = s_por_s;
   out->rssi = s_rssi;
   out->razao = s_razao;
-  out->nivel = (tab5_csi_nivel_t)s_nivel;
+  out->level = (tab5_csi_level_t)s_level;
   tab5_csi_fase_t f = s_fase;
   if (f == TAB5_CSI_APRENDENDO || f == TAB5_CSI_MEDINDO) {
-    // O por_s so e reescrito quando chega record: parado ha mais de 2 s e o
+    // O por_s so e reescrito when chega record: parado ha mais of 2 s e o
     // mesmo que zero.
     if (esp_timer_get_time() - s_t_seg > 2000000) { out->por_s = 0; }
     if (s_mexendo)                         { f = TAB5_CSI_APARELHO_MEXENDO; }
