@@ -20,9 +20,17 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # --- PSRAM ---------------------------------------------------------------
 # Obrigatoria no Tab5: o framebuffer de 720x1280 nao cabe na RAM interna.
-# Depois do primeiro build, abra o menuconfig e confira modo/velocidade -
-# as sub-opcoes so aparecem depois que SPIRAM=y.
 CONFIG_SPIRAM=y
+# HEX a 200MHz - ver o aviso sobre o custo fixo por rajada mais abaixo
+# (secao DMA2D/cache). Sem isto fixado aqui, um clone novo que nunca passou
+# por menuconfig herda o padrao do proprio ESP-IDF (HEX a 20MHz) - 1/10 da
+# banda que o painel DSI (DW-GDMA lendo o framebuffer da PSRAM) precisa para
+# nao dar underrun. Foi exatamente o que aconteceu: o build de fabrica deste
+# repositorio sempre rodou numa maquina com o sdkconfig local ja ajustado a
+# mao (sdkconfig nao vai para o git, de proposito), e isto nunca tinha sido
+# testado num clone realmente limpo ate agora.
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
 # Buffers estaticos grandes marcados com EXT_RAM_BSS_ATTR vao para a PSRAM
 # (tabela de nos do Mesh, dreno do log, historico do monitor...) - a SRAM
 # interna e a memoria mais disputada do sistema.
