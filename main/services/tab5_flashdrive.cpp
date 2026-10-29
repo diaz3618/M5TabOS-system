@@ -875,7 +875,7 @@ static void vTaskSessao(void*)
   tab5_sd_summary(&r);
   if (r.conflicts) {
     char t[NOTIF_RESUMO];
-    snprintf(t, sizeof(t), "%u arquivo(s) em .tab5", (unsigned)r.conflicts);
+    snprintf(t, sizeof(t), "%u file(s) in .tab5", (unsigned)r.conflicts);
     notify((int)r.conflicts, NOTIF_ATENCAO, t);   // stays until the person sees it in Settings > USB
     s_resultado_aviso = true;
   } else if (r.in_journal) {

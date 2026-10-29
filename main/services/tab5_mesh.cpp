@@ -4128,11 +4128,11 @@ const char* tab5_mesh_proxy_estado(void)
   static char d[48];
   if (tab5_wifi_state() != TAB5_WIFI_CONNECTED) { return "no Wi-Fi on the Tab5"; }
   if (!mesh_mqtt_no_tem_proxy())                 { return "the node has not confirmed yet"; }
-  if (!mesh_mqtt_em_proxy())                     { return "vai conectar"; }
+  if (!mesh_mqtt_em_proxy())                     { return "about to connect"; }
   if (!mesh_mqtt_conectado())                    { return "connecting to the server"; }
   uint32_t sobe, desce, perde;
   mesh_mqtt_proxy_contadores(&sobe, &desce, &perde);
-  snprintf(d, sizeof(d), "conectado (%lu/%lu)", (unsigned long)sobe, (unsigned long)desce);
+  snprintf(d, sizeof(d), "connected (%lu/%lu)", (unsigned long)sobe, (unsigned long)desce);
   return d;
 }
 

@@ -384,8 +384,8 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     if (n_msgs >= MAX_MSGS) { return false; }
     size[n_msgs] = admin_msg(msgs[n_msgs], sizeof(msgs[0]), c.modulo ? ADM_SET_MODULE_CONFIG : ADM_SET_CONFIG, &ws);
     if (!size[n_msgs]) {
-      ESP_LOGE(TAG, "secao grande demais para um pacote");
-      snprintf(s_reason, sizeof(s_reason), "configuração grande demais para um pacote");
+      ESP_LOGE(TAG, "section too large for one packet");
+      snprintf(s_reason, sizeof(s_reason), "config too large for one packet");
       return false;
     }
     if (c.modulo && c.secao == 1) { msg_mqtt = n_msgs; }

@@ -144,9 +144,9 @@ static void trab_count(void*)
 static void v_work(char* o, size_t n)
 {
   const int a = s_trab_arquivos;
-  if (s_trab_running) { snprintf(o, n, "contando..."); }
-  else if (a < 0)     { snprintf(o, n, "conta os arquivos da pasta do app"); }
-  else                { snprintf(o, n, "%d arquivo(s) em apps/Exemplo", a); }
+  if (s_trab_running) { snprintf(o, n, "counting..."); }
+  else if (a < 0)     { snprintf(o, n, "counts the files in the app's folder"); }
+  else                { snprintf(o, n, "%d file(s) in apps/Example", a); }
 }
 
 static void b_work(void)

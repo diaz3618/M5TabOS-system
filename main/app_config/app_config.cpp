@@ -1697,7 +1697,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
       else                      { snprintf(estado, sizeof(estado), "Card on the computer"); color = TFT_GREENYELLOW; }
       break;
     default:
-      snprintf(estado, sizeof(estado), "%s", e.oferta ? "Computador conectado" : "Desligado");
+      snprintf(estado, sizeof(estado), "%s", e.oferta ? "Computer connected" : "Off");
       color = e.oferta ? TFT_YELLOW : TFT_WHITE;
       break;
   }

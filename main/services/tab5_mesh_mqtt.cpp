@@ -761,7 +761,7 @@ bool mesh_mqtt_conectou_now(void)
 const char* mesh_mqtt_descricao(void)
 {
   static char d[112];
-  snprintf(d, sizeof(d), "%s%s", s_descr, !s_cli ? "" : s_conectado ? " - conectado" : " - conectando");
+  snprintf(d, sizeof(d), "%s%s", s_descr, !s_cli ? "" : s_conectado ? " - connected" : " - connecting");
   return d;
 }
 

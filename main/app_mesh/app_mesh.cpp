@@ -2939,8 +2939,8 @@ static void cfg_aviso(const char* msg)
 static void cfg_close_edicao(bool confirm)
 {
   if (confirm && s_editando == ED_WIFI_SENHA && strlen(s_edit_txt) < 8) {
-    cfg_aviso("a senha do Wi-Fi precisa de 8 letras ou mais");   // o firmware recusaria
-    snprintf(s_redes_msg, sizeof(s_redes_msg), "a senha do Wi-Fi precisa de 8 letras ou mais");
+    cfg_aviso("the Wi-Fi password needs 8 characters or more");   // the firmware would reject it
+    snprintf(s_redes_msg, sizeof(s_redes_msg), "the Wi-Fi password needs 8 characters or more");
     confirm = false;
   }
   if (confirm && s_edit_txt[0]) {

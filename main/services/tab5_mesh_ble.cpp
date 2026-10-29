@@ -421,8 +421,8 @@ static int conectar(const ble_addr_t* alvo)
 
   // From this point forward and this year: guard to reconnect directly.
   settings_set_mesh_ble_address(s_end);
-  ESP_LOGI(TAG, "conectado a %s (%s)", s_name, s_end);
-  estado("conectado a %s", s_name);
+  ESP_LOGI(TAG, "connected to %s (%s)", s_name, s_end);
+  estado("connected to %s", s_name);
   s_conectado = true;
   s_conectou_now = true;
   return 0;
