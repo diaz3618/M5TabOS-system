@@ -41,5 +41,8 @@ __pycache__/
 tools/privado.local.txt
 .m5tabos-publico
 
+# Local translation notes, source inventories, and other private project material
+/internal/
+
 # Firmware generated for the M5Burner (tools/m5burner.sh)
 M5tabOS-*.bin
