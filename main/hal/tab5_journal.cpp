@@ -8,7 +8,7 @@
 
 static const char* TAG = "reserva";
 
-// Tipo "data", subtipo proprio (0x40..0xFE e dos aplicativos) - ver partitions.csv.
+// Type "data", own subtype (0x40..0xFE and applications) - see partitions.csv.
 #define RESERVA_SUBTIPO ((esp_partition_subtype_t)0x99)
 
 static const esp_partition_t* s_part = nullptr;
@@ -19,7 +19,7 @@ static bool p_read(void* ctx, uint32_t pos, void* buf, uint32_t n)
 {
   return esp_partition_read((const esp_partition_t*)ctx, pos, buf, n) == ESP_OK;
 }
-static bool p_gravar(void* ctx, uint32_t pos, const void* buf, uint32_t n)
+static bool partition_write(void* ctx, uint32_t pos, const void* buf, uint32_t n)
 {
   return esp_partition_write((const esp_partition_t*)ctx, pos, buf, n) == ESP_OK;
 }
@@ -27,7 +27,7 @@ static bool p_erase(void* ctx, uint32_t pos, uint32_t n)
 {
   return esp_partition_erase_range((const esp_partition_t*)ctx, pos, n) == ESP_OK;
 }
-// O registro inteiro (ate dezenas of KB - a NodeDB of Mesh) vai para a PSRAM.
+// The entire record (up to tens of KB - a NodeDB of Mesh) goes to PSRAM.
 static void* p_alocar(size_t n) { return heap_caps_malloc(n, MALLOC_CAP_SPIRAM); }
 static void  p_liberar(void* p) { heap_caps_free(p); }
 
@@ -40,7 +40,7 @@ bool tab5_journal_init(void)
     ESP_LOGE(TAG, "sem a particao \"reserva\" - grave a tabela de particoes nova (./flash.sh)");
     return false;
   }
-  const journal_storage_t m = { p_read, p_gravar, p_erase, p_alocar, p_liberar,
+  const journal_storage_t m = { p_read, partition_write, p_erase, p_alocar, p_liberar,
                              (void*)s_part, (uint32_t)(s_part->size / JOURNAL_SECTOR * JOURNAL_SECTOR) };
   xSemaphoreTake(s_trava, portMAX_DELAY);
   const bool ok = journal_open(&s_r, &m);

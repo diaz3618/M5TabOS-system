@@ -9,15 +9,15 @@
 // and cross-checked against the Tab5's own schematic (M5_BUS sheet, "BUS same
 // as CORE2 with old GPIO map") - the two match pin for pin, this is no longer
 // just the CoreS3 example carried over by guesswork:
-//   SW1 (switches 1-8, DIP-8): positions 5-8 are the 4 BUSY candidates,
-//     positions 1-4 the NSS candidates - BUT position 1 (labeled "ISO_G0" on
-//     the module's schematic) does NOT reach any M5-Bus pin: it's a signal
-//     internal to the module. NSS only has 3 real candidates (switches 2-4),
-//     not 4.
-//   SW2 (2 switches, A/B): I2C address of the M5IOE1 expander - 00=0x74,
-//     10=0x73, 01=0x72, 11=0x71. The only bank identifiable purely
-//     electrically (just vary the probed address).
-//   SW3 (switches 9-11, DIP-3): the 3 IRQ candidates.
+// SW1 (switches 1-8, DIP-8): positions 5-8 are the 4 BUSY candidates,
+// positions 1-4 the NSS candidates - BUT position 1 (labeled "ISO_G0" on
+// the module's schematic) does NOT reach any M5-Bus pin: it's a signal
+// internal to the module. NSS only has 3 real candidates (switches 2-4),
+// not 4.
+// SW2 (2 switches, A/B): I2C address of the M5IOE1 expander - 00=0x74,
+// 10=0x73, 01=0x72, 11=0x71. The only bank identifies purely
+// electrically (just vary the probed address).
+// SW3 (switches 9-11, DIP-3): the 3 IRQ candidates.
 // The physical 1-11 numbering (as read off the real DIP switch) follows the
 // pin-1 order of each switch on the module's schematic - cross-check against
 // the module's silkscreen if the two ever disagree.
@@ -55,7 +55,7 @@ typedef struct {
 typedef struct {
   bool     probed;
   uint8_t  ioe_address;       // zero when no M5IOE1 answered
-  uint8_t  ioe_mask;        // bits 0..3 correspond to 0x71..0x74
+  uint8_t  ioe_mask;        // bits 0..3 corresponds to 0x71..0x74
   uint16_t ioe_uid;
   uint8_t  ioe_revision;
   bool     radio_present;

@@ -2,7 +2,7 @@
 // of touch para o app certo, e a calibracao of touch.
 //
 // -------------------------------------------------------------------------
-// ETAPA 1 of ARCHITECTURE.md - metade of SHELL (aparencia)
+// ETAPA 1 of docs/ARCHITECTURE.md - metade of SHELL (aparencia)
 // -------------------------------------------------------------------------
 // Ate aqui isto vivia dentro of kernel/sistema.cpp, junto of MOTOR (agenda
 // of drawing, ciclo of vida dos apps, politica of energia) - 2457 lines

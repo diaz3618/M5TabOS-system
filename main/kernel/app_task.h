@@ -7,28 +7,28 @@
 // garbage. There is no "force the release."
 //
 // The ONLY correct path is not to kill it: ask it to exit and let the task
-// itself return what it borrowed. What makes this fast is xTaskAbortDelay(),
+// itself returns what it borrowed. What makes this fast is xTaskAbortDelay(),
 // which pulls the task out of a locked wait RIGHT AWAY - it returns from
 // uart_read_bytes, from xQueueReceive, from vTaskDelay, as if the deadline
 // had expired. Without it, you'd have to wait out each wait's natural timeout.
 //
 // HOW TO USE IT:
 //
-//   static app_task_t s_t;
+// static app_task_t s_t;
 //
-//   static void my_loop(app_task_t* t) {
-//       while (app_task_active(t)) {
-//           ...work...                      // with LIMITED waits
-//       }
-//       // return whatever you borrowed here: fclose, xSemaphoreGive, etc.
-//   }
+// static void my_loop(app_task_t* t) {
+// while (app_task_active(t)) {
+// ...work... // with LIMITED waits
+// }
+// // return whatever you borrowed here: fclose, xSemaphoreGive, etc.
+// }
 //
-//   on_open():   app_task_create(&s_t, my_loop, "gps", 4096, 3);
-//   on_close():  app_task_stop(&s_t, 200);   // only then destroy queues
+// on_open(): app_task_create(&s_t, my_loop, "gps", 4096, 3);
+// on_close(): app_task_stop(&s_t, 200);   // only then destroy queues
 //
 // When the loop RETURNS, the framework notifies whoever is waiting and the
 // task-pool slot (kernel/task_pool.h) goes back to sleep - the app NEVER
-// calls vTaskDelete (that would kill the whole slot). And stop() only
+// calls vTaskDelete (that would kill the entire slot). And stop() only
 // returns once the task has confirmed it exited.
 
 #pragma once

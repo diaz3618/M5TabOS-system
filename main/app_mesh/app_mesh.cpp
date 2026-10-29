@@ -256,7 +256,7 @@ static void carregar_hist(void)
 
 // Na interface. Carga terminou -> troca os buffers; qualquer outro aviso
 // (message, send_state, nos) -> redesenha, e o draw() confere os contadores.
-static void on_aviso(uint32_t av)
+static void on_notice(uint32_t av)
 {
   if ((av & AVISO_TRABALHO) && s_carga_pronta) {
     s_carga_pronta = false;
@@ -535,7 +535,7 @@ static int s_conv_div = -1;   // indice of item que leva o traco; -1 = nenhum
 
 static int conv_height(int i, void*) { return CONV_PASSO + (i == s_conv_div ? CONV_DIV_A : 0); }
 
-static int achar_conv_div(void)
+static int find_conversation_divider(void)
 {
   const int n = tab5_mesh_num_conversas();
   for (int i = 0; i < n; ++i) {
@@ -668,7 +668,7 @@ static void draw_conversas(lgfx::LovyanGFX& d, const area_t& a)
   const uint16_t FUNDO = background_msg(d);
   const area_t j = window_conversas(a);
   const int n = tab5_mesh_num_conversas();
-  const int div = achar_conv_div();
+  const int div = find_conversation_divider();
   const bool div_changed = (div != s_conv_div);
   s_conv_div = div;
 
@@ -1636,7 +1636,7 @@ static uint16_t color_of_no(uint32_t num)
 // numero" (com o first cabendo em latitude e o segundo em longitude) -
 // serve tanto para o link quanto para o par cru, sem se importar com o
 // resto of text on redor (URL, legenda, o que vier).
-static bool achar_coord(const char* txt, float* lat, float* lon)
+static bool find_coordinates(const char* txt, float* lat, float* lon)
 {
   for (const char* p = txt; *p; ++p) {
     if (*p != '-' && (*p < '0' || *p > '9')) { continue; }
@@ -1734,7 +1734,7 @@ static bool conv_read(int i, conversation_msg_t* o, void*)
 
   // Coordenada no text vira "alfinete, lat, lon, distancia e rumo".
   float lat, lon;
-  if (achar_coord(m->text, &lat, &lon)) {
+  if (find_coordinates(m->text, &lat, &lon)) {
     if (s_tem_ref) {
       float km; const char* dir;
       distancia_direcao(s_ref_lat, s_ref_lon, lat, lon, &km, &dir);
@@ -3676,7 +3676,7 @@ static void on_close(void)
   s_hist_pronto = false;
 }
 
-static uint32_t periodo_now(void)
+static uint32_t current_redraw_period(void)
 {
   return (s_pag == PAG_NOS || s_pag == PAG_MALHA || s_pag == PAG_NO) ? 1000 : 0;
 }
@@ -3691,20 +3691,20 @@ extern const app_t APP_MESH = {
   // Em pe ou deitado conforme o aparelho; com o keyboard encaixado, deitado -
   // a postura natural of quem escreve (ver o LAYOUT no topo of arquivo).
   .orientation = ORIENTATION_FOLLOWS_IMU,
-  .piso_sleep_mhz = 0,
+  .sleep_clock_floor_mhz = 0,
   .on_open  = on_open,
   .on_close = on_close,
   .draw  = draw,
   .on_touch  = on_touch,
   .on_touch_level = on_touch_level,   // acende a key sob o finger
   .on_type = on_type,             // keyboard fisico of ExtPort1
-  .periodo_ms = 0,
+  .redraw_period_ms = 0,
   // Relogio SO nas paginas que mostram idade (Nos, Malha); nas mensagens o app
   // so acorda por aviso - message nova, send_state confirmado, no novo, carga of
   // historico pronta.
-  .periodo_now = periodo_now,
+  .current_redraw_period = current_redraw_period,
   .notices = AVISO_MESH_MSG | AVISO_MESH_ENVIO | AVISO_MESH_NOS | AVISO_TRABALHO,
-  .on_aviso = on_aviso,
+  .on_notice = on_notice,
   // O icon of screen inicial e a propria marca of Meshtastic: quem procura este
   // app procura o simbolo dele, nao a letra M.
   .icon = marca_mesh,

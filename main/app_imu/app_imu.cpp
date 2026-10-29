@@ -1,28 +1,28 @@
-// APP: IMU - visualizador on vivo dos eixos of BMI270 (acelerometro + giroscopio).
+// APP: IMU - live viewer of BMI270 axes (accelerometer + gyroscope).
 //
-// PRA QUE SERVE: nenhum app deste sistema usava a IMU ainda. Este e o
-// playground - mostra os 6 eixos (3 of acelerometro, 3 of giroscopio) on
-// vivo, para sentir o que o chip mede in mao antes of decidir o que fazer
-// com isso depois (a ideia adiada e rotate a screen sozinha, feito celular).
+// WHAT IT IS FOR: no app for this system used the IMU yet. This is the
+// playground - shows the 6 axes (3 of accelerometer, 3 of gyroscope) on
+// alive, to feel what the chip measures in hand before deciding what to do
+// with that later (the idea postponed and rotate the screen alone, like a cell phone).
 //
-// SEM TAREFA PROPRIA, DE PROPOSITO: on contrario of Mesh/GPS, ninguem
-// precisa of IMU com o app FECHADO - ela so importa enquanto alguem esta
-// olhando a screen e mexendo o aparelho. draw() le o sensor direto, in
-// PROPRIA tarefa of interface, que e a unica autorizada a falar com o
-// barramento I2C interno (o mesmo of touch e of INA226 - ver o aviso em
-// tab5_power.hpp). Uma tarefa e uma queue aqui seriam abstracao sem reason,
-// no mesmo espirito of app Exemplo: nao existe produtor em segundo plano
-// para alimentar.
+// NO OWN TASK, ON PURPOSE: unlike Mesh/GPS, no one
+// needs IMU with the app CLOSED - it only matters while someone is
+// looking at the screen and moving the device. draw() reads the direct sensor, in
+// OWN task of interface, which is the only one authorized to talk to the
+// internal I2C bus (same of touch and of INA226 - see warning in
+// tab5_power.hpp). A task and a queue here would be an abstraction without reason,
+// in the same spirit as app Example: there is no background producer
+// to feed.
 //
-// profile.imu = true E UM FLAG DE FASE 1 (ver tab5_power.hpp): uma vez que
-// este app existe in tabela, o BMI270 e enabled no boot para a SESSAO
-// INTEIRA - com giroscopio active e advanced power save disabled, o pior
-// caso of consumo of chip (e o M5Unified quem decide assim; nao of para
-// mudar depois of M5.begin()). tab5_power_imu_accelerometer_only() ja existe
-// pronta para cortar isso when nada estiver usando o giroscopio, mas
-// nao e chamada por ninguem ainda - stays of fora deste app of proposito:
-// e uma decisao of politica of energia of SISTEMA (when enable/disable
-// para TODOS os apps), nao deste playground.
+// profile.imu = true AND A PHASE 1 FLAG (see tab5_power.hpp): since
+// This app exists in the table, the BMI270 and enabled at boot for the SESSION
+// ENTIRE - with active gyroscope and advanced power save disabled, the worst
+// case of consumption of chip (it is M5Unified who decides so; it is not for
+// change after M5.begin()). tab5_power_imu_accelerometer_only() already exists
+// ready to cut this when nothing is using the gyroscope, but
+// It's not called by anyone yet - stays out of this app of purpose:
+// is a decision of policy of energy of SISTEMA (when enable/disable
+// for ALL apps), not from this playground.
 
 #include "app.h"
 #include "paint.hpp"
@@ -33,37 +33,37 @@
 
 static const char* TAG = "app.imu";
 
-// CONTRASTE PROPRIO, NAO SIS_BORDA/SIS_LINHA: moldura e cruzeta ficavam
-// FRACAS DEMAIS contra o preto, SIS_LINHA e rgb(56,60,60), quase invisivel).
-// SIS_BORDA/SIS_LINHA sao constantes of SISTEMA (app.h), usadas por varios
-// apps para bordas discretas of proposito - mudar as duas mudaria todo
-// mundo. Este app e one mostrador of instrumento (level + barras of eixo),
-// onde a grade PRECISA se ver por top of fundo preto - por isso IMU_BORDA
-// so daqui, mais clara que a of sistema (a line of middle usa d.color565()
-// direto nos pontos of drawing, rgb(72,76,80), so one pouco mais clara que a
-// SIS_LINHA original).
+// OWN CONTRAST, NOT SIS_BORDA/SIS_LINE: frame and crosshead were
+// TOO WEAK against black, SIS_LINHA and rgb(56,60,60), almost invisible).
+// SIS_BORDA/SIS_LINHA are constants of SISTEMA (app.h), used by several
+// apps for discrete edges of purpose - changing both would change the whole
+// world. This app is an instrument display (level + axis bars),
+// where the grid NEEDS to be seen by top of black background - hence IMU_BORDA
+// only from here, clearer than the of system (the line of middle uses d.color565()
+// directly at the points of drawing, rgb(72,76,80), only one a little lighter than the
+// original SIS_LINE).
 static const uint16_t IMU_BORDA = TFT_DARKGREY;   // 0x7BEF, rgb(128,130,128)
 
 static bool on_open(void)
 {
   if (!M5.Imu.isEnabled()) {
-    // Nao recusa a abertura: draw() mostra o aviso in screen mesmo assim.
-    // Isso so aconteceria se profile.imu tivesse ficado false por engano -
-    // ver sistema_perfil_de_boot(), que uniao o field of TODOS os apps.
+    // It does not refuse opening: draw() shows the warning on screen anyway.
+    // This would only happen if profile.imu had been set to false by mistake -
+    // see Sistema_profil_de_boot(), which joins the field of ALL apps.
     ESP_LOGW(TAG, "M5.Imu nao esta habilitada - perfil.imu chegou a false no boot?");
   }
   ESP_LOGI(TAG, "aberto");
   return true;
 }
 
-// FUNDO DO NIVEL, CACHEADO - ver o aviso grande logo abaixo, junto of
-// desenhar_nivel(). Criado in primeira chamada, liberado on close o app.
+// BOTTOM OF THE LEVEL, CURLY - see the large notice below, next to
+// draw_level(). Created on first call, released on close the app.
 static M5Canvas* s_level_fundo   = nullptr;
-static int       s_level_fundo_r = -1;   // raio com que o fundo foi drawn
+static int       s_level_fundo_r = -1;   // radius with which the background was drawn
 
-// FUNDO DAS BARRAS DE EIXO, CACHEADO - ver o aviso grande junto of
-// desenhar_barra(). Declarado aqui (nao junto of funcao, mais abaixo) pela
-// mesma razao of level: ao_fechar() precisa liberar os dois.
+// AXIS BARS BACKGROUND, CURLY - see the large warning next to
+// draw_bar(). Declared here (not next to the function, below) by
+// same reason of level: ao_close() needs to release both.
 static M5Canvas* s_barra_fundo   = nullptr;
 static int       s_barra_fundo_w = -1, s_barra_fundo_h = -1;
 
@@ -76,44 +76,44 @@ static void on_close(void)
   ESP_LOGI(TAG, "fechado");
 }
 
-// ---------------------------------------------------------------------------
-// NIVEL (BOLHA)
-// ---------------------------------------------------------------------------
-// O ponto se move com a inclinacao lida of acelerometro em sleep: 1g
-// dividido entre os eixos conforme o aparelho tomba. Clampado em +-1g - alem
-// disso o aparelho ja esta of lado, e o ponto so precisa encostar in borda.
+// -------------------------------------------------------------------------------
+// LEVEL (BUBBLE)
+// -------------------------------------------------------------------------------
+// The point moves with the inclination read from accelerometer in sleep: 1g
+// divided between the axes as the device tips over. Clamped at +-1g - German
+// Therefore, the device is already on the side, and the stitch only needs to touch the edge.
 //
-// isto redesenhava a caixa INTEIRA a cada frame (20Hz):
-// apagava everything e recomputava dois circulos + cruzeta via algoritmo of
-// vetor, so para move one ponto. Era uma troca CONSCIENTE (documentada aqui
-// mesmo: "mais simples que guardar a position anterior", "dezenas of KB por
-// frame, nada parecido com os ~1,6MB que causam a piscada azul") - nao
-// estava errado, so nao tinha sido revisitado ainda no processo of
-// otimizacao of energia desta sessao.
+// this redraws the ENTIRE box every frame (20Hz):
+// erased everything and recomputed two circles + crosshead via algorithm of
+// vector, just to move one point. It was a CONSCIOUS exchange (documented here
+// same: "simpler than saving the previous position", "tens of KB per
+// frame, nothing like the ~1.6MB that causes the blue blink") - no
+// was wrong, it just hadn't been revisited yet in the process of
+// optimization of energy for this session.
 //
-// A troca now: o CIRCULO/CRUZETA (que nunca mudam, so o raio deles muda se
-// a screen for redimensionada) vao para one M5Canvas pequeno, desenhados so
-// when o raio muda. A cada frame, em vez of recalcular os dois circulos e
-// as duas lines por algoritmo, so faz one pushSprite() of canvas (uma copia
-// of bytes, sem trigonometria nem Bresenham) e desenha a bolinha por top.
-// O NUMERO DE BYTES ESCRITOS NA TELA CONTINUA O MESMO (a caixa inteira ainda
-// e "revelada" a cada frame, e e assim que o rastro of bolinha antiga
-// continua correto sem precisar restaurar so o pedaco onde ela estava) - o
-// ganho e SO of CPU: uma copia e sempre mais barata que recalcular circulo e
-// line of zero, 20 vezes por segundo, enquanto o app estiver open.
+// The exchange now: the CIRCLE/CROSS (which never change, only their radius changes if
+// the screen is resized) go to a small M5Canvas, designed only
+// when the radius changes. At each frame, instead of recalculating the two circles and
+// the two lines by algorithm, just do one pushSprite() of canvas (a copy
+// of bytes, without trigonometry or Bresenham) and draws the ball by top.
+// THE NUMBER OF BYTES WRITTEN ON THE SCREEN REMAINS THE SAME (the entire box is still
+// and "revealed" with each frame, and this is how the trace of old ball
+// remains correct without having to restore just the part where it was) - the
+// gain and OS of CPU: a copy is always cheaper than recalculating the circle and
+// line of zero, 20 times per second, while the app is open.
 static void draw_level(lgfx::LovyanGFX& d, int cx, int cy, int r, float ax, float ay)
 {
   const int lado = 2 * r + 12;
 
   if (!s_level_fundo) {
-    // SEM SPRITE, SEM CACHE - iteration on caminho antigo (redesenha everything por
-    // vetor). So aconteceria sem PSRAM livre, o que ja seria one problema
-    // maior que este.
+    // NO SPRITE, NO CACHE - iteration on old path (redraws everything by
+    // vector). It would only happen without free PSRAM, which would already be a problem
+    // bigger than this.
     s_level_fundo = tab5_sprite_novo(&d, lado, lado);
   }
 
   if (!s_level_fundo) {
-    const uint16_t line = d.color565(72, 76, 80);   // ver o aviso of IMU_BORDA no topo of arquivo
+    const uint16_t line = d.color565(72, 76, 80);   // see the warning of IMU_BORDA at the top of file
     d.fillRect(cx - r - 6, cy - r - 6, lado, lado, TFT_BLACK);
     d.drawCircle(cx, cy, r, IMU_BORDA);
     d.drawCircle(cx, cy, r / 2, line);
@@ -121,9 +121,9 @@ static void draw_level(lgfx::LovyanGFX& d, int cx, int cy, int r, float ax, floa
     d.drawFastVLine(cx, cy - r, 2 * r, line);
   } else {
     if (s_level_fundo_r != r) {
-      // SO QUANDO O RAIO MUDA (nunca, in pratica - a screen nao redimensiona
-      // com o app open - mas e o mesmo cuidado of resto of sistema: nao
-      // supor one layout fixo por sorte).
+      // ONLY WHEN THE RADIUS CHANGES (never, in practice - the screen does not resize
+      // with the app open - but it's the same care for the rest of the system: no
+      // assume one fixed layout by luck).
       const uint16_t line = d.color565(72, 76, 80);
       s_level_fundo->fillSprite(TFT_BLACK);
       s_level_fundo->drawCircle(lado / 2, lado / 2, r, IMU_BORDA);
@@ -141,33 +141,33 @@ static void draw_level(lgfx::LovyanGFX& d, int cx, int cy, int r, float ax, floa
   if (py >  1.0f) { py =  1.0f; }
   if (py < -1.0f) { py = -1.0f; }
 
-  // Tela cresce para BAIXO; inclinar o topo of aparelho "para tras" e Y
-  // positivo no acelerometro, e deve move o ponto para CIMA in screen -
-  // por isso o sinal trocado em py.
+  // Screen grows DOWN; tilt the top of the device "back" and Y
+  // positive on the accelerometer, and should move the point UP in screen -
+  // so the sign is changed in py.
   const int dx = cx + (int)(px * (r - 16));
   const int dy = cy - (int)(py * (r - 16));
   d.fillCircle(dx, dy, 11, TFT_GREENYELLOW);
   d.drawCircle(dx, dy, 11, TFT_BLACK);
 }
 
-// ---------------------------------------------------------------------------
-// BARRA CENTRADA EM ZERO
-// ---------------------------------------------------------------------------
-// 'frac' ja vem em [-1, 1] (o valor dividido pela escala escolhida por quem
-// chama). Preenche of centro para o lado que o sinal indicar - o mesmo
-// drawing of one medidor of balanco of audio, que e a metafora certa aqui:
-// o que importa e o AFASTAMENTO of zero, nos dois sentidos.
+// -------------------------------------------------------------------------------
+// ZERO CENTERED BAR
+// -------------------------------------------------------------------------------
+// 'frac' already comes in [-1, 1] (the value divided by the scale chosen by whoever
+// calls). Fill in the center to the side indicated by the sign - the same
+// drawing of one meter of balance of audio, which is the right metaphor here:
+// What matters is the REMOVAL of zero, in both directions.
 //
-// FUNDO CACHEADO, (s_barra_fundo, declarado la em top junto of
-// s_nivel_fundo) - achado in mesma varredura que motivou o fix of level
-// (desenhar_nivel(), ver o aviso grande la): esta funcao roda 6 vezes por
-// frame a 20Hz (uma por eixo) e apagava + redesenhava borda e line of
-// centro TODA VEZ, com as SEIS chamadas usando exatamente o mesmo w/h - a
-// mesma imagem estatica, seis vezes por frame, sempre recalculada of zero
-// por algoritmo of rectangle/line. Um sprite so, of tamanho of UMA barra,
-// serve as seis (todas identicas) - so o preenchimento (que of fato muda por
-// eixo) continua drawn direto in screen.
-static void draw_barra(lgfx::LovyanGFX& d, int x, int y, int w, int h,
+// FUNDO CACHEADO, (s_barra_fundo, declared there in top next to
+// s_nivel_fundo) - found in the same scan that led to the fix of level
+// (desenhar_nivel(), see the big warning there): this function runs 6 times per
+// frame at 20Hz (one per axis) and erased + redrawn border and line of
+// center EVERY TIME, with all SIX calls using exactly the same w/h - the
+// same still image, six times per frame, always recalculated from zero
+// by algorithm of rectangle/line. A single sprite, of size of ONE bar,
+// serves all six (all identical) - just the filling (which in fact changes by
+// axis) continues drawn directly on screen.
+static void draw_axis_bar(lgfx::LovyanGFX& d, int x, int y, int w, int h,
                            float frac, uint16_t color)
 {
   const int cx = x + w / 2;
@@ -176,8 +176,8 @@ static void draw_barra(lgfx::LovyanGFX& d, int x, int y, int w, int h,
     tab5_sprite_release(&s_barra_fundo);
   }
   if (!s_barra_fundo) {
-    // SEM PSRAM PARA O SPRITE (nullptr) - iteration on caminho antigo, mesma
-    // defesa of level.
+    // NO PSRAM FOR SPRITE (nullptr) - iteration on old path, same
+    // defense of level.
     s_barra_fundo = tab5_sprite_novo(&d, w, h);
     if (s_barra_fundo) {
       s_barra_fundo->fillSprite(TFT_BLACK);
@@ -206,7 +206,7 @@ static void draw_barra(lgfx::LovyanGFX& d, int x, int y, int w, int h,
 typedef struct {
   const char* rotulo;
   float       valor;
-  float       escala;    // valor que enche a barra inteira (1.0 == fundo of escala)
+  float       escala;    // value that fills the entire bar (1.0 == full scale)
   uint16_t    color;
   const char* unidade;
 } eixo_t;
@@ -216,12 +216,12 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
   static paint_t s_p;
   paint_start(&s_p);
 
-  // O sistema tenta raise of novo uma IMU que falhou no boot (tab5_imu_measure):
-  // when ela aparece, o aviso exit numa repintura complete.
-  static bool s_sem_imu = false;
+  // The system tries to raise a new IMU that failed to boot (tab5_imu_measure):
+  // when it appears, the warning exits on a complete repaint.
+  static bool s_imu_unavailable = false;
   if (!M5.Imu.isEnabled()) {
-    if (paint_complete(&s_p) || !s_sem_imu) {
-      s_sem_imu = true;
+    if (paint_complete(&s_p) || !s_imu_unavailable) {
+      s_imu_unavailable = true;
       tab5_text(d, 2.3f);
       d.setTextDatum(middle_center);
       d.setTextColor(TFT_RED, TFT_BLACK);
@@ -229,23 +229,23 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
     }
     return;
   }
-  if (s_sem_imu) {
-    s_sem_imu = false;
+  if (s_imu_unavailable) {
+    s_imu_unavailable = false;
     system_request_redraw_complete();
     return;
   }
 
-  // UMA leitura por frame, in tarefa of interface - mesma regra of INA226 e
-  // of keyboard (ver o aviso grande em tab5_power.hpp sobre o barramento
-  // interno sem mutex). M5.Imu.update() e quem fala com o BMI270; getAccel/
-  // getGyro so leem o cache que ele acabou of encher.
+  // ONE read per frame, in task of interface - same rule as INA226 and
+  // of keyboard (see the big warning in tab5_power.hpp about the bus
+  // internal without mutex). M5.Imu.update() and who talks to the BMI270; getAccel/
+  // getGyro only reads the cache it has just filled.
   //
-  // POR QUE NAO tab5_imu_latest() (ver hal/tab5_imu.hpp): aquele
-  // cache existe para OUTROS apps perguntarem "como o aparelho esta" sem
-  // touch no I2C - mas so e alimentado 1x/segundo, rapido demais para
-  // energia/temperatura, devagar demais para one level bolha nao parecer
-  // travado. Este app CONTINUA lendo direto of proposito - e o unico lugar
-  // que precisa of leitura rapida, e ja e seguro (mesma tarefa).
+  // WHY NOT tab5_imu_latest() (see hal/tab5_imu.hpp): that
+  // cache exists for OTHER apps to ask "how the device is doing" without
+  // touch on I2C - but it is only powered 1x/second, too fast to
+  // energy/temperature, too slowly for one level bubble not to appear
+  // locked. This app KEEP reading straight from purpose - and the only place
+  // that needs quick reading, and is already safe (same task).
   M5.Imu.update();
   float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
   M5.Imu.getAccel(&ax, &ay, &az);
@@ -263,9 +263,9 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
     d.drawString("incline o aparelho", level_cx, level_cy + level_r + 6);
   }
 
-  // Escala of acelerometro em g (1g = sleep in vertical) e of giroscopio em
-  // graus/segundo. Os numeros sao teto of TELA, nao teto of sensor: passar
-  // deles so encosta a barra in borda, o valor numerico continua exato.
+  // Scale of accelerometer in g (1g = sleep in vertical) and of gyroscope in
+  // degrees/second. The numbers are ceiling of SCREEN, not ceiling of sensor: pass
+  // of them only touch the edge bar, the numerical value remains exact.
   const eixo_t eixos[6] = {
     { "AX", ax,   2.0f, TFT_RED,     "g"   },
     { "AY", ay,   2.0f, TFT_GREEN,   "g"   },
@@ -284,7 +284,7 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
   for (int i = 0; i < 6; ++i) {
     const int cy = y0 + i * alt_line;
 
-    // Rotulo: nunca muda, so entra in pass complete.
+    // Label: never changes, only enters in pass complete.
     if (paint_complete(&s_p)) {
       tab5_text(d, 2.3f);
       d.setTextDatum(middle_left);
@@ -292,7 +292,7 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
       d.drawString(eixos[i].rotulo, a.x + 16, cy + barra_h / 2);
     }
 
-    draw_barra(d, barra_x, cy, barra_w, barra_h,
+    draw_axis_bar(d, barra_x, cy, barra_w, barra_h,
                    eixos[i].valor / eixos[i].escala, eixos[i].color);
 
     char buf[24];
@@ -304,12 +304,12 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
   }
 }
 
-// ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL
-// ---------------------------------------------------------------------------
-// Tres eixos, convencao comum of ferramenta 3D: X vermelho para a right, Y
-// verde para top, Z azul como one circulo pontilhado (o eixo que "exit of
-// screen" nao tem como virar uma seta plana).
+// -------------------------------------------------------------------------------
+// HOME SCREEN ICON
+// -------------------------------------------------------------------------------
+// Three axes, common 3D tool convention: red X to the right, Y
+// green for top, Z blue as a dotted circle (the axis that "exit from
+// screen" there is no way to turn it into a flat arrow).
 static void icon_imu(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   const uint16_t fundo = d.color565(32, 24, 40);
@@ -338,22 +338,22 @@ static void icon_imu(lgfx::LovyanGFX& d, int x, int y, int lado)
 extern const app_t APP_IMU = {
   .name  = "IMU",
   .color   = TFT_PURPLE,
-  // So a IMU. E FASE 1 (ver o aviso grande no topo of arquivo): uma vez
-  // registrado, o BMI270 stays enabled o boot inteiro, nao so enquanto este
-  // app esta em first plano.
+  // Just the IMU. AND PHASE 1 (see the large warning at the top of file): once
+  // registered, the BMI270 stays enabled the entire boot, not just while it is
+  // app is in the foreground.
   .profile = { .imu = true },
   .uses_sd = false,
   .orientation = ORIENTATION_PORTRAIT,
-  .piso_sleep_mhz = 0,
+  .sleep_clock_floor_mhz = 0,
   .on_open  = on_open,
   .on_close = on_close,
   .draw  = draw,
   .on_touch  = nullptr,
   .on_touch_level = nullptr,
   .on_type = nullptr,
-  // 50ms = 20Hz. Fluido o bastante para acompanhar one gesto of mao sem gastar
-  // mais I2C of que precisa - o mesmo raciocinio of TECLADO_MS em core.cpp.
-  .periodo_ms = 50,
+  // 50ms = 20Hz. Fluid enough to follow a hand gesture without wasting
+  // more I2C than you need - the same reasoning as TECLADO_MS in core.cpp.
+  .redraw_period_ms = 50,
   .height_content = 0,
   .icon = icon_imu,
 };

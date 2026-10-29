@@ -1,36 +1,36 @@
-// Servico of CAMERA - sensor SC2356 (SC202CS) of Tab5, MIPI-CSI, 1600x1200.
+// Service of CAMERA - sensor SC2356 (SC202CS) of Tab5, MIPI-CSI, 1600x1200.
 //
-// PESQUISADO, nao inventado: nao existia NENHUM driver of
-// camera neste projeto ate aqui - so o CAM_RST (tab5_power_camera). Os fatos
-// abaixo vieram of BSP OFICIAL of Espressif para esta placa exata
-// (github.com/espressif/esp-bsp, bsp/m5stack_tab5), nao of suposicao:
+// RESEARCHED, not invented: there was NO driver of
+// camera in this project so far - just the CAM_RST (tab5_power_camera). The facts
+// below came from BSP OFFICIAL of Espressif for this exact board
+// (github.com/espressif/esp-bsp, bsp/m5stack_tab5), not of assumption:
 //
-//   - Sensor: SC2356 / SC202CS, MIPI-CSI. Kconfig: CONFIG_CAMERA_SC202CS.
-//   - Pino of reset: NENHUM GPIO direto - e o MESMO CAM_RST que
-//     tab5_power_camera() ja controla (expansor 0, bit 6). o
-//     sistema of apps ligava isso sozinho via profile.camera=true; since que
-//     a camera virou service (ver o aviso grande logo abaixo), who liga e
-//     DESLIGA o pino e o proprio tab5_camera_start()/stop().
-//   - SCCB (o I2C of sensor, para configura-lo): G32/G31 - EXATAMENTE os
-//     mesmos pins que M5Unified ja usa para o barramento INTERNO
-//     (M5.In_I2C: touch, IMU, PMIC, expansores - ver M5Unified.cpp,
-//     board_M5Tab5). Ou seja, a camera e so mais one address no MESMO
-//     barramento que o resto of sistema ja possui e protege com a regra "so a
-//     tarefa of interface fala I2C".
+// - Sensor: SC2356 / SC202CS, MIPI-CSI. Kconfig: CONFIG_CAMERA_SC202CS.
+// - Pin of reset: NO direct GPIO - and the SAME CAM_RST as
+// tab5_power_camera() already controls (expander 0, bit 6). the
+// system of apps turned this on by itself via profile.camera=true; since that
+// the camera turned to service (see the big warning below), who turns it on and
+// Turns OFF the pin and tab5_camera_start()/stop() itself.
+// - SCCB (the I2C of sensor, to configure it): G32/G31 - EXACTLY the
+// same pins that M5Unified already uses for the INTERNAL bus
+// (M5.In_I2C: touch, IMU, PMIC, expanders - see M5Unified.cpp,
+// board_M5Tab5). In other words, the camera is just one more address in the SAME
+// bus that the rest of the system already has and protects with the "only the
+// task of interface speaks I2C".
 //
-// COMO ISTO NAO COLIDE COM O QUE JA EXISTE: em vez of open one segundo
-// barramento nos mesmos pins (proibido - o ESP-IDF nao deixa dois donos in
-// mesma GPIO), tab5_camera_start() pega o handle que o M5Unified ja
-// instalou com i2c_master_get_bus_handle() - uma funcao of proprio IDF feita
-// exatamente para "quero o barramento que outro componente ja abriu", sem
-// inicializar nada of novo. Confirmado: M5GFX usa i2c_new_master_bus() (o
-// driver NOVO) por bottom of M5.In_I2C - por isso o handle e of type certo.
+// HOW DOES THIS NOT COLLIDE WITH WHAT ALREADY EXISTS: instead of opening one second
+// bus on the same pins (prohibited - ESP-IDF does not leave two owners in
+// same GPIO), tab5_camera_start() takes the handle that M5Unified already
+// installed with i2c_master_get_bus_handle() - a function of IDF itself made
+// exactly for "I want the bus that another component has already opened", without
+// boot nothing new. Confirmed: M5GFX uses i2c_new_master_bus() (the
+// NEW driver) by bottom of M5.In_I2C - hence the right handle and of type.
 //
-// O RESTO (V4L2: open/ioctl/mmap em /dev/videoN) e o mesmo default que o
-// exemplo oficial of Espressif usa para ESTA placa
-// (esp-bsp/examples/display_camera_video) - so trocamos LVGL por M5GFX e
-// callback assincrono por tarefa_app_t (o molde que este projeto ja usa para
-// todo service of fundo, ver kernel/app_task.h).
+// THE REST (V4L2: open/ioctl/mmap in /dev/videoN) is the same default as
+// official example of Espressif uses for THIS board
+// (esp-bsp/examples/display_camera_video) - we just exchange LVGL for M5GFX and
+// asynchronous callback by task_app_t (the template this project already uses to
+// all background services, see kernel/app_task.h).
 #pragma once
 
 #include <stddef.h>
@@ -38,142 +38,142 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// -------------------------------------------------------------------------
-// VIROU SERVICO, NAO MAIS "RECURSO DO APP CAMERA"
-// ("quais sensors internos podem virar service?" -> a camera era a unica
-// peca of hardware caro que ainda so existia enquanto UM app especifico
-// estava in screen).
-// -------------------------------------------------------------------------
-// CONTAGEM DE REFERENCIA, mesmo molde of tab5_sd.hpp: tab5_camera_start()
-// pode ser chamada por MAIS DE UM consumidor on mesmo time (o app Camera E,
-// por exemplo, o comando of console 'foto', ou one futuro segundo app) - a
-// primeira chamada liga o sensor of verdade, as seguintes so contam mais one
-// interessado, e o sensor so desliga when o ULTIMO chamar
-// tab5_camera_stop(). Abrir o app Camera enquanto o comando 'foto' ainda
-// segura a camera (ou vice-versa) e seguro: nenhum dos dois derruba o outro.
+// ------------------------------------------------------------------------
+// IT HAS BECOME A SERVICE, NO LONGER A "CAMERA APP FEATURE"
+// ("which internal sensors can become a service?" -> the camera was the only one
+// piece of expensive hardware that only existed as a specific app
+// was on screen).
+// ------------------------------------------------------------------------
+// REFERENCE COUNT, same template of tab5_sd.hpp: tab5_camera_start()
+// can be called by MORE THAN ONE consumer at the same time (the Camera E app,
+// for example, the command of console 'foto', or one future second app) - a
+// first call turns on the true sensor, the following only count one more
+// interested, and the sensor only turns off when the LAST call
+// tab5_camera_stop(). Open the Camera app while the 'photo' command is still
+// holds the camera (or vice versa) and holds: neither of them drops the other.
 //
-// UMA UNICA RESOLUCAO POR VEZ, DE PROPOSITO - so existe UM par of buffers of
-// output (ver TAB5_CAM_NBUF em tab5_camera.cpp). Enquanto ja houver alguem
-// usando a camera, one segundo tab5_camera_start() com width/height
-// DIFERENTES e recusado (devolve false, log explica) em vez of reconfigurar
-// o sensor por bottom of who ja esta lendo. Hoje so existe UM consumidor por
-// resolucao (o app Camera usa a area of screen; 'foto' usa one size fixo
-// proprio) - o dia em que isso incomodar, a solucao e one segundo par of
-// buffers, nao esta funcao.
+// ONE RESOLUTION AT A TIME, ON PURPOSE - there is only ONE pair of buffers of
+// output (see TAB5_CAM_NBUF in tab5_camera.cpp). As long as there is already someone
+// using the camera, one second tab5_camera_start() with width/height
+// DIFFERENT and refused (returns false, log explains) instead of reconfigure
+// the sensor at the bottom of who is already reading. Today there is only ONE consumer per
+// resolution (Camera app uses the area of screen; 'photo' uses a fixed size
+// itself) - the day this bothers you, the solution is a second pair of
+// buffers, not this function.
 //
-// A CAMERA SE ALIMENTA SOZINHA AGORA - antes, CAM_RST (o pino of reset of
-// sensor) so era on porque o app Camera declarava profile.camera=true, e
-// o KERNEL aplicava isso antes of ao_abrir() rodar (ver tab5_power.hpp). Um
-// service of verdade nao pode depender of UM app especifico estar open
-// para ter energia - por isso tab5_camera_start() now chama
-// tab5_power_camera(true) ELA MESMA, no mesmo espirito que tab5_grove.cpp ja
-// liga o trilho of 5V sozinho para GPS/Mesh (ver o aviso la). O app Camera
-// NAO declara mais profile.camera - ver o aviso em app_camera.cpp.
+// THE CAMERA POWERS ITSELF NOW - before, CAM_RST (the reset pin of
+// sensor) was only on because the Camera app declared profile.camera=true, and
+// KERNEL applied this before of ao_abrir() ran (see tab5_power.hpp). One
+// service of truth cannot depend on ONE specific app being open
+// to have power - that's why tab5_camera_start() now calls
+// tab5_power_camera(true) ITSELF, in the same spirit as tab5_grove.cpp already
+// connects the 5V rail alone for GPS/Mesh (see the warning there). The Camera app
+// NO longer declares profile.camera - see the warning in app_camera.cpp.
 //
-// O UNICO PONTO DELICADO: core.cpp ainda reaplica o profile of energia
-// (imu/mic/camera/etc) toda vez que one app abre ou fecha, como uniao of que
-// TODOS os apps abertos hoje declaram - e SEM SABER que este service existe,
-// aquela reaplicacao desligaria CAM_RST no storage of uma sessao requested por
-// fora of one app (o comando 'foto', por exemplo) so porque o app QUE ABRIU
-// NAQUELE INSTANTE nao pede camera. tab5_camera_active() (abaixo) existe
-// exatamente para tapar esse buraco: sistema_impor_preferencias() faz OR com
-// ela, of mesmo jeito que ja faz com settings_grove() para o Grove.
+// THE ONE DELICIOUS POINT: core.cpp still reapplies the energy profile
+// (imu/mic/camera/etc) every time an app opens or closes, as a union of which
+// ALL apps opened today declare - and WITHOUT KNOWING that this service exists,
+// that reapplication would turn off CAM_RST in the storage of a session requested by
+// outside of one app (the 'photo' command, for example) just because the app THAT OPENED
+// AT THAT INSTANT don't ask for a camera. tab5_camera_active() (below) exists
+// exactly to cover this hole:sistema_impor_preferencias() does OR with
+// it, in the same way as it does with settings_grove() for Grove.
 //
-// SO DA TAREFA DE INTERFACE, DIRETO - achado on vivo com o
-// comando 'foto': estas duas funcoes tocam SCCB (o I2C interno, o MESMO
-// barramento of touch/IMU/energia/RTC), e a regra deste projeto e "so a
-// tarefa of interface fala I2C" (sem trava none no driver). app_camera.cpp
-// pode chamar direto porque ao_abrir()/ao_fechar() JA rodam nessa tarefa.
-// QUALQUER outro chamador (one comando of console, uma futura tarefa of
-// fundo) DEVE passar por sistema_camera_iniciar()/sistema_camera_parar()
-// (kernel/app.h) em vez of chamar estas aqui - a ponte manda o request para a
-// tarefa certa. Chamar estas direto of outra tarefa e o que produziu "Set
-// format regs fail" in primeira tentativa of 'foto'.
+// INTERFACE TASK SO, DIRECT - find live with
+// 'photo' command: these two functions touch SCCB (the internal I2C, the SAME
+// bus of touch/IMU/energy/RTC), and the rule of this project is "only the
+// task of interface speaks I2C" (no lock none in driver). app_camera.cpp
+// can call directly because ao_open()/ao_close() JA run in this task.
+// ANY other caller (one command of console, a future task of
+// background) MUST go through System_Camera_Start()/System_Camera_Stop()
+// (kernel/app.h) instead of calling these here - the bridge sends the request to the
+// right task. Call these straight from another task and what produced "Set
+// format regs fail" in first attempt of 'foto'.
 
-// Liga o sensor (ou so soma mais one interessado, se ja estiver on - ver
-// o aviso grande acima sobre contagem of referencia): barramento I2C
-// shared, esp_video_init, abre o dispositivo, aloca os buffers of
-// captura, registra o PPA (escala + rotaciona 270 graus - o sensor esta
-// mounted of lado in placa) e sobe a tarefa que produz frames.
-// 'width'/'height' e o size of buffer of SAIDA (RGB565, ja ready para
-// pushImage) - a foto cheia of sensor (1600x1200) e reduzida para isto a
-// cada frame.
+// Turn on the sensor (or just add one more person interested, if it is already on - see
+// the big warning above about reference count): I2C bus
+// shared, esp_video_init, open the device, allocate the buffers of
+// captures, records the PPA (scale + rotates 270 degrees - the sensor is
+// mounted of side on board) and uploads the task that produces frames.
+// 'width'/'height' and the size of buffer of OUTPUT (RGB565, already ready for
+// pushImage) - the photo full of sensor (1600x1200) and reduced to this
+// each frame.
 //
-// CHAMAR SO DA TAREFA DE INTERFACE - ver o aviso grande acima. Nao depende
-// mais of profile.camera, ela mesma liga CAM_RST. Devolve false se qualquer
-// step falhar (log explica qual, inclusive one request of resolucao
-// diferente of que ja esta em uso) - nesse caso nao ha nada para turn_off.
+// CALL SO FROM INTERFACE TASK - see large warning above. It doesn't depend
+// more than profile.camera, it itself turns on CAM_RST. Returns false if any
+// step fails (log explains which, including one request of resolution
+// other than the one already in use) - in this case there is nothing to turn_off.
 bool tab5_camera_start(int width, int height);
 
-// Descarta UM interesse (ver a contagem of referencia acima). So when o
-// ULTIMO cai e que a tarefa desce of verdade (tarefa_app_encerrar, com
-// timeout - ver o aviso la sobre tarefa abandoned of proposito em vez of
-// morta a força), o stream para, os buffers somem, o cliente of PPA exit e
-// CAM_RST iteration a ficar em reset. CHAMAR SO DA TAREFA DE INTERFACE (ver o
-// aviso grande acima) - of onde tab5_camera_start() foi chamada
-// (ao_fechar()). Seguro chamar mesmo se tab5_camera_start() nunca rodou,
-// failed, ou ja foi parada por outro caminho.
+// Discards ONE interest (see count of reference above). So when
+// LAST falls and the task goes down (task_app_terminar, with
+// timeout - see the warning there about task abandoned of purpose instead of
+// forcefully killed), the stream stops, the buffers disappear, the client of PPA exits and
+// CAM_RST iteration remaining in reset. CALL SO FROM THE INTERFACE TASK (see the
+// big warning above) - of where tab5_camera_start() was called
+// (when_closing()). Safe to call even if tab5_camera_start() has never run,
+// failed, or has already been stopped by another route.
 void tab5_camera_stop(void);
 
-// Ha algum interessado vivo now (contagem of referencia > 0)? Existe para
-// sistema_impor_preferencias() (kernel/core.cpp) nao cortar CAM_RST por
-// bottom of one consumidor que nao e o app em foco - ver o aviso grande no
-// topo deste file. Apps normais nao precisam chamar isto.
+// Are there any interested parties alive now (referral count > 0)? It exists for
+// system_impor_preferencias() (kernel/core.cpp) does not cut CAM_RST for
+// bottom of one consumer that is not the app in focus - see the big warning in the
+// top of this file. Normal apps don't need to call this.
 bool tab5_camera_active(void);
 
-// ONDE O PREVIEW E ESCRITO. A tarefa of camera escreve cada
-// frame, ja girado e escalado para width x height (os of
-// tab5_camera_start), DIRETO num rectangle of uma imagem RGB565 - in pratica
-// a screen virtual of sistema (sistema_superficie, kernel/app.h). Sem copia
-// intermediaria. 'buf' precisa of alinhamento of cache (a screen virtual tem).
-// 'notify' (opcional) e chamado of tarefa of camera a cada frame escrito -
-// sistema_acordar_interface, para a interface levar o frame in hora.
+// WHERE THE PREVIEW IS WRITTEN. The camera task writes each
+// frame, already rotated and scaled to width x height (os of
+// tab5_camera_start), DIRECT in a rectangle of an RGB565 image - in practice
+// a virtual screen of system (sistema_surface, kernel/app.h). No copy
+// intermediary. 'buf' needs alignment of cache (the virtual screen has it).
+// 'notify' (optional) is called task of camera every frame written -
+//sistema_acordar_interface, for the interface to take the frame on time.
 typedef struct {
-  void*  buf;          // nulo = nenhum target (so fotos)
+  void*  buf;          // null = no target (only photos)
   size_t bytes;        // size total of buf
-  int    pic_l, pic_a; // dimensoes of imagem inteira
-  int    x, y;         // canto of rectangle dentro dela
+  int    pic_l, pic_a; // dimensions of entire image
+  int    x, y;         // corner of rectangle inside it
   void (*notify)(void);
 } tab5_cam_target_t;
 
-void tab5_camera_set_target(const tab5_cam_target_t* d);   // nullptr = nenhum
+void tab5_camera_set_target(const tab5_cam_target_t* d);   // nullptr = none
 
-// true UMA vez por frame escrito no target since a latest chamada.
+// true ONCE per frame written to the target since a latest call.
 bool tab5_camera_frame_written(void);
 
-// FOTO EM RESOLUCAO CHEIA: 1200x1600, o frame INTEIRO of sensor girado,
-// sem escala - independente of size of preview.
+// FULL RESOLUTION PHOTO: 1200x1600, the WHOLE frame of sensor rotated,
+// unscaled - independent of size of preview.
 //
-// O SENSOR RODA NO MODO 1600x1200 (sdkconfig.defaults). O mode 1280x720 of
-// driver nao reduz a imagem: ele liga uma JANELA no storage of sensor (colunas
-// 160-1447, lines 240-967), 80% of width e 60% of height - a foto saia
-// como se tivesse zoom.
+// THE SENSOR RUN IN 1600x1200 MODE (sdkconfig.defaults). 1280x720 mode
+// driver does not reduce the image: it turns on a WINDOW in the storage of sensor (columns
+// 160-1447, lines 240-967), 80% of width and 60% of height - the photo comes out
+// as if it had zoom.
 //
-// A CAMERA SO CAPTURA; QUEM GRAVA E QUEM PEDIU. A version anterior gravava o
-// .bmp in propria tarefa of camera, line a line: o preview parava e o app
-// ficava travado (INICIO locked) por mais of 10 s. Agora o request e
-// atendido no next frame com UMA operacao of PPA (poucos ms) para o
-// buffer of who pediu; write e com o worker of sistema (app) ou com a
-// tarefa of console - ver services/tab5_bmp.
+// THE CAMERA IS ONLY CAPTURED; WHO RECORDS AND WHO ASKED FOR IT. The previous version recorded the
+// .bmp in own task of camera, line by line: the preview stopped and the app
+// was locked (START locked) for more than 10 s. Now the request and
+// served in the next frame with ONE PPA operation (few ms) to the
+// buffer of who requested; write and with the system worker (app) or with the
+// task of console - see services/tab5_bmp.
 #define TAB5_CAM_PHOTO_W 1200
 #define TAB5_CAM_PHOTO_H 1600
 
-// Buffer certo para a foto (PSRAM, alinhado a line of cache, o size que o
-// PPA requires). Liberar com heap_caps_free.
+// Right buffer for the photo (PSRAM, aligned to line of cache, the size that the
+// PPA requires). Free with heap_caps_free.
 uint16_t* tab5_camera_alloc_photo(void);
 size_t    tab5_camera_photo_bytes(void);
 
-// Pede a next foto para 'target' (of tab5_camera_alloc_photo). false = a
-// camera nao esta enabled ou ja ha one request pending. 'target' e escrito pela
-// tarefa of camera ate tab5_camera_photo_ready() return_card true - nao libere
-// antes disso (tab5_camera_stop() tambem espera a tarefa terminar).
+// Request the next photo for 'target' (of tab5_camera_alloc_photo). false = a
+// camera is not enabled or there is already one request pending. 'target' is written by
+// task of camera until tab5_camera_photo_ready() return_card true - do not release
+// before that (tab5_camera_stop() also waits for the task to finish).
 bool tab5_camera_request_photo(uint16_t* target);
 
-// true UMA vez when a foto requested chegou on buffer (ok = PPA deu certo).
+// true ONCE when the requested photo arrived in buffer (ok = PPA was successful).
 bool tab5_camera_photo_ready(bool* ok);
 
-// REGISTRADOR DO SENSOR, para diagnostics (comando 'camera' of console).
-// value >= 0 escreve antes of read; -1 so le. false = camera desligada ou o
-// SCCB failed. O que for escrito vale ate a camera turn_off: on turn_on of novo
-// o driver reaplica a tabela of inicializacao.
+// SENSOR REGISTER, for diagnostics ('camera' of console command).
+// value >= 0 writes before of read; -1 just read. false = camera off or
+// SCCB failed. What is written is valid until the camera turn_off: on turn_on of new
+// the driver reapplies the initialization table.
 bool tab5_camera_reg(uint16_t reg, int value, uint8_t* value_read);

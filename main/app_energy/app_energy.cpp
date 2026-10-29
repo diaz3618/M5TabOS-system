@@ -1,29 +1,29 @@
-// APP ENERGIA - o estado of battery now e dois graficos no molde dos
-// celulares (a screen of battery of Android e of iOS):
+// APP ENERGIA - the status of battery now and two graphs in the form of
+// cell phones (a screen of battery of Android and of iOS):
 //
-//   1. A GRANDEZA ESCOLHIDA on longo of time (por default o level of battery),
-//      com area preenchida, eixo com numeros redondos e as horas of CARGA
-//      tingidas of verde atras of curva: carga e descarga se leem pela forma,
-//      sem precisar read numero. Periodo 30 MIN (anel of RAM) ou 24 H.
-//   2. GASTO POR HORA (mAh) nas ultimas 24 h, em barras: screen acesa em top,
-//      sleep embaixo, e uma faixa verde sob as horas em que houve carga.
+// 1. THE CHOSEN GRIDNESS over time (by default the level of battery),
+// with filled area, axis with round numbers and hours of CHARGE
+// dyed in green behind the curve: loading and unloading are read by the shape,
+// without having to read number. Period 30 MIN (ring of RAM) or 24 H.
+// 2. SPEND PER HOUR (mAh) in the last 24 hours, in bars: screen lit at top,
+// sleep below, and a green stripe below the charging hours.
 //
-// Nas 24 h os dois graficos dividem o MESMO eixo of time (uma coluna por
-// hora of clock, a ultima e a hora corrente): a barra stays embaixo of
-// trecho of curva a que ela se refere.
+// In the 24 hours the two graphs share the SAME axis of time (one column per
+// time of clock, the last and the current time): the bar remains below the
+// part of the curve it refers to.
 //
-// Em top: a porcentagem grande com a estimativa ("dura ~X" / "cheia em ~X")
-// e one INDICE of seis cartoes com os valores of momento. Tocar num cartao
-// escolhe a grandeza of grafico 1. Tocar no grafico 1 poe one cursor com a
-// hora e o valor; touch numa barra mostra o detalhe daquela hora.
+// At top: the large percentage with the estimate ("hard ~X" / "full in ~X")
+// and one INDEX of six cards with the values of moment. Touch a card
+// chooses the magnitude of graph 1. Tapping graph 1 puts the cursor with the
+// time and value; Touching a bar shows the detail of that time.
 //
-// Dados das 24 h: os arquivos of ontem e of hoje (services/energy_log, uma
-// sample por minuto, com a hora real), lidos pelo WORKER, completados com o
-// anel of 30 min of RAM - o que o registro ainda nao gravou (lotes of 5 min).
+// 24-hour data: the files of yesterday and today (services/energy_log, a
+// sample per minute, with the real time), read by the WORKER, completed with the
+// ring of 30 min of RAM - what the registry has not yet written (lots of 5 min).
 //
-// Redesenho por REGIAO: topo (heroi + cartoes) a cada segundo; os dois
-// graficos, com os titulos, so when chega dado novo ou muda uma selecao.
-// Nenhum touch pede pass complete: cada regiao limpa o proprio rectangle.
+// Redesign by REGION: top (hero + cards) every second; both
+// graphics, with titles, only when new data arrives or a selection changes.
+// No touch requires pass complete: each region clears its own rectangle.
 
 #include "app.h"
 #include "tab5_screen.hpp"
@@ -47,15 +47,15 @@ typedef enum { SERIE_BATERIA = 0, SERIE_CORRENTE, SERIE_POTENCIA, SERIE_TENSAO, 
 static const char* SERIE_TITULO[N_SERIES] = { "Battery level (%)", "Current (mA)", "Power (W)", "Voltage (V)", "P4 temperature (°C)" };
 static const char* SERIE_CARTAO[N_SERIES] = { "Battery", "Current", "Power", "Voltage", "P4 temp" };
 static const uint16_t SERIE_COR[N_SERIES] = {
-  lgfx::color565( 90, 170, 255),   // battery: azul, para nao se confundir com o verde of carga
+  lgfx::color565( 90, 170, 255),   // battery: blue, so as not to be confused with the green of charge
   TFT_ORANGE,
   TFT_GREENYELLOW,
   lgfx::color565(190, 150, 255),
   lgfx::color565(255,  90,  80),
 };
 
-#define COR_CARGA        lgfx::color565( 60, 200,  90)   // carga: o mesmo verde em todo o app
-#define COR_CARGA_FUNDO  lgfx::color565( 14,  50,  26)   // tinta das horas of carga atras of curva
+#define COR_CARGA        lgfx::color565( 60, 200,  90)   // load: same green throughout the app
+#define COR_CARGA_FUNDO  lgfx::color565( 14,  50,  26)   // ink of hours of charge behind of curve
 #define COR_GASTO_TELA   TFT_ORANGE
 #define COR_GASTO_REP    lgfx::color565(130,  75,  20)
 #define COR_CARTAO       lgfx::color565( 26,  26,  34)
@@ -63,39 +63,39 @@ static const uint16_t SERIE_COR[N_SERIES] = {
 #define COR_EIXO         lgfx::color565(110, 110, 124)
 
 static serie_t s_serie   = SERIE_BATERIA;
-static bool    s_24h     = true;      // grafico 1: true = 24 H (cartao + RAM); false = 30 MIN (RAM)
-static int     s_cursor  = -1;        // x of cursor no grafico 1 (relativo a area); -1 = sem
-static int     s_hora_sel = -1;       // barra escolhida no grafico 2 (0..23); -1 = totais
-static bool    s_graf_dirty = true;    // one touch changed o que os graficos mostram
+static bool    s_24h     = true;      // graph 1: true = 24 H (card + RAM); false = 30 MIN (RAM)
+static int     s_cursor  = -1;        // x of cursor on graph 1 (relative to area); -1 = no
+static int     s_hora_sel = -1;       // bar chosen on chart 2 (0..23); -1 = totals
+static bool    s_graf_dirty = true;    // one touch changed what the graphics show
 static paint_t s_p;
 
-// ---------------------------------------------------------------------------
-// 24 H: one slot por minuto of window, carregado pelo worker
-// ---------------------------------------------------------------------------
-// A window comeca in hora cheia of 23 h atras: 24 colunas of hora inteira, a
-// ultima sendo a hora corrente (parcial). Alinhar in hora of clock e o que
-// deixa as barras of grafico 2 com rotulos "14h", "15h" em vez of fatias of
-// 60 min que comecam num minuto qualquer.
+// -------------------------------------------------------------------------------
+// 24 H: one slot per minute of window, loaded by worker
+// -------------------------------------------------------------------------------
+// The window starts at full hour of 23 hours ago: 24 columns of full hour, the
+// last being the current (partial) time. Align in hora of clock and what
+// leaves the bars of graph 2 with labels "14h", "15h" instead of slices of
+// 60 minutes that start at any minute.
 #define MIN_DIA 1440
 typedef struct {
-  uint32_t t0;                 // epoch UTC of slot 0 (0 = sem clock)
+  uint32_t t0;                 // UTC epoch of slot 0 (0 = no clock)
   float    v[MIN_DIA], ma[MIN_DIA], temp[MIN_DIA];
-  int8_t   pct[MIN_DIA];       // a % que o sistema mostrava (estimador), -1 = sem
-  uint8_t  tem[MIN_DIA];       // 0 = sem sample, 1 = acordado, 2 = em sleep
+  int8_t   pct[MIN_DIA];       // the % that the system showed (estimator), -1 = without
+  uint8_t  tem[MIN_DIA];       // 0 = no sample, 1 = awake, 2 = sleep
 } dia_t;
 
-// Uma fonte of pontos: n pontos, x of 0..1, os valores, e o instante 't'
-// (24 H: o slot, minuto since t0; 30 MIN: segundos antes of now).
+// A source of points: n points, x of 0..1, the values, and the instant 't'
+// (24 H: the slot, minute since t0; 30 MIN: seconds before now).
 typedef struct {
   int     n;
   float   x[MIN_DIA], v[MIN_DIA], ma[MIN_DIA], temp[MIN_DIA];
   int8_t  pct[MIN_DIA];
-  uint8_t rep[MIN_DIA];        // 2 = em sleep; outro = screen acesa (ou nao se sabe)
-  bool    quebra[MIN_DIA];     // buraco antes deste ponto: aparelho disabled
+  uint8_t rep[MIN_DIA];        // 2 = in sleep; other = screen on (or not known)
+  bool    quebra[MIN_DIA];     // hole before this point: device disabled
   int32_t t[MIN_DIA];
 } pontos_t;
 
-// Um vertice por coluna of pixel of grafico 1 (ver montar_vertices).
+// One vertex per column of pixel of graph 1 (see assemble_vertices).
 #define VERT_MAX 720
 typedef struct {
   int     n;
@@ -107,7 +107,7 @@ typedef struct {
 
 typedef struct { float screen, sleep, carga; int min_screen; bool tem; } hora_t;
 
-// Tudo o que so a interface usa, num bloco in PSRAM alocado on open.
+// Everything that the interface uses, in a block in PSRAM allocated on open.
 typedef struct {
   pontos_t     p24, p30;
   vertices_t   vt;
@@ -118,16 +118,16 @@ typedef struct {
 } memoria_t;
 static memoria_t* s_m = nullptr;
 
-static dia_t*        s_dia = nullptr;      // o que a screen mostra
-static dia_t*        s_carga = nullptr;    // onde o worker escreve
-static char          s_carga_name[2][40];  // ontem e hoje (podem ser o mesmo)
+static dia_t*        s_dia = nullptr;      // what the screen shows
+static dia_t*        s_carga = nullptr;    // where the worker writes
+static char          s_carga_name[2][40];  // yesterday and today (could be the same)
 static uint32_t      s_carga_t0 = 0;
 static volatile bool s_carga_pronta = false;
 static bool          s_carga_requested = false;
-static uint32_t      s_gravadas_lidas = UINT32_MAX;   // registro ja refletido nas 24 h
-static uint32_t      s_dia_ver = 0;                    // sobe a cada carga nova
+static uint32_t      s_gravadas_lidas = UINT32_MAX;   // record already reflected in 24 hours
+static uint32_t      s_dia_ver = 0;                    // goes up with each new load
 
-// Inicio of window of 24 h para o instante current; 0 sem clock acertado.
+// Start of window of 24 h for the current instant; 0 without clock set.
 static uint32_t window_t0(void)
 {
   const uint32_t now = tab5_time_epoch();
@@ -137,7 +137,7 @@ static uint32_t window_t0(void)
   return now - (uint32_t)(lt.tm_min * 60 + lt.tm_sec) - 23u * 3600u;
 }
 
-static void read_arquivo(dia_t* d, const char* name)
+static void read_day_file(dia_t* d, const char* name)
 {
   FILE* f = tab5_sd_open(TAB5_SD_POWER, name, "r");
   if (!f) { return; }
@@ -161,8 +161,8 @@ static void work_24h(void*)
   memset(d, 0, sizeof(*d));
   d->t0 = s_carga_t0;
   if (d->t0 && tab5_sd_mount()) {
-    read_arquivo(d, s_carga_name[0]);
-    if (strcmp(s_carga_name[0], s_carga_name[1]) != 0) { read_arquivo(d, s_carga_name[1]); }
+    read_day_file(d, s_carga_name[0]);
+    if (strcmp(s_carga_name[0], s_carga_name[1]) != 0) { read_day_file(d, s_carga_name[1]); }
     tab5_sd_unmount();
   }
   s_carga_pronta = true;
@@ -181,7 +181,7 @@ static void request_24h(void)
   s_carga_requested = system_work(work_24h, nullptr);
 }
 
-static void on_aviso(uint32_t av)
+static void on_notice(uint32_t av)
 {
   if ((av & AVISO_TRABALHO) && s_carga_pronta) {
     s_carga_pronta = false;
@@ -200,7 +200,7 @@ static bool on_open(void)
   if (!s_dia || !s_carga || !s_m) { return false; }
   s_carga_requested = false;
   s_carga_pronta = false;
-  s_gravadas_lidas = UINT32_MAX;   // as 24 h sao lidas on open
+  s_gravadas_lidas = UINT32_MAX;   // 24 hours are read on open
   s_cursor = -1;
   s_hora_sel = -1;
   s_graf_dirty = true;
@@ -210,44 +210,44 @@ static bool on_open(void)
 
 static void on_close(void)
 {
-  // (O sistema ja esperou o worker antes of chamar isto.)
+  // (The system already waited for the worker before calling this.)
   heap_caps_free(s_dia);   s_dia = nullptr;
   heap_caps_free(s_carga); s_carga = nullptr;
   heap_caps_free(s_m);     s_m = nullptr;
 }
 
-// ---------------------------------------------------------------------------
-// GEOMETRIA (relativa a area, 720 x 1144 em retrato; termina em ~1120) - a mesma para drawing e touch
-// ---------------------------------------------------------------------------
-static const int M = 16;                               // margem lateral
-static const int HERO_Y = 8, HERO_A = 76;              // % grande + estado
-static const int CART_Y = HERO_Y + HERO_A + 8;         // indice: 3 x 2 cartoes
-static const int CART_A = 92, CART_V = 12;             // height e vao entre cartoes
+// -------------------------------------------------------------------------------
+// GEOMETRY (relative to area, 720 x 1144 in portrait; ends at ~1120) - the same for drawing and touch
+// -------------------------------------------------------------------------------
+static const int M = 16;                               // side margin
+static const int HERO_Y = 8, HERO_A = 76;              // % large + status
+static const int CART_Y = HERO_Y + HERO_A + 8;         // index: 3 x 2 cards
+static const int CART_A = 92, CART_V = 12;             // height and go between cards
 static const int TOPO_A = CART_Y + 2 * CART_A + CART_V;
-static const int EIXO_L = 64;                          // coluna dos numeros of eixo Y
+static const int EIXO_L = 64;                          // column of numbers of Y axis
 
-static const int G1_Y = TOPO_A + 20;                   // titulo + 30 MIN | 24 H
+static const int G1_Y = TOPO_A + 20;                   // title + 30 MIN | 24H
 static const int SEG_A = 48, SEG_L = 240;
 static const int G1_PLOT_Y = G1_Y + SEG_A + 16, G1_A = 320;
-static const int G1_FIM = G1_PLOT_Y + G1_A + 34;       // + rotulos of time
+static const int G1_FIM = G1_PLOT_Y + G1_A + 34;       // + labels of time
 
-static const int G2_Y = G1_FIM + 22;                   // titulo + legenda
+static const int G2_Y = G1_FIM + 22;                   // title + caption
 static const int G2_PLOT_Y = G2_Y + 48, G2_A = 216;
-static const int G2_FAIXA = 8;                         // faixa verde of carga sob as barras
-static const int G2_DET_Y = G2_PLOT_Y + G2_A + G2_FAIXA + 40;   // duas lines of detalhe
+static const int G2_FAIXA = 8;                         // green stripe of cargo under the bars
+static const int G2_DET_Y = G2_PLOT_Y + G2_A + G2_FAIXA + 40;   // two lines of detail
 
 static int cart_l(int larg) { return (larg - 2 * M - 2 * CART_V) / 3; }
 static int seg_x(int larg)  { return larg - M - SEG_L; }
 static int plot_x(void)     { return M + EIXO_L; }
 static int plot_l(int larg) { return larg - 2 * M - EIXO_L; }
 
-static const float TAM_BOTAO = 3.625f;     // = body 29 px nativo
+static const float TAM_BOTAO = 3.625f;     // = body 29 px native
 
-// Fontes suaves of sistema, nas alturas nativas (sem escala).
+// System soft fonts, at native heights (not scaled).
 static void fc(lgfx::LovyanGFX& d, int px) { d.setFont(tab5_fonte_suave(false, px)); d.setTextSize(1); }
 static void fn(lgfx::LovyanGFX& d, int px) { d.setFont(tab5_fonte_suave(true, px));  d.setTextSize(1); }
 
-// Cor escurecida (f of 0..256) - o preenchimento of area sob a curva.
+// Darkened color (f of 0..256) - the filling of area under the curve.
 static uint16_t escurecer(uint16_t c, int f)
 {
   const int r = ((c >> 11) & 31) * f / 256, g = ((c >> 5) & 63) * f / 256, b = (c & 31) * f / 256;
@@ -267,18 +267,18 @@ static void duracao(char* out, size_t size, float horas)
   else          { snprintf(out, size, "%d h %02d min", min / 60, min % 60); }
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // SERIES
-// ---------------------------------------------------------------------------
-// A serie BATERIA e a MESMA % que o sistema mostra (o estimador, gravada a
-// cada sample) - nao a curva of tensao recalculada aqui, que diria outra
-// coisa logo depois of uma carga e poria o grafico em desacordo com a barra.
+// -------------------------------------------------------------------------------
+// The BATTERY series is the SAME % that the system shows (the estimator, recorded at
+// each sample) - not the voltage curve recalculated here, which would say otherwise
+// thing right after a load and would put the graph at odds with the bar.
 static float valor(const pontos_t* p, serie_t s, int i)
 {
   switch (s) {
     case SERIE_TENSAO:   return p->v[i];
-    case SERIE_CORRENTE: return p->ma[i];                                       // COM sinal
-    case SERIE_POTENCIA: return p->v[i] * fabsf(p->ma[i]) / 1000.0f;            // W
+    case SERIE_CORRENTE: return p->ma[i];                                       // WITH signal
+    case SERIE_POTENCIA: return p->v[i] * fabsf(p->ma[i]) / 1000.0f;            //W
     case SERIE_TEMP:     return p->temp[i];
     default:             return (float)p->pct[i];
   }
@@ -296,16 +296,16 @@ static const char* formato(serie_t s)
        : (s == SERIE_POTENCIA) ? "%.2f W"
        : (s == SERIE_TEMP)     ? "%.1f °C" : "%.0f %%";
 }
-static float faixa_minima(serie_t s)
+static float minimum_axis_range(serie_t s)
 {
   return (s == SERIE_TENSAO) ? 0.10f : (s == SERIE_CORRENTE) ? 40.0f
        : (s == SERIE_POTENCIA) ? 0.2f : 4.0f;
 }
 
-// ESCALA COM NUMEROS REDONDOS. O grafico antigo punha so o minimum e o maximum
-// medidos (ex.: -183 e -97 mA) no canto: none line of grade tinha valor,
-// e a curva nao se lia. Aqui os limites sao multiplos of one passo 1/2/2,5/5,
-// e cada line of grade tem o seu numero no eixo.
+// SCALE WITH ROUND NUMBERS. The old chart only showed the minimum and maximum
+// measured (e.g.: -183 and -97 mA) in the corner: none line of grade had value,
+// and the curve could not be read. Here the limits are multiples of one step 1/2/2.5/5,
+// and each line of grid has its number on the axis.
 static void escala(float mn, float mx, float minima, float* lo, float* hi, float* passo)
 {
   if (mx - mn < minima) { const float c = (mx + mn) / 2; mn = c - minima / 2; mx = c + minima / 2; }
@@ -318,20 +318,20 @@ static void escala(float mn, float mx, float minima, float* lo, float* hi, float
   if (*hi <= *lo) { *hi = *lo + *passo; }
 }
 
-static void numero_eixo(char* out, size_t size, float v, float passo)
+static void format_axis_tick(char* out, size_t size, float v, float passo)
 {
-  if (fabsf(v) < passo * 1e-3f) { v = 0; }   // nada of "-0"
+  if (fabsf(v) < passo * 1e-3f) { v = 0; }   // nothing of "-0"
   snprintf(out, size, passo >= 1.0f ? "%.0f" : passo >= 0.1f ? "%.1f" : "%.2f", (double)v);
 }
 
-// ---------------------------------------------------------------------------
-// MONTAGEM DOS PONTOS
-// ---------------------------------------------------------------------------
-static void montar_30(pontos_t* p)
+// -------------------------------------------------------------------------------
+// MOUNTING THE POINTS
+// -------------------------------------------------------------------------------
+static void build_30_second_points(pontos_t* p)
 {
   const int n = tab5_power_history(s_m->ram);
   for (int i = 0; i < n; ++i) {
-    // Alinhado a right: "now" sempre in borda, enchendo nos primeiros 30 min.
+    // Aligned to right: "now" always in edge, filling in the first 30 min.
     p->x[i] = (float)(TAB5_HIST_N - n + i) / (TAB5_HIST_N - 1);
     p->v[i] = s_m->ram[i].volts; p->ma[i] = s_m->ram[i].mA; p->temp[i] = s_m->ram[i].temp; p->pct[i] = (int8_t)s_m->ram[i].pct;
     p->rep[i] = 0;
@@ -341,7 +341,7 @@ static void montar_30(pontos_t* p)
   p->n = n;
 }
 
-static void montar_24h(pontos_t* p)
+static void build_24_hour_points(pontos_t* p)
 {
   p->n = 0;
   if (!s_dia || !s_dia->t0) { return; }
@@ -352,14 +352,14 @@ static void montar_24h(pontos_t* p)
     p->x[k] = (float)m / MIN_DIA;
     p->v[k] = s_dia->v[m]; p->ma[k] = s_dia->ma[m]; p->temp[k] = s_dia->temp[m]; p->pct[k] = s_dia->pct[m];
     p->rep[k] = s_dia->tem[m];
-    p->quebra[k] = (m - ultimo) > 3;   // buraco of mais of 3 min: aparelho disabled
+    p->quebra[k] = (m - ultimo) > 3;   // hole of more than 3 min: device disabled
     p->t[k] = m;
     ultimo = m;
   }
-  // O QUE O CARTAO AINDA NAO TEM: o registro grava em lotes of 5 min, entao
-  // complete com o anel of RAM, of minuto seguinte on ultimo gravado ate
-  // now. O anel nao guarda o sleep; esses poucos minutos contam como
-  // screen acesa (o app esta open, afinal).
+  // WHAT THE CARD DOESN'T YET HAVE: the record records in batches of 5 minutes, so
+  // complete with the ring of RAM, from the next minute to the last recorded until
+  // now. The ring does not keep sleep; these few minutes count as
+  // screen on (the app is open, after all).
   const uint32_t now = tab5_time_epoch();
   if (!now) { return; }
   const int n = tab5_power_history(s_m->ram);
@@ -378,8 +378,8 @@ static void montar_24h(pontos_t* p)
   }
 }
 
-// Cada ponto das 24 h vale one minuto: mAh = mA / 60.
-static void montar_horas(const pontos_t* p)
+// Each point of 24 hours is worth one minute: mAh = mA / 60.
+static void build_hour_markers(const pontos_t* p)
 {
   memset(s_m->horas, 0, sizeof(s_m->horas));
   s_m->tot_gasto = s_m->tot_carga = s_m->tot_wh = 0;
@@ -401,12 +401,12 @@ static void montar_horas(const pontos_t* p)
   }
 }
 
-// UM VERTICE POR COLUNA DE PIXEL. Nas 24 h sao 1440 minutos em ~600 px:
-// varios pontos caem in mesma coluna, e a media deles vira o vertice. Isso
-// suaviza o ruido minuto a minuto of corrente (que virava one borrao of
-// zigue-zague) sem filtro a parte, e o custo of drawing passa a depender of
-// width, nao of numero of pontos.
-static void montar_vertices(const pontos_t* p, serie_t s, int gx, int gl)
+// ONE VERTEX PER PIXEL COLUMN. In 24 hours there are 1440 minutes at ~600 px:
+// several points fall in the same column, and their average becomes the vertex. This
+// smooths out the noise minute by minute of current (which turned into a blur of
+// zigzag) without a separate filter, and the cost of drawing depends on
+// width, not of number of points.
+static void build_plot_vertices(const pontos_t* p, serie_t s, int gx, int gl)
 {
   vertices_t* v = &s_m->vt;
   v->n = 0;
@@ -432,10 +432,10 @@ static void montar_vertices(const pontos_t* p, serie_t s, int gx, int gl)
   }
 }
 
-// ---------------------------------------------------------------------------
-// DESENHO - TOPO (heroi + indice), a cada segundo
-// ---------------------------------------------------------------------------
-// Bateria desenhada: contorno, enchimento pela %, raio por top in carga.
+// -------------------------------------------------------------------------------
+// DRAWING - TOP (hero + index), every second
+// -------------------------------------------------------------------------------
+// Battery drawn: contour, filling by %, radius by top in charge.
 static void icon_battery(lgfx::LovyanGFX& d, int x, int y, int l, int a, int pct, bool loading)
 {
   const uint16_t color = color_level(pct);
@@ -457,9 +457,9 @@ static void draw_topo(lgfx::LovyanGFX& d, const area_t& a)
   tab5_screen_clear(a.x, a.y, a.width, TOPO_A, TFT_BLACK);
   char buf[64], dur[24];
 
-  // HEROI. O estado vem of corrente of instante (a mesma regra of tres
-  // estados of barra of status); a ESTIMATIVA vem of media dos ultimos
-  // 30 min - a corrente of one segundo pula demais para virar previsao.
+  // HERO. The state comes from the current of instant (the same rule of three
+  // status bar); the ESTIMATE comes from the average of the last
+  // 30 min - the current of one second jumps too much to become a prediction.
   const int n = tab5_power_history(s_m->ram);
   float media = m.mA;
   if (n >= 4) { media = 0; for (int i = 0; i < n; ++i) { media += s_m->ram[i].mA; } media /= n; }
@@ -472,7 +472,7 @@ static void draw_topo(lgfx::LovyanGFX& d, const area_t& a)
   d.drawString(buf, a.x + M, y);
   const int end_pct = a.x + M + d.textWidth(buf);
   icon_battery(d, end_pct + 18, y + (d.fontHeight() - 34) / 2, 68, 34, m.pct, loading);
-  // Tocar no heroi escolhe a serie BATERIA: a faixa a left diz que esta escolhida.
+  // Tapping the hero chooses the DRUMS series: the track on the left says it is chosen.
   if (s_serie == SERIE_BATERIA) { d.fillRoundRect(a.x + 4, y + 8, 5, HERO_A - 24, 2, SERIE_COR[SERIE_BATERIA]); }
 
   const char* estado; uint16_t color_estado; buf[0] = 0;
@@ -498,8 +498,8 @@ static void draw_topo(lgfx::LovyanGFX& d, const area_t& a)
   fc(d, 24); d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   d.drawString(buf, xr, y + 42);
 
-  // INDICE: seis cartoes. Os cinco primeiros sao as series - touch escolhe o
-  // grafico 1; o sexto e o gasto das 24 h (o total of grafico 2).
+  // INDEX: six cards. The first five are the series - touch chooses the
+  // graph 1; the sixth is the expenditure of 24 hours (the total in graph 2).
   float temp = -273.0f; const bool tem_temp = tab5_sensors_temp(&temp);
   const int cl = cart_l(a.width);
   for (int i = 0; i < 6; ++i) {
@@ -529,12 +529,12 @@ static void draw_topo(lgfx::LovyanGFX& d, const area_t& a)
   d.setTextDatum(top_left);
 }
 
-// ---------------------------------------------------------------------------
-// DESENHO - EIXO DE TEMPO (o mesmo para os dois graficos nas 24 h)
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// DRAWING - TIME AXIS (the same for both graphs in the 24 h)
+// -------------------------------------------------------------------------------
 static void eixo_time(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, bool h24, bool grade)
 {
-  const int divs = h24 ? 4 : 2;     // 24 H: a cada 6 h; 30 MIN: a cada 15 min
+  const int divs = h24 ? 4 : 2;     // 24H: every 6h; 30 MIN: every 15 min
   if (grade) { for (int k = 1; k < divs; ++k) { d.drawFastVLine(gx + (gl * k) / divs, gy, ga, TAB5_GRAFICO_COR_GRADE); } }
   fc(d, 21); d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   static const char* T[3] = { "-30 min", "-15 min", "agora" };
@@ -554,7 +554,7 @@ static void eixo_time(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, bool h
   d.setTextDatum(top_left);
 }
 
-static void notice_no_grafico(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, const char* txt)
+static void draw_graph_notice(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, const char* txt)
 {
   fc(d, 24); d.setTextColor(TFT_DARKGREY, TFT_BLACK); d.setTextDatum(middle_center);
   d.drawString(txt, gx + gl / 2, gy + ga / 2);
@@ -570,23 +570,23 @@ static void draw_eixo_y(lgfx::LovyanGFX& d, int gx, int gl, int gy, int ga, floa
     const float v = lo + k * passo;
     const int y = gy + ga - 1 - (int)((v - lo) * (ga - 1) / (hi - lo) + 0.5f);
     d.drawFastHLine(gx, y, gl, k == 0 ? COR_EIXO : TAB5_GRAFICO_COR_GRADE);
-    if (so_middle_cheio && (k % 2)) { continue; }   // battery: rotula 0/50/100, grade a cada 25
-    numero_eixo(buf, sizeof(buf), v, passo);
+    if (so_middle_cheio && (k % 2)) { continue; }   // battery: labels 0/50/100, grid every 25
+    format_axis_tick(buf, sizeof(buf), v, passo);
     d.drawString(buf, gx - 10, y);
   }
   d.setTextDatum(top_left);
 }
 
-// ---------------------------------------------------------------------------
-// DESENHO - GRAFICO 1: a grandeza escolhida on longo of time
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// DRAWING - GRAPH 1: the magnitude chosen over time
+// -------------------------------------------------------------------------------
 static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int gx = a.x + plot_x(), gl = plot_l(a.width), gy = a.y + G1_PLOT_Y, ga = G1_A;
   tab5_screen_clear(a.x, a.y + G1_Y, a.width, G1_FIM - G1_Y, TFT_BLACK);
   char buf[48];
 
-  // Cabecalho: o que e o grafico (com unidade) e o periodo.
+  // Header: what is the graph (with unit) and the period.
   fn(d, 28); d.setTextDatum(middle_left); d.setTextColor(SERIE_COR[s_serie], TFT_BLACK);
   d.drawString(SERIE_TITULO[s_serie], a.x + M, a.y + G1_Y + SEG_A / 2);
   const int sx = a.x + seg_x(a.width), sy = a.y + G1_Y, middle = SEG_L / 2;
@@ -599,16 +599,16 @@ static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
 
   if (s_24h && (!s_dia || !s_dia->t0)) {
     d.drawFastHLine(gx, gy + ga - 1, gl, COR_EIXO);
-    notice_no_grafico(d, gx, gl, gy, ga, s_carga_requested ? "reading the card..." : "24 H needs the clock (GPS, mesh, or NTP)");
+    draw_graph_notice(d, gx, gl, gy, ga, s_carga_requested ? "reading the card..." : "24 H needs the clock (GPS, mesh, or NTP)");
     return;
   }
   const pontos_t* p = s_24h ? &s_m->p24 : &s_m->p30;
   eixo_time(d, gx, gl, gy, ga, s_24h, false);
-  montar_vertices(p, s_serie, gx, gl);
+  build_plot_vertices(p, s_serie, gx, gl);
   vertices_t* v = &s_m->vt;
   if (v->n < 2) {
     d.drawFastHLine(gx, gy + ga - 1, gl, COR_EIXO);
-    notice_no_grafico(d, gx, gl, gy, ga, s_24h ? "ainda sem pontos (1 por minuto)" : "juntando dados (1 ponto a cada 30 s)...");
+    draw_graph_notice(d, gx, gl, gy, ga, s_24h ? "ainda sem pontos (1 por minuto)" : "juntando dados (1 ponto a cada 30 s)...");
     return;
   }
 
@@ -617,14 +617,14 @@ static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
   else {
     float mn = v->val[0], mx = v->val[0];
     for (int i = 1; i < v->n; ++i) { if (v->val[i] < mn) { mn = v->val[i]; } if (v->val[i] > mx) { mx = v->val[i]; } }
-    // Corrente: o zero entra in escala - a line of zero separa carga of descarga.
+    // Current: zero comes into scale - the line of zero separates charge from discharge.
     if (s_serie == SERIE_CORRENTE) { if (mn > 0) { mn = 0; } if (mx < 0) { mx = 0; } }
-    escala(mn, mx, faixa_minima(s_serie), &lo, &hi, &passo);
+    escala(mn, mx, minimum_axis_range(s_serie), &lo, &hi, &passo);
   }
   #define YV(val) (gy + ga - 1 - (int)((((val) < lo ? lo : (val) > hi ? hi : (val)) - lo) * (ga - 1) / (hi - lo) + 0.5f))
 
-  // 1) As horas of CARGA tingidas atras of everything (in corrente o proprio sinal
-  //    ja diz isso, com o preenchimento verde acima of zero).
+  // 1) The hours of LOAD dyed behind everything (in current the signal itself
+  // already says this, with the green fill above zero).
   if (s_serie != SERIE_CORRENTE) {
     for (int i = 0; i < v->n; ++i) {
       if (!v->carga[i]) { continue; }
@@ -633,12 +633,12 @@ static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
       d.fillRect(v->px[i], gy, x1 - v->px[i] + 1, ga, COR_CARGA_FUNDO);
     }
   }
-  // 2) Grade com numeros e a vertical of time.
+  // 2) Grid with numbers and the vertical of time.
   draw_eixo_y(d, gx, gl, gy, ga, lo, hi, passo, s_serie == SERIE_BATERIA);
   eixo_time(d, gx, gl, gy, ga, s_24h, true);
 
-  // 3) AREA sob a curva, coluna a coluna, interpolando entre os vertices.
-  //    Corrente: preenche ate o ZERO - verde acima (carga), laranja abaixo.
+  // 3) AREA under the curve, column by column, interpolating between vertices.
+  // Current: fills to ZERO - green above (load), orange below.
   const uint16_t color = SERIE_COR[s_serie];
   const int y_base = (s_serie == SERIE_CORRENTE) ? YV(0.0f) : gy + ga - 2;
   const uint16_t fill = escurecer(color, 72);
@@ -655,14 +655,14 @@ static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
   }
   if (s_serie == SERIE_CORRENTE) { d.drawFastHLine(gx, y_base, gl, TFT_LIGHTGREY); }
 
-  // 4) A LINHA por top (~3 px, borda suavizada). Ponto isolado vira bolinha.
+  // 4) THE LINE per top (~3 px, edge softened). Isolated point becomes a ball.
   for (int i = 0; i < v->n; ++i) {
     const int y = YV(v->val[i]);
     if (i > 0 && !v->quebra[i]) { tab5_line_grossa(d, v->px[i - 1], YV(v->val[i - 1]), v->px[i], y, 1.5f, color); }
     else if (i + 1 >= v->n || v->quebra[i + 1]) { d.fillCircle(v->px[i], y, 2, color); }
   }
 
-  // 5) CURSOR: o vertice mais perto of touch, com a hora e o valor.
+  // 5) CURSOR: the vertex closest to touch, with the time and value.
   if (s_cursor >= 0) {
     const int alvo = a.x + s_cursor;
     int k = 0;
@@ -695,12 +695,12 @@ static void draw_grafico1(lgfx::LovyanGFX& d, const area_t& a)
   #undef YV
 }
 
-// ---------------------------------------------------------------------------
-// DESENHO - GRAFICO 2: gasto por hora nas 24 h
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// DRAWING - GRAPH 2: spent per hour in 24 hours
+// -------------------------------------------------------------------------------
 static void quadradinho(lgfx::LovyanGFX& d, int* xr, int ym, uint16_t color, const char* txt)
 {
-  // Legenda escrita of right para a left: devolve em *xr onde a next termina.
+  // Caption written from right to left: returns in *xr where next ends.
   const int w = d.textWidth(txt);
   d.setTextDatum(middle_right); d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   d.drawString(txt, *xr, ym);
@@ -725,7 +725,7 @@ static void draw_grafico2(lgfx::LovyanGFX& d, const area_t& a)
 
   if (!s_dia || !s_dia->t0) {
     d.drawFastHLine(gx, gy + ga - 1, gl, COR_EIXO);
-    notice_no_grafico(d, gx, gl, gy, ga, s_carga_requested ? "reading the card..." : "needs the clock (GPS, mesh, or NTP)");
+    draw_graph_notice(d, gx, gl, gy, ga, s_carga_requested ? "reading the card..." : "needs the clock (GPS, mesh, or NTP)");
     return;
   }
 
@@ -736,7 +736,7 @@ static void draw_grafico2(lgfx::LovyanGFX& d, const area_t& a)
   lo = 0;
   draw_eixo_y(d, gx, gl, gy, ga, lo, hi, passo, false);
 
-  // Barras alinhadas com as colunas of hora of grafico 1 (mesmo gx/gl).
+  // Bars aligned with columns of hour of chart 1 (same gx/gl).
   for (int h = 0; h < 24; ++h) {
     const int c0 = gx + (gl * h) / 24, c1 = gx + (gl * (h + 1)) / 24;
     const int bx = c0 + 3, bl = c1 - c0 - 6;
@@ -751,7 +751,7 @@ static void draw_grafico2(lgfx::LovyanGFX& d, const area_t& a)
   }
   eixo_time(d, gx, gl, gy + G2_FAIXA, ga, true, false);
 
-  // DETALHE: a hora tocada, ou os totais das 24 h.
+  // DETAIL: the time played, or the 24-hour totals.
   const int y1 = a.y + G2_DET_Y, y2 = y1 + 32;
   d.setTextDatum(top_left);
   if (s_hora_sel >= 0) {
@@ -786,28 +786,28 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
   paint_start(&s_p);
   const bool everything = paint_complete(&s_p);
 
-  // 24 H: recarrega when o registro gravou sample nova (a cada 5 min) ou
-  // when virou a hora (a window anda uma coluna).
+  // 24 H: reloads when the record records a new sample (every 5 min) or
+  // when the time turned (the window moves one column).
   uint32_t grav; registro_estado(nullptr, &grav, nullptr);
   if (grav != s_gravadas_lidas || (s_dia && window_t0() != s_dia->t0)) { s_gravadas_lidas = grav; request_24h(); }
 
   if (everything) { tab5_screen_clear(a.x, a.y, a.width, a.height, TFT_BLACK); }
 
-  // Os graficos so mudam when chega dado (anel a cada TAB5_HIST_SEG, cartao
-  // a cada carga) ou when one touch changed a selecao.
+  // The graphs only change when data arrives (ring every TAB5_HIST_SEG, card
+  // with each load) or when one touch changed the selection.
   static int s_assin = -1;
   const int n = tab5_power_history(s_m->ram);
   const int assin = (int)s_dia_ver * 7919 + n * 1000003 + (n ? (int)(s_m->ram[n - 1].mA * 10) : 0);
   if (everything || s_graf_dirty || assin != s_assin) {
     s_assin = assin;
     s_graf_dirty = false;
-    montar_24h(&s_m->p24);
-    montar_horas(&s_m->p24);
-    montar_30(&s_m->p30);
+    build_24_hour_points(&s_m->p24);
+    build_hour_markers(&s_m->p24);
+    build_30_second_points(&s_m->p30);
     draw_grafico1(d, a);
     draw_grafico2(d, a);
   }
-  draw_topo(d, a);   // depois: o cartao "Gasto 24 h" le o total que montar_horas acabou of fazer
+  draw_topo(d, a);   // later: the "Spent 24 h" card reads the total that set_hours just made
 
   d.setFont(fonte);
   d.setTextStyle(estilo);
@@ -821,23 +821,23 @@ static void on_touch(int x, int y)
   if (y >= HERO_Y && y < HERO_Y + HERO_A) {
     s_serie = SERIE_BATERIA; s_cursor = -1;
   }
-  // Um cartao of indice: escolhe a serie of grafico 1 (o sexto so informa).
+  // An index card: chooses chart series 1 (the sixth only tells you).
   else if (y >= CART_Y && y < TOPO_A && x >= M) {
     const int col = (x - M) / (cl + CART_V), lin = (y - CART_Y) / (CART_A + CART_V);
     const int i = lin * 3 + (col > 2 ? 2 : col);
     if (i >= N_SERIES) { return; }
     s_serie = (serie_t)i; s_cursor = -1;
   }
-  // O controle of periodo: metade left 30 MIN, right 24 H.
+  // Period control: half left 30 MIN, right 24 H.
   else if (y >= G1_Y && y < G1_Y + SEG_A && x >= seg_x(a.width)) {
     s_24h = (x >= seg_x(a.width) + SEG_L / 2); s_cursor = -1;
     if (s_24h) { request_24h(); }
   }
-  // Dentro of grafico 1: poe o cursor; touch perto dele of novo tira.
+  // Inside graph 1: place the cursor; touch near him of new strip.
   else if (y >= G1_PLOT_Y && y < G1_PLOT_Y + G1_A && x >= gx - 8 && x < gx + gl + 8) {
     s_cursor = (s_cursor >= 0 && abs(x - s_cursor) < 16) ? -1 : x;
   }
-  // Uma barra of grafico 2 (com a faixa of carga e os rotulos embaixo).
+  // A bar of graph 2 (with the load range and labels below).
   else if (y >= G2_PLOT_Y && y < G2_PLOT_Y + G2_A + G2_FAIXA + 34 && x >= gx && x < gx + gl) {
     const int h = (x - gx) * 24 / gl;
     s_hora_sel = (h == s_hora_sel) ? -1 : h;
@@ -848,13 +848,13 @@ static void on_touch(int x, int y)
 }
 
 
-// ---------------------------------------------------------------------------
-// ICONE DA TELA INICIAL
-// ---------------------------------------------------------------------------
-// Primitivas e fracao of lado, como a marca of Mesh: exit limpo em qualquer
-// tamanho, nao gasta flash e nao serrilha. A letra grande que estava aqui era
-// a fonte embutida ampliada 6x - cada pixel dela virava one quadrado of 6.
-static void icon_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
+// -------------------------------------------------------------------------------
+// HOME SCREEN ICON
+// -------------------------------------------------------------------------------
+// Primitives and fraction of side, like the of Mesh tag: clean exit on any
+// size, no flash and no serration. The big letter that was here was
+// the embedded font magnified 6x - each pixel of it became a square of 6.
+static void draw_energy_icon(lgfx::LovyanGFX& d, int x, int y, int lado)
 {
   const uint16_t fundo  = d.color565(255, 150, 40);
   const uint16_t escuro = d.color565(55, 30, 0);
@@ -864,9 +864,9 @@ static void icon_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
   #define IX(f) (x + (int)((f) * lado))
   #define IY(f) (y + (int)((f) * lado))
 
-  // Stack deitada com o polo a right. Contorno grosso drawn como dois
-  // retangulos (cheio e vazado), que e mais barato que quatro lines e nao
-  // deixa canto open.
+  // Stack lying down with the pole to the right. Thick contour drawn like two
+  // rectangles (full and hollow), which is cheaper than four lines and does not
+  // leaves corner open.
   d.fillRoundRect(IX(0.14f), IY(0.32f), (int)(0.62f * lado), (int)(0.36f * lado),
                   lado / 16, escuro);
   d.fillRoundRect(IX(0.14f) + lado / 22, IY(0.32f) + lado / 22,
@@ -875,8 +875,8 @@ static void icon_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
   d.fillRoundRect(IX(0.78f), IY(0.42f), (int)(0.07f * lado), (int)(0.16f * lado),
                   lado / 40, escuro);
 
-  // Raio dentro: e o que separa "battery" of "consumo". O app mede corrente,
-  // nao so carga.
+  // Lightning inside: and what separates "battery" from "consumption". The app measures current,
+  // not just position.
   d.fillTriangle(IX(0.48f), IY(0.36f), IX(0.30f), IY(0.53f), IX(0.44f), IY(0.53f), escuro);
   d.fillTriangle(IX(0.40f), IY(0.64f), IX(0.58f), IY(0.47f), IX(0.44f), IY(0.47f), escuro);
 
@@ -887,16 +887,16 @@ static void icon_energia(lgfx::LovyanGFX& d, int x, int y, int lado)
 extern const app_t APP_ENERGY = {
   .name  = "Energy",
   .color   = TFT_ORANGE,
-  // Perfil: so o brilho. Todo o resto vem dos defaults of tab5_profile_t,
-  // que sao 'disabled' - por isso nao precisa listar o que nao se usa.
+  // Profile: just the brightness. Everything else comes from the defaults of tab5_profile_t,
+  // which are 'disabled' - so there is no need to list what is not used.
   .profile = { },
-  .piso_sleep_mhz = 0,  // sem work of fundo: pode lower on minimum
+  .sleep_clock_floor_mhz = 0,  // without work of background: can lower on minimum
   .on_open  = on_open,
   .on_close = on_close,
   .draw  = draw,
   .on_touch  = on_touch,
-  .periodo_ms = 1000,     // o topo acompanha a measurement of 1Hz of kernel
+  .redraw_period_ms = 1000,     // the top follows the measurement of 1Hz of kernel
   .notices = AVISO_TRABALHO,
-  .on_aviso = on_aviso,
-  .icon = icon_energia,
+  .on_notice = on_notice,
+  .icon = draw_energy_icon,
 };

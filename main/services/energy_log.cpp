@@ -19,9 +19,9 @@ static const char *TAG = "registro";
 // One sample per minute: a complete discharge (5 to 15 hours) yields 300 to
 // 900 points, enough resolution to plot the curve and calibrate the battery.
 // Data is sent to the card every 10 minutes.
-static const uint32_t AMOSTRA_MS = 60000;
-static const int      LOTE       = 5;       // amostras por descarga (era 10; o grafico HOJE of app Energia le daqui)
-static const int      CAPACIDADE = 32;      // folga: se o cartao falhar, segura mais
+static const uint32_t SAMPLE_INTERVAL_MS = 60000;
+static const int      FLUSH_BATCH_SIZE = 5; // samples per discharge (was 10; the TODAY graph of the Energia app is from here)
+static const int      CAPACIDADE = 32;      // slack: if the card fails, it holds longer
 
 typedef struct {
   uint32_t t;        // seconds since boot
@@ -39,7 +39,7 @@ typedef struct {
 static sample_t s_buf[CAPACIDADE];
 static int       s_n = 0;
 static uint32_t  s_gravadas = 0;
-static uint32_t  s_falhas = 0;
+static uint32_t  s_write_failures = 0;
 static char      s_app[12] = "home";
 
 void registro_app_current(const char* name)
@@ -48,32 +48,32 @@ void registro_app_current(const char* name)
   snprintf(s_app, sizeof(s_app), "%s", name ? name : "home");
 }
 
-void registro_estado(int* in_ram, uint32_t* gravadas, uint32_t* falhas)
+void registro_estado(int* in_ram, uint32_t* gravadas, uint32_t* write_failures)
 {
   if (in_ram)   { *in_ram   = s_n; }
   if (gravadas) { *gravadas = s_gravadas; }
-  if (falhas)   { *falhas   = s_falhas; }
+  if (write_failures) { *write_failures = s_write_failures; }
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // TASK AND HEAP HEALTH - see the full explanation in energy_log.h.
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // Up to 32 simultaneous tasks, matching the limit already used by the Tasks
-// app (tarefas/app_tasks.cpp). Repeated here intentionally rather than shared:
+// app (tasks/app_tasks.cpp). Repeated here intentionally rather than shared:
 // this is a CONSTANT, not state, and the two readings are independent—the app
 // may not even be open.
-// (O instantaneo of tarefas em tarefas.csv, a cada descarga, exited em
-// o monitor of sistema (services/tab5_monitor) mede as tarefas a
-// cada segundo, com picos e eventos, e grava no cartao o que importa.)
+// (The snapshot of tasks in tasks.csv, with each download, exited in
+// the system monitor (services/tab5_monitor) measures the tasks to be
+// every second, with spikes and events, and records what matters on the card.)
 
-// ONE FILE PER DAY, WITH REAL TIME. Previously one energia.csv grew forever,
+// ONE FILE PER DAY, WITH REAL TIME. Previously one energy.csv grew forever,
 // with timestamps in seconds since BOOT, making a single day impossible to
 // extract. Now:
-//   Sistema/energia/energia-AAAA-MM-DD.csv   (data LOCAL - o dia of quem usa)
-//   ENE3,<epoch UTC>,<HH:MM local>,<V>,<mA>,<mW>,<pct>,<MHz>,<sleep>,<temp>,<app>
+// System/energy/energy-YYYY-MM-DD.csv (LOCAL date - the day of use)
+// ENE3,<epoch UTC>,<HH:MM local>,<V>,<mA>,<mW>,<pct>,<MHz>,<sleep>,<temp>,<app>
 // Without a valid clock (no GPS/mesh since boot), samples go to
-// energia-sem-data.csv with epoch 0. The old energia.csv remains untouched.
-static void name_of_dia(uint32_t epoch, char* out, size_t size)
+// energy-sem-data.csv with epoch 0. The old energy.csv remains untouched.
+static void energy_filename_for_day(uint32_t epoch, char* out, size_t size)
 {
   tab5_day_filename(epoch, "energia-", ".csv", out, size);
 }
@@ -88,7 +88,7 @@ static void descarregar(void)
   for (int i = 0; i < s_n; ++i) {
     const sample_t* a = &s_buf[i];
     char name[32];
-    name_of_dia(a->epoch, name, sizeof(name));
+    energy_filename_for_day(a->epoch, name, sizeof(name));
     char hora[8] = "--:--";
     if (a->epoch) { struct tm lt; tab5_local_time(a->epoch, &lt); snprintf(hora, sizeof(hora), "%02d:%02d", lt.tm_hour, lt.tm_min); }
     char line[160];
@@ -98,7 +98,7 @@ static void descarregar(void)
     if (tab5_sd_enqueue_append(TAB5_SD_POWER, name, line,
                        "tipo,epoch,hora,volts,mA,mW,pct,mhz,repouso,temp_c,app\n")) { ++ok; }
   }
-  if (ok == 0) { s_falhas++; return; }
+  if (ok == 0) { s_write_failures++; return; }
   s_gravadas += ok;
   s_n = 0;
 }
@@ -108,20 +108,20 @@ static void descarregar(void)
 // second and writes to the card; this callback only tracks the minute.
 static void registro_in_carona(void)
 {
-  static int64_t next_us = esp_timer_get_time() + (int64_t)AMOSTRA_MS * 1000;
+  static int64_t next_us = esp_timer_get_time() + (int64_t)SAMPLE_INTERVAL_MS * 1000;
   const int64_t now_us = esp_timer_get_time();
   if (now_us < next_us) { return; }
-  next_us += (int64_t)AMOSTRA_MS * 1000;
-  if (next_us <= now_us) { next_us = now_us + (int64_t)AMOSTRA_MS * 1000; }   // atrasou demais: recomeca
+  next_us += (int64_t)SAMPLE_INTERVAL_MS * 1000;
+  if (next_us <= now_us) { next_us = now_us + (int64_t)SAMPLE_INTERVAL_MS * 1000; }   // was too late: start again
   {
     // Read the CACHE, never I2C: the bus belongs to the interface task, which
     // updates this value every second. Reading I2C here would recreate the
-    // race that already cost us an afternoon (voltage alternating 4.37/8.37V).
+    // race that already costs us an afternoon (voltage alternating 4.37/8.37V).
     tab5_measurement_t m = tab5_power_latest();
 
     if (s_n >= CAPACIDADE) {
-      // Buffer cheio (cartao ausente ha muito time): descarta a mais antiga.
-      // Perder o passado distante e melhor que perder o presente.
+      // Buffer full (card missing for a long time): discards the oldest one.
+      // Losing the distant past is better than losing the present.
       memmove(&s_buf[0], &s_buf[1], sizeof(sample_t) * (CAPACIDADE - 1));
       s_n = CAPACIDADE - 1;
     }
@@ -138,34 +138,34 @@ static void registro_in_carona(void)
     { float c; a->temp = tab5_sensors_temp(&c) ? c : -273.0f; }
     snprintf(a->app, sizeof(a->app), "%s", s_app);
 
-    // Descarrega SO no lote. Nao ha gravacao antecipada of propriedade: durante
-    // o desenvolvimento a placa reinicia a cada upload, e uma gravacao logo no
-    // first minuto encheria o arquivo of amostras soltas of sessoes que
-    // duraram segundos. Para saber se o registro esta vivo sem wait dez
-    // minutos, olhe o app Energia - ele mostra quantas amostras estao in RAM.
+    // Unload OS in batch. There is no advance recording of property: during
+    // development, the board restarts with each upload, and a recording is immediately
+    // first minute would fill the file of loose samples of sessions that
+    // lasted seconds. To find out if the record is alive without waiting ten
+    // minutes, look at the Energy app - it shows how many samples are in RAM.
     //
-    // COM A BATERIA NO FIM, O LOTE VIRA UM - e nem toda sample vale igual.
+    // WITH THE DRUMS AT THE END, THE LOT BECOMES ONE - and not every sample is worth the same.
     //
-    // A dez minutos por descarga, one desligamento por battery leva embora ate
-    // dez amostras. E logo AQUELAS dez: o end of descarga e onde a tensao
-    // despenca, o joelho of curva, a unica parte que diz quanto time ainda
-    // resta when a resposta importa. O resto of arquivo tem centenas of
-    // amostras of battery cheia, que se parecem todas.
+    // At ten minutes per discharge, a battery shutdown takes away up to
+    // ten samples. And then THOSE ten: the end of discharge and where the voltage
+    // plummets, the knee of curve, the only part that says how much team still
+    // remains when the answer matters. The rest of the file has hundreds of
+    // samples of full battery, which all look alike.
     //
-    // Abaixo of 15% o aparelho pode disable a qualquer minuto, e ai o custo of
-    // gravar toda vez (uma montagem of cartao por minuto) stays barato perto of
-    // perder o unico trecho que nao of para reproduzir sem descarregar a
-    // battery inteira of novo.
+    // Below 15% the device can be disabled at any minute, and then the cost of
+    // burn every time (one card assembly per minute) stays cheap close to
+    // lose the only section that cannot be reproduced without downloading the
+    // entire battery of new.
     const bool no_end = (m.pct >= 0 && m.pct < 15);
-    if (s_n >= (no_end ? 1 : LOTE)) { descarregar(); }
+    if (s_n >= (no_end ? 1 : FLUSH_BATCH_SIZE)) { descarregar(); }
   }
 }
 
 void registro_start(void)
 {
-  // Uma vez por minuto le o cache of energia e, of lote em lote, entrega as
-  // lines on gravador - everything dentro of tarefa "cartao".
+  // Once per minute reads the energy cache and, batch by batch, delivers the
+  // lines on recorder - everything within task "cartao".
   tab5_sd_piggyback(registro_in_carona);
   ESP_LOGI(TAG, "running: sample every %lus, flush every %d samples",
-           (unsigned long)(AMOSTRA_MS / 1000), LOTE);
+           (unsigned long)(SAMPLE_INTERVAL_MS / 1000), FLUSH_BATCH_SIZE);
 }

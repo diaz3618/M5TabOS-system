@@ -35,7 +35,7 @@ void settings_init(void);
 
 uint8_t settings_brightness(void);
 
-// Apply to the display immediately and save. Out-of-range values are clamped.
+// Apply to the display immediately and save. Out-of-range values ​​are clamped.
 void settings_set_brightness(uint8_t brightness);
 
 // Whether the user wants Wi-Fi enabled. The Wi-Fi service acts on this value;
@@ -66,9 +66,9 @@ void settings_set_grove(bool enabled);
 // the conversion.
 //
 // The 15-second minimum is intentional: below that, the display turns off in
-// the middle of reading and waking it becomes part of normal use. The
+// the middle of reading and waking up becomes part of normal use. The
 // 60-second maximum comes from the other direction: the display is the
-// device's largest power consumer, so every extra second costs more than the
+// device's largest power consumption, so every extra second costs more than the
 // savings available elsewhere.
 #define SETTINGS_SCREEN_TIMEOUT_MIN_S  15
 #define SETTINGS_SCREEN_TIMEOUT_MAX_S  60
@@ -101,11 +101,11 @@ uint8_t settings_panel_clock_mhz(void);
 void    settings_set_panel_clock_mhz(uint8_t mhz);
 
 // Internal speaker volume (ES8388), using M5.Speaker.setVolume()'s native
-// 0..255 range. Unlike brightness, zero is a valid muted state; no nonzero
+// 0..255 range. Unlike brightness, zero is a valid muted state; in nonzero
 // floor is needed because a silent speaker does not hide its own control.
 //
 // Applied immediately, like settings_set_brightness(), but with no hardware
-// cost while nothing is playing: setVolume() only updates the Speaker object.
+// costs while nothing is playing: setVolume() only updates the Speaker object.
 // The ES8388 remains off until an app first calls M5.Speaker.tone() or
 // playWav(). M5Unified initializes the codec lazily; see the volume warning in
 // app_config.cpp. This is therefore safe to apply during boot.
@@ -139,7 +139,7 @@ void settings_set_home(float lat, float lon);
 // state (see notif_silenciar()). The default is enabled to preserve existing
 // behavior. The control remains in the Trail app for now. Each future source
 // should get an analogous pair, such as settings_mesh_beep(), rather than an
-// unvalidated generic mechanism (see ARCHITECTURE.md section 1.1).
+// unvalidated generic mechanism (see docs/ARCHITECTURE.md section 1.1).
 bool settings_trail_beep(void);
 void settings_set_trail_beep(bool play);
 
@@ -178,7 +178,7 @@ void     settings_set_mesh_internet(bool enabled);
 
 // Join the public internet network (mqtt.meshtastic.org, LongFast) in parallel
 // while Wi-Fi is connected, with separate nodes and conversations. Disabled
-// by default because it creates unsolicited internet traffic. This is toggled
+// by default because it creates unsolicited internet traffic. This is toggle
 // from the Mesh app's nodes page.
 bool     settings_mesh_public_network(void);
 void     settings_set_mesh_public_network(bool enabled);
@@ -200,7 +200,7 @@ void     settings_set_mesh_ble_address(const char* address);
 // GPS position. Zero means never, the default, because position is personal
 // data and is sent only when the user requests it. With a node connected, the
 // position goes only to that node, which broadcasts it at its own cadence and
-// precision (see enviar_posicao in tab5_mesh.cpp). Over the internet without a
+// precision (see send_position in tab5_mesh.cpp). Over the internet without a
 // node, the Tab5 broadcasts it directly. Edited under Mesh > Configure node >
 // Location.
 uint8_t settings_mesh_position_interval_min(void);
@@ -211,7 +211,7 @@ void    settings_set_mesh_position_interval_min(uint8_t minutes);
 bool settings_bluetooth(void);
 void settings_set_bluetooth(bool enabled);
 
-// Lock screen: after waking from sleep, show the time and date and require an
+// Lock screen: after waking up from sleep, show the time and date and require an
 // upward swipe. Disabled by default.
 bool settings_lock_screen(void);
 void settings_set_lock_screen(bool enabled);
@@ -233,10 +233,10 @@ float settings_gyro_scale(int axis);
 void  settings_set_gyro_scale(int axis, float scale);
 
 // Home-screen icon order as comma-separated app NAMES
-// ("Mesh,Trilha,Radar"). Names rather than indices keep firmware additions or
-// removals from shuffling the rest. Apps absent from the list follow in
+// ("Mesh,Track,Radar"). Names rather than indices keep firmware additions or
+// removes from shuffling the rest. Apps absent from the list follow in
 // apps.cpp order, and unknown names are ignored. Empty means apps.cpp order.
-// The shell interprets this value (sistema_home_*, app.h).
+// The shell interprets this value (system_home_*, app.h).
 void settings_apps_order(char* out, size_t n);
 void settings_set_apps_order(const char* names);   // "" or nullptr = default
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16.0)
 
 # THE SYSTEM VERSION lives in version.txt (one line, SemVer) and only
-# changes through tools/release.sh - the rules are in VERSIONING.md.
+# changes through tools/release.sh - the rules are in docs/VERSIONING.md.
 #
 # The number that goes into the binary (esp_app_get_description()->version,
 # the one shown in Settings, the console, and the boot log) also says WHERE

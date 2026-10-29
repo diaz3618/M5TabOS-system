@@ -1,6 +1,6 @@
 #!/bin/bash
 # Releases a new version of M5tabOS. The rules for which number to bump are
-# in VERSIONING.md.
+# in docs/VERSIONING.md.
 #
 #   tools/release.sh patch     0.7.0 -> 0.7.1  (fixes only)
 #   tools/release.sh minor     0.7.0 -> 0.8.0  (something new, or that requires reflashing)

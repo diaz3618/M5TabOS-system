@@ -107,7 +107,7 @@ static long     s_img_offset_data = 0;
 static uint32_t s_img_line_bytes = 0;
 static bool     s_img_ok = false;
 
-static bool tem_sufixo(const char* name, const char* sufixo)
+static bool has_suffix(const char* name, const char* sufixo)
 {
   const size_t ln = strlen(name), ls = strlen(sufixo);
   return ln >= ls && strcasecmp(name + ln - ls, sufixo) == 0;
@@ -201,7 +201,7 @@ static const int DIVISA_Y = 128;
 static const int LISTA_Y = 140;                        // onde a lista comeca
 // So no content: a fileira of navigation e a barra of position.
 static const int NAV_Y = 140, NAV_A = 64, NAV_G = 10;
-static const int BARRA_Y = 220, BARRA_A = 14;          // trilho drawn
+static const int BARRA_Y = 220, SCROLL_TRACK_HEIGHT = 14;          // trilho drawn
 static const int BARRA_TOQUE_Y = 204, BARRA_TOQUE_A = 48;   // faixa que aceita o touch
 static const int TEXTO_Y = 252;                        // onde o text comeca
 static const int ARRASTE_PAGINA = 90;                  // px of arraste vertical que viram a pagina
@@ -216,11 +216,11 @@ static const int LIN_LISTA = 72;
 static const float TAM_BASE   = 2.6f;             // +30%
 static const float TAM_LISTA  = TAM_BASE * 1.6f;
 
-static void caminho_pasta(char* out, size_t n)
+static void folder_path(char* out, size_t n)
 {
   snprintf(out, n, "%s/%s", TAB5_SD_APPS, s_pasta);
 }
-static void caminho_arquivo(char* out, size_t n)
+static void file_path(char* out, size_t n)
 {
   snprintf(out, n, "%s/%s/%s", TAB5_SD_APPS, s_pasta, s_arquivo);
 }
@@ -231,7 +231,7 @@ static void caminho_arquivo(char* out, size_t n)
 // stat() em vez of open/position/close. Listar uma pasta com 50 arquivos
 // eram 50 aberturas of arquivo no cartao - lento e desnecessario, o tamanho
 // esta in entrada of diretorio.
-static uint64_t tamanho_of(const char* caminho)
+static uint64_t file_size(const char* caminho)
 {
   struct stat st;
   if (stat(caminho, &st) != 0) { return 0; }
@@ -252,7 +252,7 @@ static int comparar_items(const void* pa, const void* pb)
 // Arquivos e bytes of uma pasta, SUBPASTAS INCLUSIVE - a pasta Sistema quase
 // nao tem arquivo released (os logs e a energia moram em Sistema/logs e
 // Sistema/energia), e count so o first level diria "3 arq, 2KB".
-static void somar_pasta(const char* caminho, int level, int* arquivos, uint64_t* bytes)
+static void count_folder_contents(const char* caminho, int level, int* arquivos, uint64_t* bytes)
 {
   DIR* d = opendir(caminho);
   if (!d) { return; }
@@ -262,9 +262,9 @@ static void somar_pasta(const char* caminho, int level, int* arquivos, uint64_t*
     char cheio[224];
     snprintf(cheio, sizeof(cheio), "%s/%s", caminho, e->d_name);
     if (e->d_type == DT_DIR) {
-      if (level < 3) { somar_pasta(cheio, level + 1, arquivos, bytes); }
+      if (level < 3) { count_folder_contents(cheio, level + 1, arquivos, bytes); }
     } else {
-      *bytes += tamanho_of(cheio);
+      *bytes += file_size(cheio);
       ++*arquivos;
     }
   }
@@ -290,7 +290,7 @@ static char           s_l_pasta[128];             // o caminho request (copia: o
 static volatile int   s_l_n = 0, s_l_achados = 0;
 static uint64_t       s_l_total = 0, s_l_livre = 0;
 
-static void listar_em(item_t* dst, const char* pasta, bool raiz)
+static void list_entries_in(item_t* dst, const char* pasta, bool raiz)
 {
   const int64_t t0 = esp_timer_get_time();
   int n = 0, achados = 0;
@@ -311,8 +311,8 @@ static void listar_em(item_t* dst, const char* pasta, bool raiz)
         it->eh_pasta = (e->d_type == DT_DIR);
         char cheio[224];
         snprintf(cheio, sizeof(cheio), "%s/%s", pasta, e->d_name);
-        if (it->eh_pasta) { somar_pasta(cheio, 1, &it->arquivos, &it->bytes); }
-        else if (!raiz)   { it->bytes = tamanho_of(cheio); }
+        if (it->eh_pasta) { count_folder_contents(cheio, 1, &it->arquivos, &it->bytes); }
+        else if (!raiz)   { it->bytes = file_size(cheio); }
         ++n;
       }
       closedir(d);
@@ -328,7 +328,7 @@ static void listar_em(item_t* dst, const char* pasta, bool raiz)
 static void work_listar(void*)
 {
   tab5_sd_flush_pending();   // tamanhos e arquivos novos: o que ja foi entregue on gravador
-  listar_em(s_carga, s_l_pastas ? TAB5_SD_APPS : s_l_pasta, s_l_pastas);
+  list_entries_in(s_carga, s_l_pastas ? TAB5_SD_APPS : s_l_pasta, s_l_pastas);
   s_l_pronto = true;
 }
 
@@ -343,7 +343,7 @@ static void request_listagem(bool pastas, bool manter_position)
   if (!manter_position) { s_n_items = s_n_achados = 0; list_items_changed(&s_lista, 0); }
   s_l_pastas = pastas;
   s_l_manter = manter_position;
-  caminho_pasta(s_l_pasta, sizeof(s_l_pasta));
+  folder_path(s_l_pasta, sizeof(s_l_pasta));
   s_l_pronto = false;
   s_listando = system_work(work_listar, nullptr);
 }
@@ -511,7 +511,7 @@ static void read_pagina(void)
   // Buffer of stdio maior que os 128 bytes default: o getc() of line a line
   // nao vira one read() of cartao a cada 128 bytes.
   setvbuf(f, nullptr, _IOFBF, 4096);
-  const bool csv = tem_sufixo(s_c_caminho, ".csv");
+  const bool csv = has_suffix(s_c_caminho, ".csv");
 
   // Casa of indice mais next ANTES of line requested, e o resto lido em
   // sequencia (no maximum BLOCO_LINHAS * passo lines).
@@ -571,7 +571,7 @@ static void request_leitura(bool count)
     s_c_count_of_novo = s_c_count_of_novo || count;
     return;
   }
-  caminho_arquivo(s_c_caminho, sizeof(s_c_caminho));
+  file_path(s_c_caminho, sizeof(s_c_caminho));
   s_c_line   = s_line;
   s_c_count  = count;
   s_c_pronto  = false;
@@ -717,7 +717,7 @@ static void release_imagem(void)
   s_img_px_caminho[0] = '\0';
 }
 
-static void on_aviso(uint32_t av)
+static void on_notice(uint32_t av)
 {
   if ((av & AVISO_TRABALHO) && s_img_lendo && s_img_lida) {
     s_img_lendo = false;
@@ -731,7 +731,7 @@ static void on_aviso(uint32_t av)
   s_c_ocupado = false;
 
   char current[192];
-  caminho_arquivo(current, sizeof(current));
+  file_path(current, sizeof(current));
   const bool mesmo_arquivo = (strcmp(current, s_c_caminho) == 0) && s_level == NIVEL_CONTEUDO;
   if (mesmo_arquivo) {
     if (s_c_count) { s_total_lines = s_c_total; }
@@ -778,7 +778,7 @@ static void draw_imagem(lgfx::LovyanGFX& d, const area_t& a, int x, int y)
   const int py = y + (caixa_a - (int)A) / 2;
 
   char caminho[192];
-  caminho_arquivo(caminho, sizeof(caminho));
+  file_path(caminho, sizeof(caminho));
 
   // PRONTA: o buffer e desta foto, deste tamanho, e o worker terminou bem.
   if (!s_img_lendo && s_img_px && s_img_px_l == L && s_img_px_a == A && strcmp(s_img_px_caminho, caminho) == 0) {
@@ -1022,7 +1022,7 @@ static int draw_text(lgfx::LovyanGFX& d, const area_t& a, int y)
     y += alt_line;
     if (!s_abriu_ok) {
       char cam[192];
-      caminho_arquivo(cam, sizeof(cam));
+      file_path(cam, sizeof(cam));
       d.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
       text_cabendo(d, cam, x, y, width);
       y += alt_line;
@@ -1035,17 +1035,17 @@ static int draw_text(lgfx::LovyanGFX& d, const area_t& a, int y)
 }
 
 // Barra of position: onde a screen esta no arquivo. Tocar nela pula para la.
-static void draw_barra(lgfx::LovyanGFX& d, const area_t& a)
+static void draw_scroll_position(lgfx::LovyanGFX& d, const area_t& a)
 {
   const int x = a.x + MARGEM_X, l = a.width - 2 * MARGEM_X;
   const int y = a.y + BARRA_Y;
-  d.fillRoundRect(x, y, l, BARRA_A, BARRA_A / 2, d.color565(50, 50, 62));
+  d.fillRoundRect(x, y, l, SCROLL_TRACK_HEIGHT, SCROLL_TRACK_HEIGHT / 2, d.color565(50, 50, 62));
   if (s_total_lines <= 0) { return; }
   int ini = (int)((int64_t)l * s_line / s_total_lines);
   int end = (int)((int64_t)l * (s_line + s_cabem) / s_total_lines);
   if (end > l) { end = l; }
-  if (end - ini < BARRA_A) { ini = (end - BARRA_A > 0) ? end - BARRA_A : 0; end = ini + BARRA_A; }
-  d.fillRoundRect(x + ini, y, end - ini, BARRA_A, BARRA_A / 2, TFT_SKYBLUE);
+  if (end - ini < SCROLL_TRACK_HEIGHT) { ini = (end - SCROLL_TRACK_HEIGHT > 0) ? end - SCROLL_TRACK_HEIGHT : 0; end = ini + SCROLL_TRACK_HEIGHT; }
+  d.fillRoundRect(x + ini, y, end - ini, SCROLL_TRACK_HEIGHT, SCROLL_TRACK_HEIGHT / 2, TFT_SKYBLUE);
 }
 
 static void draw(lgfx::LovyanGFX& d, const area_t& a)
@@ -1140,7 +1140,7 @@ static void draw(lgfx::LovyanGFX& d, const area_t& a)
                  active ? ((i == 0 || i == 3) ? TFT_DARKCYAN : TFT_SKYBLUE) : d.color565(60, 60, 72),
                  active ? TFT_BLACK : TFT_DARKGREY);
     }
-    draw_barra(d, a);
+    draw_scroll_position(d, a);
     // Descricao: que lines estao in screen, of quantas.
     milhar(t1, sizeof(t1), s_line + 1);
     int ult = s_line + s_cabem;
@@ -1195,12 +1195,12 @@ static void ir_para(int nova, bool lembrar)
   system_request_redraw_complete();
 }
 
-static void pagina_seguinte(void)
+static void next_page(void)
 {
   if (s_line + s_cabem < s_total_lines) { ir_para(s_line + s_cabem, true); }
 }
 
-static void pagina_anterior(void)
+static void previous_page(void)
 {
   if (s_line <= 0) { return; }
   int iteration;
@@ -1225,8 +1225,8 @@ static void on_touch_level(int x, int y, bool pressed)
       else if (s_arr_y0 >= 0 && !s_arr_valeu) {
         const int dy = y - s_arr_y0;
         // Um arraste vira UMA pagina; a soltura dele nao vira click.
-        if (dy <= -ARRASTE_PAGINA) { s_arr_valeu = true; system_consume_touch(); pagina_seguinte(); }
-        else if (dy >= ARRASTE_PAGINA) { s_arr_valeu = true; system_consume_touch(); pagina_anterior(); }
+        if (dy <= -ARRASTE_PAGINA) { s_arr_valeu = true; system_consume_touch(); next_page(); }
+        else if (dy >= ARRASTE_PAGINA) { s_arr_valeu = true; system_consume_touch(); previous_page(); }
       }
     } else {
       s_arr_y0 = -1;
@@ -1273,8 +1273,8 @@ static void on_touch(int x, int y)
         if (x < nav_x(a.width, i) || x >= nav_x(a.width, i) + nav_l(a.width)) { continue; }
         switch (i) {
           case 0: ir_para(0, false); break;
-          case 1: pagina_anterior(); break;
-          case 2: pagina_seguinte(); break;
+          case 1: previous_page(); break;
+          case 2: next_page(); break;
           // FIM: a ultima screen - aproximada pelo tanto que cabe now.
           default: ir_para(s_total_lines - (s_cabem > 1 ? s_cabem : 1), false); break;
         }
@@ -1321,10 +1321,10 @@ static void on_touch(int x, int y)
     s_n_voltas = 0;
     s_arr_y0 = -1;
     s_arr_valeu = false;
-    s_e_imagem = tem_sufixo(s_arquivo, ".bmp");
+    s_e_imagem = has_suffix(s_arquivo, ".bmp");
     if (s_e_imagem) {
       char caminho[192];
-      caminho_arquivo(caminho, sizeof(caminho));
+      file_path(caminho, sizeof(caminho));
       open_cabecalho_imagem(caminho);
       s_total_lines = 0;
       ESP_LOGI(TAG, "abrindo imagem %s/%s (%ux%u, ok=%d)", s_pasta, s_arquivo,
@@ -1384,14 +1384,14 @@ extern const app_t APP_FILES = {
   .profile = { },
   .uses_sd = true,
   .requires_sd = true,         // sem cartao nao ha o que fazer (ver app.h)
-  .piso_sleep_mhz = 0,
+  .sleep_clock_floor_mhz = 0,
   .on_open  = on_open,
   .on_close = on_close,
   .draw  = draw,
   .on_touch  = on_touch,
   .on_touch_level = on_touch_level,
-  .periodo_ms = 0,
+  .redraw_period_ms = 0,
   .notices = AVISO_TRABALHO,
-  .on_aviso = on_aviso,
+  .on_notice = on_notice,
   .icon = icon_arquivos,
 };

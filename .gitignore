@@ -1,4 +1,4 @@
-# Saidas de build (ESP-IDF)
+# Build outputs (ESP-IDF)
 build/
 build_v3/
 build_m5burner*/
@@ -14,32 +14,32 @@ c6/sdkconfig.old
 cardputer_teste/sdkconfig
 cardputer_teste/sdkconfig.old
 
-# O lock do C6 aponta o esp_hosted para a copia local (override_path), com
-# caminho absoluto da maquina: e regenerado no primeiro build.
+# The C6 lock file points esp_hosted to the local copy (override_path), using
+# an absolute path specific to the machine: it is regenerated on the first build.
 c6/dependencies.lock
 
-# Ambiente de cada maquina (ver environment.sh) e configuracao de editor
+# Machine-specific environment (see environment.sh) and editor configuration
 environment.local.sh
 .vscode/
 .idea/
 
-# Cache das imagens baixadas por tools/generate_emoji.py
+# Cache of images downloaded by tools/generate_emoji.py
 .emoji_cache/
 
-# Firmware de fabrica do C6 (da M5Stack - nao e redistribuivel)
+# Factory firmware of the C6 (from M5Stack - not redistributable)
 c6/backup_fabrica_*.bin
 
-# Dados medidos no aparelho
+# Data measured on the device
 energia.csv
 *.csv.bak
 
-# Sistema
+# System
 .DS_Store
 __pycache__/
 
-# Termos pessoais procurados pelo tools/publicar.sh antes de publicar
+# Personal terms searched by tools/publicar.sh before publishing
 tools/privado.local.txt
 .m5tabos-publico
 
-# Firmware gerado para o M5Burner (tools/m5burner.sh)
+# Firmware generated for the M5Burner (tools/m5burner.sh)
 M5tabOS-*.bin

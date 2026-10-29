@@ -23,17 +23,17 @@
 #include <stdbool.h>
 #include "tab5_c6.h"
 
-#define FAREJO_MAX 128   // Stored MACs; when full, the least recently heard is evicted
+#define FAREJO_MAX 128   // Stored MACs; when full, the least recently heard is avoided
 
 typedef struct {
   uint8_t  mac[6];
-  int8_t   rssi_ult;      // of ultimo lote
-  int8_t   rssi_max;      // of ultimo lote
-  int8_t   rssi_med;      // of ultimo lote
-  uint8_t  tipos;         // C6_FT_*, acumulado since que apareceu
+  int8_t   rssi_ult;      // of last batch
+  int8_t   rssi_max;      // of last batch
+  int8_t   rssi_med;      // of last batch
+  uint8_t  tipos;         // C6_FT_*, accumulated since it appeared
   uint8_t  channel;
-  uint32_t frames;        // acumulado
-  uint32_t seen_ms;       // tab5_now_ms() of ultimo lote em que apareceu
+  uint32_t frames;        // accumulated
+  uint32_t seen_ms;       // tab5_now_ms() of last batch it appeared in
 } farejo_item_t;
 
 // Enable or replace the configuration (c6_farejo_cfg_t in tab5_c6.h; cfg->liga

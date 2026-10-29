@@ -2,7 +2,7 @@
 # Builds and flashes the C6 firmware through the serial programmer (e.g. an
 # M5Stack ESP32 Downloader), with the Tab5 POWERED OFF - the programmer
 # powers the C6.
-# Usage:  c6/flash.sh
+# Usage: c6/flash.sh
 cd "$(dirname "$0")" || exit 1
 source ../environment.sh
 

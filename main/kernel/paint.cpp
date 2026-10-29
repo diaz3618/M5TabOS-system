@@ -5,9 +5,9 @@
 
 void paint_start(paint_t* p)
 {
-  // A order importa: consultamos sistema_area_foi_limpa() SEMPRE, mesmo que ja
-  // saibamos que a pass e complete, porque ela e valida apenas durante esta
-  // chamada of draw() - nao of para adiar a leitura.
+  // The order matters: we consultsistema_area_foi_limpa() ALWAYS, even if it is already
+  // let us know that the pass is complete, because it is only valid during this
+  // call of draw() - not of to postpone reading.
   const bool limpou = system_area_foi_limpa();
   p->complete = limpou || p->request || !p->ja_desenhou;
   p->request      = false;

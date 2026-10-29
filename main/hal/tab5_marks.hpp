@@ -1,26 +1,26 @@
-// MARCOS DO SISTEMA - "o que aconteceu, e when", para cruzar com o frame
-// atrasado.
+// SYSTEM MILESTONES - "what happened, and when", to intersect with the frame
+// late.
 //
-// O frame atrasado tem uma assinatura fixa: one frame inteiro perdido
-// (~30 ms com periodo of 15), com os DOIS cores ociosos - ou seja, nao e
-// software atrasando a ISR, e o DMA of panel ficando sem data. O que falta
-// e saber o que o HARDWARE estava fazendo naquele instante. Cada suspeito
-// deixa one mark aqui, e o monitor, on ver one atraso, lista os marks que
-// cairam logo antes dele.
+// The delayed frame has a fixed signature: one entire frame lost
+// (~30 ms with period of 15), with BOTH cores idle - that is, it is not
+// software delaying the ISR, and the DMA of panel being undated. What's missing
+// and know what the HARDWARE was doing at that moment. Each suspect
+// leaves one mark here, and the monitor, on seeing one delay, lists the marks that
+// fell just before him.
 //
-// O suspeito numero 1 se registra sozinho: TODA troca of clock of CPU feita
-// pelo gerenciador of energia (locks of PM of UART, I2C, PPA; esp_pm_configure)
-// passa por rtc_clk_cpu_freq_set_config_fast() - e ANTES dela o IDF reajusta
-// o mode of barramento of PSRAM/flash (esp_clk_utils_mspi_speed_mode_sync_*).
-// O link desvia essa chamada para ca (-Wl,--wrap, main/CMakeLists.txt).
+// Suspect number 1 registers alone: ALL CPU clock changes made
+// by the power manager (locks of PM of UART, I2C, PPA; esp_pm_configure)
+// goes through rtc_clk_cpu_freq_set_config_fast() - and BEFORE it the IDF readjusts
+// the mode of bus of PSRAM/flash (esp_clk_utils_mspi_speed_mode_sync_*).
+// Link forwards this call to ca (-Wl,--wrap, main/CMakeLists.txt).
 //
-// Anel em RAM INTERNA (o desvio roda com a cache em qualquer state, dentro of
-// secao critica): 32 marks, text sempre LITERAL (so o ponteiro e guardado).
+// Ring in INTERNAL RAM (the bypass runs with the cache in any state, within
+// critical section): 32 marks, text always LITERAL (only the pointer is saved).
 #pragma once
 
 #include <stdint.h>
 
-// Deixa one mark. 'what' tem que ser literal. Chamavel of tarefa e of ISR.
+// Leaves one mark. 'what' has to be literal. Callable of task and of ISR.
 void tab5_mark(const char* what, int32_t value);
 
 typedef struct {
@@ -29,5 +29,5 @@ typedef struct {
   int32_t     value;
 } tab5_mark_t;
 
-// Os marks entre [from_us, to_us], of mais antigo on mais novo. Devolve quantos.
+// The marks between [from_us, to_us], from oldest to newest. Return how many.
 int tab5_marks_between(int64_t from_us, int64_t to_us, tab5_mark_t* out, int max);

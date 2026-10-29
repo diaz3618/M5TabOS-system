@@ -1,6 +1,6 @@
-// Configuracao of no Meshtastic - ver o aviso grande em tab5_mesh_admin.hpp.
+// Meshtastic configuration - see the big warning in tab5_mesh_admin.hpp.
 #include "tab5_mesh_admin.hpp"
-#include "mesh_pb.hpp"   // o codec of servico, one so para leitura e escrita
+#include "mesh_pb.hpp"   // the codec of service, one only for reading and writing
 
 #include <string.h>
 #include <stdio.h>
@@ -9,21 +9,21 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "app.h"          // sistema_avisar
+#include "app.h"          // system_warn
 #include "tab5_gps.hpp"
 #include "tab5_time.hpp"   // tab5_now_ms
 #include "settings.h"       // SETTINGS_MESH_TRANSPORT_BLUETOOTH
 
 static const char* TAG = "mesh_admin";
 
-// ---------------------------------------------------------------------------
-// Fornecidos pelo servico (tab5_mesh.cpp) - nao fazem parte of API publica.
-// ---------------------------------------------------------------------------
-bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n);   // AdminMessage para o nosso no
-bool tab5_mesh_interno_pode_admin(void);                      // no of outro lado, dump complete
-void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // request a configuracao daqui a pouco
+// -------------------------------------------------------------------------------
+// Provided by the service (tab5_mesh.cpp) - not part of the public API.
+// -------------------------------------------------------------------------------
+bool tab5_mesh_interno_admin(const uint8_t* adm, size_t n);   // AdminMessage to our no
+bool tab5_mesh_interno_pode_admin(void);                      // on the other hand, dump complete
+void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // request the configuration in a moment
 
-// AdminMessage - numeros of field conferidos no admin.pb.h (2.5 a current).
+// AdminMessage - field numbers checked in admin.pb.h (2.5 to current).
 #define ADM_SET_OWNER          32
 #define ADM_SET_CHANNEL        33
 #define ADM_SET_CONFIG         34
@@ -35,66 +35,66 @@ void tab5_mesh_interno_reapresentar_em(uint32_t ms, bool reiniciou);   // reques
 #define ADM_COMMIT_EDIT        65
 #define ADM_REBOOT_SECONDS     97
 
-// Data.payload max_size (mesh.pb.h): o AdminMessage inteiro tem que caber.
+// Data.payload max_size (mesh.pb.h): the entire AdminMessage has to fit.
 #define ADM_MAX 233
 
-// Secoes: Config 1..10 (device, position, power, network, display, lora,
-// bluetooth, security, sessionkey, device_ui) e ModuleConfig 1..17.
+// Sections: Config 1..10 (device, position, power, network, display, lora,
+// bluetooth, security, sessionkey, device_ui) and ModuleConfig 1..17.
 #define CFG_SECOES 11
 #define MOD_SECOES 18
 #define BRUTO_MAX  256
 
 typedef struct { bool tem; uint16_t n; uint8_t b[BRUTO_MAX]; } bruto_t;
 
-// O que cada field editavel e no protobuf. Todos varint.
+// What each editable field is in protobuf. All varint.
 typedef struct { bool modulo; uint8_t secao; uint8_t num; } field_def_t;
 static const field_def_t CAMPOS[MESH_CFG_N] = {
-  /* PAPEL       */ { false, 1,  1 },   // DeviceConfig.role
+  /* PAPER       */ { false, 1,  1 },   // DeviceConfig.role
   /* NODEINFO_S  */ { false, 1,  7 },   // DeviceConfig.node_info_broadcast_secs
   /* POS_S       */ { false, 2,  1 },   // PositionConfig.position_broadcast_secs
-  /* SALTOS      */ { false, 6,  8 },   // LoRaConfig.hop_limit
+  /* HEELS      */ { false, 6,  8 },   // LoRaConfig.hop_limit
   /* TX_DBM      */ { false, 6, 10 },   // LoRaConfig.tx_power (int32)
   /* BT          */ { false, 7,  1 },   // BluetoothConfig.enabled
   /* MQTT        */ { true,  1,  1 },   // ModuleConfig.MQTTConfig.enabled
   /* TELE_S      */ { true,  6,  1 },   // ModuleConfig.TelemetryConfig.device_update_interval
   /* MQTT_PROXY  */ { true,  1,  9 },   // ModuleConfig.MQTTConfig.proxy_to_client_enabled
-  /* POS_INTELIG */ { false, 2,  2 },   // PositionConfig.position_broadcast_smart_enabled
-  /* GPS_MODO    */ { false, 2, 13 },   // PositionConfig.gps_mode
+  /* POS_INTELLIG */ { false, 2,  2 },   // PositionConfig.position_broadcast_smart_enabled
+  /* GPS_MODE    */ { false, 2, 13 },   // PositionConfig.gps_mode
 };
 
-// Secoes que NUNCA sao reenviadas (ver o .hpp): power 3, network 4,
-// security 8, sessionkey 9; modulo serial 2.
+// Sections that are NEVER resent (see the .hpp): power 3, network 4,
+// security 8, sessionkey 9; serial module 2.
 static bool secao_proibida(bool modulo, int secao)
 {
   return modulo ? (secao == 2) : (secao == 3 || secao == 4 || secao == 8 || secao == 9);
 }
 
-// Escrito pela tarefa of servico, lido pela interface: spinlock, porque as
-// secoes criticas sao copias e varreduras of algumas centenas of bytes.
+// Written by the service task, read by the interface: spinlock, because the
+// critical sections are copies and scans of a few hundred bytes.
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 EXT_RAM_BSS_ATTR static bruto_t s_cfg[CFG_SECOES];
 EXT_RAM_BSS_ATTR static bruto_t s_mod[MOD_SECOES];
 EXT_RAM_BSS_ATTR static bruto_t s_user, s_meta, s_myinfo;
-EXT_RAM_BSS_ATTR static bruto_t s_canal0;   // o Channel PRIMARIO inteiro (indice 0)
+EXT_RAM_BSS_ATTR static bruto_t s_canal0;   // the entire PRIMARY Channel (index 0)
 static char     s_aviso[96];
 static uint32_t s_aviso_ms = 0;
 static bool     s_dump_ok = false;
 static bool     s_gravando = false;
 static uint32_t s_gravando_ms = 0;
-static uint32_t s_versao = 0;   // lido sem trava: so "changed?", como as outras versoes of servico
-static char     s_reason[72];   // por que o ultimo mesh_cfg_gravar nao mandou nada (para a screen)
+static uint32_t s_versao = 0;   // read without lock: only "changed?", like other versions of service
+static char     s_reason[72];   // why the last mesh_cfg_gravar didn't send anything (to the screen)
 
-#define GRAVANDO_PRAZO_MS 90000   // o no reinicia em ~5 s; 90 s cobre one boot lento
+#define GRAVANDO_PRAZO_MS 90000   // no restarts in ~5 s; 90s covers one slow boot
 
 
-// ---------------------------------------------------------------------------
-// Ganchos of servico
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// Service hooks
+// -------------------------------------------------------------------------------
 static void guardar(bruto_t* d, const uint8_t* b, size_t n)
 {
   if (n > BRUTO_MAX) {
-    // Maior que o buffer: guardar truncado e reenviar depois perderia campos
-    // no no. Marca como desconhecida - a edicao dela stays bloqueada.
+    // Larger than buffer: saving truncated and resending later would lose fields
+    // at no. Mark as unknown - her edit remains blocked.
     ESP_LOGD(TAG, "secao de %u bytes nao cabe - edicao dela desligada", (unsigned)n);
     taskENTER_CRITICAL(&s_mux); d->tem = false; d->n = 0; taskEXIT_CRITICAL(&s_mux);
     return;
@@ -139,17 +139,17 @@ void mesh_admin_end_dump(void)
   system_notify(AVISO_MESH_NOS);
 }
 
-// INSISTE enquanto o no nao iteration. O first request of configuracao exit 15 s
-// depois of gravar (tab5_mesh_interno_reapresentar_em); one boot mais lento
-// perde esse request, e sem isto o next so sairia no ritmo of silencio of
-// servico (minutos). De 20 em 20 s ate o dump chegar ou o prazo acabar.
+// INSISTS while no iteration. The first request of configuration exit 15 s
+// after of record (tab5_mesh_interno_represent_em); one boot slower
+// loses this request, and without this the next would only come out at the rate of silence of
+// service (minutes). Every 20 seconds until the dump arrives or the deadline ends.
 void mesh_admin_tique(uint32_t t)
 {
   static uint32_t ultimo = 0;
   if (!s_gravando) { ultimo = 0; return; }
-  // O PRAZO VALE AQUI TAMBEM, e nao so when a screen pergunta (estado()):
-  // com a pagina closed, one no que nunca iteration seria request of 20 em 20 s
-  // para sempre.
+  // THE DEADLINE APPLIES HERE TOO, and not just when the screen asks (state()):
+  // with the page closed, one in which never iteration would be request of 20 in 20 s
+  // forever.
   if (t - s_gravando_ms > GRAVANDO_PRAZO_MS) {
     ESP_LOGW(TAG, "the node did not check in again within %d s after saving", GRAVANDO_PRAZO_MS / 1000);
     s_gravando = false;
@@ -164,13 +164,13 @@ void mesh_admin_tique(uint32_t t)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Leitura
-// ---------------------------------------------------------------------------
-// PRECISAO DA POSICAO NO CANAL: Channel{ 2: settings{ 7: module_settings{
-// 1: position_precision } } }. Sem module_settings o firmware trata o
-// primario como os canais of antes of field existir: 13 bits (~3 km) - ver
-// PositionModule::allocPositionPacket. Com trava tomada.
+// -------------------------------------------------------------------------------
+// Reading
+// -------------------------------------------------------------------------------
+// CHANNEL POSITION ACCURACY: Channel{ 2: settings{ 7: module_settings{
+// 1: position_precision } } }. Without module_settings the firmware handles the
+// primary as the channels of before of field exist: 13 bits (~3 km) - see
+// PositionModule::allocPositionPacket. With lock socket.
 static int32_t precisao_of(const bruto_t& c)
 {
   if (!c.tem) { return -1; }
@@ -227,8 +227,8 @@ void mesh_cfg_read(mesh_cfg_t* o)
   }
   if (s_myinfo.tem) {
     if (pb_achar_varint(s_myinfo.b, s_myinfo.n, 8, &v))  { o->reinicios = (uint32_t)v; }
-    // nodedb_count (15) so existe no firmware novo: ausente stays -1, e a screen
-    // nao inventa one numero.
+    // nodedb_count (15) only exists in the new firmware: absent stays -1, and the screen
+    // doesn't invent a number.
     if (pb_achar_varint(s_myinfo.b, s_myinfo.n, 15, &v)) { o->nos_no_radio = (int32_t)v; }
   }
   memcpy(o->aviso, s_aviso, sizeof(o->aviso));
@@ -256,10 +256,10 @@ int32_t mesh_admin_precisao_primario(void)
   return p;
 }
 
-// ---------------------------------------------------------------------------
-// Escrita
-// ---------------------------------------------------------------------------
-// AdminMessage{ field: valor varint }
+// -------------------------------------------------------------------------------
+// Writing
+// -------------------------------------------------------------------------------
+// AdminMessage{ field: varint value }
 static bool admin_varint(int field, uint64_t valor)
 {
   uint8_t a[16];
@@ -268,9 +268,9 @@ static bool admin_varint(int field, uint64_t valor)
   return tab5_mesh_interno_admin(a, pb_tamanho(&w));
 }
 
-// AdminMessage{ field: <submensagem ja montada> } em 'out'. 0 = nao cabe
-// no buffer OU passa of que one pacote leva (ADM_MAX) - nos dois casos a
-// secao nao pode ir, e quem chama recusa a gravacao inteira.
+// AdminMessage{ field: <submessage already assembled> } in 'out'. 0 = does not fit
+// in the buffer OR passes what one packet takes (ADM_MAX) - in both cases the
+// section cannot go, and whoever calls refuses the entire recording.
 static size_t admin_msg(uint8_t* out, size_t size, int field, const pb_escritor_t* body)
 {
   pb_escritor_t w = pb_escritor(out, size);
@@ -279,10 +279,10 @@ static size_t admin_msg(uint8_t* out, size_t size, int field, const pb_escritor_
   return n <= ADM_MAX ? n : 0;
 }
 
-// O BRUTO GUARDADO NO DUMP, como start of uma secao a reenviar. Os campos
-// mudados vao DEPOIS dele: o nanopb stays com a ultima ocorrencia of cada
-// field, entao o valor novo vence o antigo sem precisar reescrever a secao.
-// nullptr = pronto para receber os campos; senao, POR QUE nao (para o log).
+// THE GROSS SAVED IN THE DUMP, as a start of a section to be resent. The fields
+// changes go AFTER it: nanopb stays with the last occurrence of each
+// field, then the new value wins over the old one without having to rewrite the section.
+// nullptr = ready to receive the fields; otherwise, WHY not (to the log).
 static const char* comecar_of_bruto(pb_escritor_t* w, const bruto_t& b)
 {
   taskENTER_CRITICAL(&s_mux);
@@ -294,14 +294,14 @@ static const char* comecar_of_bruto(pb_escritor_t* w, const bruto_t& b)
   return nullptr;
 }
 
-// O CANAL PRIMARIO com outra precisao: o Channel guardado field a field, cru,
-// menos settings.module_settings.position_precision, que vai com o valor
-// novo. Aqui nao of para so acrescentar no end, como nas secoes: module_settings
-// e SUBMENSAGEM, e duas ocorrencias dela nao garantem a ultima vencendo field
-// a field - entao a submensagem e remontada (o is_muted dela segue igual).
+// The PRIMARY CHANNEL with different precision: the Channel is saved field by field, raw,
+// minus settings.module_settings.position_precision, which goes with the value
+// new. Here it is not necessary to just add it to the end, as in the sections: module_settings
+// and SUBMESSAGE, and two occurrences of it do not guarantee the last one winning field
+// a field - then the submessage is reassembled (its is_muted remains the same).
 static bool montar_canal(pb_escritor_t* w, int32_t precisao)
 {
-  EXT_RAM_BSS_ATTR static bruto_t c;   // so a interface grava
+  EXT_RAM_BSS_ATTR static bruto_t c;   // only the interface records
   taskENTER_CRITICAL(&s_mux);
   c = s_canal0;
   taskEXIT_CRITICAL(&s_mux);
@@ -320,7 +320,7 @@ static bool montar_canal(pb_escritor_t* w, int32_t precisao)
     pb_escritor_t wm = pb_escritor(mb, sizeof(mb));
     pb_w_num(&wm, 1, (uint64_t)precisao);                       // position_precision
     while (pb_field(&ls, &g)) {
-      if (g.num == 7 && g.type == PB_LEN) {                     // module_settings: o resto dela
+      if (g.num == 7 && g.type == PB_LEN) {                     // module_settings: the rest of it
         pb_leitor_t lm = pb_leitor(g.val, g.n_val);
         pb_field_t h;
         while (pb_field(&lm, &h)) { if (h.num != 1) { pb_w_cru(&wm, h.ini, h.n_total); } }
@@ -346,24 +346,24 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     return false;
   }
 
-  // MONTA TUDO ANTES DE MANDAR QUALQUER COISA. Se uma secao nao puder ir
-  // (desconhecida, proibida, grande demais), nada exit - meia transacao
-  // gravada seria uma configuracao que ninguem pediu.
-  // device, position, lora, bluetooth, mqtt, telemetry + network + o canal
-  // primario + o dono = 9.
+  // ASSEMBLE EVERYTHING BEFORE SENDING ANYTHING. If a section cannot go
+  // (unknown, prohibited, too big), nothing exit - half transaction
+  // recorded would be a configuration that no one asked for.
+  // device, position, lora, bluetooth, mqtt, telemetry + network + channel
+  // primary + owner = 9.
   enum { MAX_MSGS = 10 };
-  EXT_RAM_BSS_ATTR static uint8_t msgs[MAX_MSGS][ADM_MAX + 16];   // so a interface grava
+  EXT_RAM_BSS_ATTR static uint8_t msgs[MAX_MSGS][ADM_MAX + 16];   // only the interface records
   size_t size[MAX_MSGS];
   int n_msgs = 0;
 
   bool feito[MESH_CFG_N] = { };
-  int msg_mqtt = -1;   // indice, em msgs[], of secao MQTT (ver a regra of Bluetooth abaixo)
+  int msg_mqtt = -1;   // index, in msgs[], of MQTT section (see the rule of Bluetooth below)
   for (int i = 0; i < MESH_CFG_N; ++i) {
     if (!m->muda[i] || feito[i]) { continue; }
     const field_def_t& c = CAMPOS[i];
     if (secao_proibida(c.modulo, c.secao)) { ESP_LOGE(TAG, "secao proibida"); return false; }
 
-    // A secao guardada + TODOS os campos alterados dela, no end.
+    // The section is saved + ALL its changed fields, at the end.
     EXT_RAM_BSS_ATTR static uint8_t body[ADM_MAX];
     pb_escritor_t wc = pb_escritor(body, sizeof(body));
     if (const char* porque = comecar_of_bruto(&wc, c.modulo ? s_mod[c.secao] : s_cfg[c.secao])) {
@@ -376,7 +376,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
       feito[k] = true;
     }
 
-    // Config{ secao: body } ou ModuleConfig{ secao: body }, dentro of
+    // Config{ section: body } or ModuleConfig{ section: body }, inside of
     // AdminMessage{ set_config | set_module_config }.
     EXT_RAM_BSS_ATTR static uint8_t sec[ADM_MAX];
     pb_escritor_t ws = pb_escritor(sec, sizeof(sec));
@@ -392,8 +392,8 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     ++n_msgs;
   }
 
-  // WI-FI DO NO: Config.network = secao guardada + wifi_enabled(1) + ssid(3)
-  // + psk(4) no end. A senha nao iteration of no, entao so vai com name E senha.
+  // NO WI-FI: Config.network = saved section + wifi_enabled(1) + ssid(3)
+  // + psk(4) at end. The password is not iteration of no, so it only goes with name AND password.
   if (m->wifi_ssid[0] || m->wifi_psk[0] || m->wifi_muda) {
     const bool tem_rede = m->wifi_ssid[0] || m->wifi_psk[0];
     if (tem_rede && (!m->wifi_ssid[0] || (!m->wifi_psk[0] && !m->wifi_open))) { ESP_LOGW(TAG, "wifi: precisa de nome e senha juntos"); return false; }
@@ -414,7 +414,7 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     ++n_msgs;
   }
 
-  // LOCALIZACAO NA MALHA: set_channel of primario com a precisao nova.
+  // LOCATION IN THE MESH: set_channel of primary with new precision.
   if (m->precisao_muda) {
     EXT_RAM_BSS_ATTR static uint8_t body[ADM_MAX];
     pb_escritor_t wc = pb_escritor(body, sizeof(body));
@@ -429,14 +429,14 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     ++n_msgs;
   }
 
-  // NOMES: o User guardado of nosso no + os nomes no end. Reenviar o User
-  // inteiro preserva o que o set_owner tambem le (is_licensed,
-  // is_unmessagable) - so com os nomes, one no radioamador perderia a licenca.
+  // NAMES: the User stored in our no + the names in the end. Resend the User
+  // integer preserves what set_owner also reads (is_licensed,
+  // is_unmessagable) - with just the names, someone in the ham radio would lose their license.
   if (m->longo[0] || m->curto[0]) {
     EXT_RAM_BSS_ATTR static uint8_t u[ADM_MAX];
     pb_escritor_t wu = pb_escritor(u, sizeof(u));
-    // Sem o User of no nao vai: so com os nomes, o set_owner desligaria o
-    // is_licensed of one no radioamador (ele compara o field, ausente = false).
+    // Without the User of it won't: just with the names, set_owner would turn off the
+    // is_licensed of one on ham radio (it compares the field, missing = false).
     if (const char* porque = comecar_of_bruto(&wu, s_user)) { ESP_LOGW(TAG, "nomes: o User do nosso no %s - nada enviado", porque); return false; }
     if (m->longo[0]) { pb_w_text(&wu, 2, m->longo, MESH_NOME_LONGO - 1); }   // long_name
     if (m->curto[0]) { pb_w_text(&wu, 3, m->curto, MESH_NOME_CURTO - 1); }   // short_name
@@ -448,17 +448,17 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
 
   if (n_msgs == 0) { return false; }
 
-  // A SECAO MQTT PELO BLUETOOTH VAI SOZINHA, SEM TRANSACAO. O firmware
-  // (AdminModule::handleSetModuleConfig, caso mqtt) chama disableBluetooth()
-  // ASSIM QUE recebe a secao MQTT - mesmo com a transacao open. Dentro of
-  // begin/commit, o BLE caia antes of commit: a transacao ficava open (o
-  // firmware nao a expira), nada era gravado e o no nao reiniciava, now sem
-  // Bluetooth ate alguem desliga-lo of tomada.
-  // Fora of transacao o mesmo set_module_config valida, grava no disco e
-  // reinicia o no sozinho (saveChanges com shouldReboot) - o BLE cair logo
-  // em seguida nao atrapalha mais nada. Por isso pelo Bluetooth a secao MQTT
-  // precisa ser a UNICA mudanca: qualquer outra, depois dela, nao chegaria.
-  // Pelo cabo nao ha Bluetooth a cair, e vale a transacao normal.
+  // THE MQTT SECTION BY BLUETOOTH GOES ALONE, WITHOUT TRANSACTION. The firmware
+  // (AdminModule::handleSetModuleConfig, case mqtt) calls disableBluetooth()
+  // SO YOU receive the MQTT section - even with the open transaction. Inside
+  // begin/commit, BLE crashed before of commit: the transaction was open (the
+  // firmware does not expire), nothing was recorded and it did not restart, now without
+  // Bluetooth until someone unplugs it.
+  // Outside of transaction the same set_module_config validates, writes to disk and
+  // restarts no alone (saveChanges with shouldReboot) - BLE crashes soon
+  // then it doesn't interfere with anything. Therefore, via Bluetooth, the MQTT section
+  // needs to be the ONLY change: any other change after it would not arrive.
+  // There is no Bluetooth connection via the cable, and the normal transaction is valid.
   if (msg_mqtt >= 0 && tab5_mesh_via() == SETTINGS_MESH_TRANSPORT_BLUETOOTH) {
     if (n_msgs > 1) {
       ESP_LOGW(TAG, "pelo Bluetooth a secao MQTT grava sozinha - outras mudancas pendentes junto");
@@ -477,13 +477,13 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
     return true;
   }
 
-  // begin -> secoes -> commit. O commit grava e reinicia o no.
+  // begin -> sections -> commit. The commit writes and resets the no.
   bool ok = admin_varint(ADM_BEGIN_EDIT, 1);
   for (int i = 0; ok && i < n_msgs; ++i) { ok = tab5_mesh_interno_admin(msgs[i], size[i]); }
   if (ok) { ok = admin_varint(ADM_COMMIT_EDIT, 1); }
   if (!ok) {
-    // Transacao open sem commit. O firmware NAO a expira: as mudancas ficam
-    // so in RAM of no, sem gravar, ate ele reiniciar.
+    // Transaction open without commit. The firmware DOES NOT expire: the changes remain
+    // so in RAM of no, without recording, until it restarts.
     ESP_LOGE(TAG, "link rejected the transaction midway - the node will not save until rebooted");
     snprintf(s_reason, sizeof(s_reason), "the link dropped during saving - reboot the node");
     return false;
@@ -492,8 +492,8 @@ bool mesh_cfg_gravar(const mesh_cfg_mudanca_t* m)
   s_gravando = true;
   s_gravando_ms = tab5_now_ms();
   ++s_versao;
-  // Pela serial o no reiniciado nao fala sozinho: request a configuracao depois
-  // of boot (o BLE reconecta e pede sozinho; request of novo nao faz mal).
+  // By serial the restarted node does not speak to itself: request the configuration later
+  // of boot (BLE reconnects and requests it alone; request of new does not hurt).
   tab5_mesh_interno_reapresentar_em(15000, true);
   return true;
 }
@@ -503,7 +503,7 @@ bool mesh_cfg_position_fixa_of_gps(void)
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const nmea_position_t g = tab5_gps_position();
   if (!g.valid || g.qualidade == 0) { ESP_LOGW(TAG, "posicao fixa: GPS do Tab5 sem fix"); return false; }
-  // A mesma Position que o servico manda para a malha (mesh_pb_posicao).
+  // The same Position that the service sends to the mesh (mesh_pb_posicao).
   uint8_t pos[32];
   pb_escritor_t wp = pb_escritor(pos, sizeof(pos));
   mesh_pb_position(&wp, (int32_t)(g.lat * 1e7), (int32_t)(g.lon * 1e7), (int32_t)g.altitude_m,
@@ -511,7 +511,7 @@ bool mesh_cfg_position_fixa_of_gps(void)
   uint8_t a[48];
   const size_t n = admin_msg(a, sizeof(a), ADM_SET_FIXED_POSITION, &wp);
   const bool ok = n && tab5_mesh_interno_admin(a, n);
-  // A secao position no dump guardado ainda diz "nao fixa": pede of novo.
+  // The position section in the saved dump still says "not fixed": it asks for new.
   if (ok) { ESP_LOGI(TAG, "posicao fixa enviada (%.5f, %.5f)", g.lat, g.lon); tab5_mesh_interno_reapresentar_em(3000, false); }
   return ok;
 }
@@ -540,7 +540,7 @@ bool mesh_cfg_reiniciar(void)
   if (estado() != MESH_CFG_PRONTO) { return false; }
   const bool ok = admin_varint(ADM_REBOOT_SECONDS, 5);
   if (ok) {
-    s_gravando = true;   // mesma espera: o no some e iteration
+    s_gravando = true;   // same wait: no some and iteration
     s_gravando_ms = tab5_now_ms();
     ++s_versao;
     tab5_mesh_interno_reapresentar_em(15000, true);

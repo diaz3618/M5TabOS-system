@@ -141,7 +141,7 @@ To restore the factory firmware, flash the backup back with
 
 For details on what runs on the C6 (promiscuous sniffing, CSI, FTM, 802.15.4),
 how its Wi-Fi init configuration is controlled by the P4, and the post-flash
-verification checklist, see [RADIO_C6.md](RADIO_C6.md).
+verification checklist, see [RADIO_C6.md](docs/RADIO_C6.md).
 
 ## First-time setup
 
@@ -164,9 +164,9 @@ verification checklist, see [RADIO_C6.md](RADIO_C6.md).
 ## Writing apps
 
 The full API reference (display, touch, tasks, SD card, notifications, power,
-sensors, Wi-Fi, ESP-NOW, Meshtastic, camera, console) is in [API.md](API.md).
+sensors, Wi-Fi, ESP-NOW, Meshtastic, camera, console) is in [API.md](docs/API.md).
 For architectural guidance and hard-won lessons from bugs we hit along the way,
-read [WRITING_APPS.md](WRITING_APPS.md). To create a new app:
+read [WRITING_APPS.md](docs/WRITING_APPS.md). To create a new app:
 
 1. copy `main/app_example/` to `main/app_<name>/`;
 2. rename `APP_EXAMPLE` to `APP_<NAME>` (the symbol name must match the folder);
@@ -175,8 +175,8 @@ read [WRITING_APPS.md](WRITING_APPS.md). To create a new app:
 An app can also register custom serial console commands
 (`app <app> <command>`) by populating `.comandos` in its `app_t` descriptor.
 
-Kernel architecture is documented in [ARCHITECTURE.md](ARCHITECTURE.md), and the
-display compositor in [COMPOSITOR.md](COMPOSITOR.md).
+Kernel architecture is documented in [ARCHITECTURE.md](docs/ARCHITECTURE.md), and the
+display compositor in [COMPOSITOR.md](docs/COMPOSITOR.md).
 
 ## Directory layout
 
@@ -188,6 +188,7 @@ main/app_*/       applications
 c6/               ESP32-C6 coprocessor firmware (ESP-NOW + esp_hosted)
 shared/           message contract shared between P4 and C6
 tools/            generators (fonts, emoji, hardware table) and utilities
+docs/             architecture, API, and protocol documentation
 ```
 
 ## Known limitations
@@ -196,8 +197,8 @@ tools/            generators (fonts, emoji, hardware table) and utilities
   conservative fallback path (sleep only turns off the backlight; panel clock
   stays at factory defaults), but has not been tested on physical hardware yet.
   Feedback is welcome.
-- The on-screen UI is in Portuguese, and the time zone is hardcoded
-  (`TAB5_FUSO_S`, UTC−3) in `services/tab5_time.hpp`.
+- The on-screen UI's timezone is user-configurable (Settings > About; see
+  `settings_utc_offset_hours()` in `services/settings.h`), defaulting to UTC.
 - The battery discharge curve (`hal/tab5_power.hpp`) was calibrated on a single
   unit (1306.8 mAh measured capacity). Other batteries may need recalibration.
 - Bluetooth is BLE-only; the ESP32-C6 does not support Classic Bluetooth.
@@ -207,4 +208,4 @@ tools/            generators (fonts, emoji, hardware table) and utilities
 ## License
 
 [MIT](LICENSE). Third-party components are covered by their respective licenses:
-see [THIRD_PARTY.md](THIRD_PARTY.md).
+see [THIRD_PARTY.md](docs/THIRD_PARTY.md).

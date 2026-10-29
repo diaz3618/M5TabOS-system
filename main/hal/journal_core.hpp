@@ -1,37 +1,37 @@
-// O DIARIO DE GRAVACOES ADIADAS - o nucleo, sem ESP-IDF.
+// THE DIARY OF POSTPONED RECORDINGS - the nucleus, without ESP-IDF.
 //
-// Quem usa e o tab5_journal (o mesmo nucleo sobre a particao "reserva" of
-// flash); este file e puro para rodar no Mac (testes/rodar_reserva.sh),
-// com uma flash of mentira que se comporta como a of verdade.
+// Who uses it is tab5_journal (the same core on the "reserve" partition of
+// flash); this file is pure to run on Mac (testes/rodar_reserva.sh),
+// with a flash of lie that behaves like the flash of truth.
 //
-// -------------------------------------------------------------------------
-// PARA QUE SERVE
-// -------------------------------------------------------------------------
-// Enquanto o cartao esta lent on computador (mode pendrive), o que o
-// sistema grava nele vira REGISTRO aqui, in order em que aconteceu. Quando o
-// cartao iteration, os registros sao aplicados no cartao in mesma order e o
-// diario e apagado. A flash guarda mesmo sem energia: one reinicio no storage of
-// pendrive nao perde nada.
+// ------------------------------------------------------------------------
+// WHAT IS IT FOR
+// ------------------------------------------------------------------------
+// While the card is idling on the computer (pendrive mode), what
+// system records in it becomes RECORD here, in order in which it happened. When the
+// iteration card, the records are applied to the card in the same order and the
+// diary and deleted. The flash saves even without power: one restart in the storage of
+// pendrive doesn't lose anything.
 //
-// -------------------------------------------------------------------------
-// AS REGRAS DA FLASH QUE ISTO RESPEITA
-// -------------------------------------------------------------------------
-// - Gravar so transforma 1 em 0. Area apagada e 0xFF; write of novo por top
-//   of algo ja gravado nao funciona - so APAGAR (setor of 4 KB inteiro) iteration
-//   everything a 0xFF. Por isso o diario so cresce, e e apagado inteiro no end.
-// - A excecao util: a brand "aplicado" of cada registro nasce 0xFF e vira
-//   0x00 depois of o registro ir para o cartao - transformar 1 em 0 pode. E o
-//   que deixa a aplicacao recomecar of onde parou depois of one reinicio, sem
-//   repetir line no cartao.
+// ------------------------------------------------------------------------
+// THE FLASH RULES THIS RESPECTS
+// ------------------------------------------------------------------------
+// - Recording only turns 1 into 0. Erased area is 0xFF; write of new by top
+// of something already recorded does not work - just DELETE (whole sector of 4 KB) iteration
+// everything at 0xFF. That's why the diary only grows, and is completely erased at the end.
+// - The useful exception: the "applied" brand of each record is born 0xFF and becomes
+// 0x00 after the record goes to the card - turning 1 into 0 can. And the
+// which lets the application pick up where it left off after one restart, without
+// repeat line on card.
 //
-// -------------------------------------------------------------------------
-// QUEDA DE ENERGIA NO MEIO DE UMA GRAVACAO
-// -------------------------------------------------------------------------
-// Cada registro leva one CRC of si mesmo. O registro que became pela half
-// failure o CRC e e ignorado; todos os anteriores continuam valendo. Os bytes
-// que ele chegou a write nao podem ser regravados, entao o next registro
-// comeca no next setor que ainda esta apagado ("dirty" no state). A
-// varredura faz o mesmo salto e acha os registros que vieram depois.
+// ------------------------------------------------------------------------
+// POWER OUTAGE IN THE MIDDLE OF A RECORDING
+// ------------------------------------------------------------------------
+// Each record takes one CRC of itself. The record that became by half
+// failure o CRC is ignored; all of the above remain valid. The bytes
+// that it reached write cannot be rewritten, so the next record
+// starts in the next sector that is still erased ("dirty" in the state). A
+// scan makes the same jump and finds the records that came later.
 #pragma once
 
 #include <stdint.h>
@@ -41,62 +41,62 @@
 #define JOURNAL_SECTOR  4096u
 
 typedef enum {
-  JOURNAL_APPEND = 1,   // line(s) no end of file (com header se ele estiver vazio)
-  JOURNAL_REPLACE  = 2,   // o file inteiro passa a ser 'data'
+  JOURNAL_APPEND = 1,   // line(s) at end of file (with header if empty)
+  JOURNAL_REPLACE  = 2,   // the entire file becomes 'data'
 } journal_entry_type_t;
 
-// O storage of gravacao: a particao of flash, ou a of mentira of teste.
+// The storage of recording: the partition of flash, or the partition of test.
 typedef struct {
   bool  (*read)(void* ctx, uint32_t pos, void* buf, uint32_t n);
   bool  (*write)(void* ctx, uint32_t pos, const void* buf, uint32_t n);
-  bool  (*erase)(void* ctx, uint32_t pos, uint32_t n);    // multiplos of JOURNAL_SECTOR
-  void* (*allocate)(size_t n);                               // para read one registro inteiro
+  bool  (*erase)(void* ctx, uint32_t pos, uint32_t n);    // multiples of JOURNAL_SECTOR
+  void* (*allocate)(size_t n);                               // to read one entire record
   void  (*release)(void* p);
   void*    ctx;
-  uint32_t size;                                        // multiplo of JOURNAL_SECTOR
+  uint32_t size;                                        // multiple of JOURNAL_SECTOR
 } journal_storage_t;
 
-// Um registro, como who grava entrega e como who aplica recebe. Os textos
-// NAO terminam em NUL dentro of diario; in aplicacao chegam terminados.
+// A record, such as who records delivers and how who applies receives. The texts
+// DO NOT end in NUL within diary; in application they arrive finished.
 typedef struct {
   uint8_t     type;          // journal_entry_type_t
   uint8_t     flags;         // of owner (tab5_sd: TAB5_SD_SIGILOSO)
-  const char* app;           // a folder of app ("Mesh", "Sistema/logs")
+  const char* app;           // a folder of app ("Mesh", "System/logs")
   const char* file;
-  const void* header;     // ACRESCENTAR: escrito antes se o file estiver vazio
+  const void* header;     // ADD: written before if the file is empty
   uint16_t    header_size;
   const void* data;
   uint32_t    data_size;
-  // SUBSTITUIR: como o file estava when o cartao foi lent. Na
-  // iteration, se ele nao estiver mais assim, foi o computador que mexeu.
+  // REPLACE: how the file was when the card was slow. In
+  // iteration, if it's not like this anymore, it was the computer that messed up.
   bool        base_existia;
-  uint32_t    base_tamanho;
-  uint32_t    base_data;     // data/hora FAT (st_mtime)
+  uint32_t    base_size;
+  uint32_t    base_data;     // FAT datetime (st_mtime)
 } journal_entry_t;
 
 typedef struct {
   journal_storage_t storage;
-  uint32_t end;         // onde o next registro comeca (sempre em area apagada)
-  uint32_t valid_entries;     // registros inteiros no diario
-  uint32_t pending;   // dos valid_entries, os que ainda nao foram para o cartao
-  bool     dirty;        // houve registro pela half (queda of energia)
+  uint32_t end;         // where the next record begins (always in a blank area)
+  uint32_t valid_entries;     // entire journal entries
+  uint32_t pending;   // of the valid_entries, those that have not yet been added to the card
+  bool     dirty;        // there was a record at half (power outage)
   bool     ready;
 } journal_t;
 
-// Varre o storage e deixa o state ready. false = storage ilegivel.
+// Scans the storage and leaves the state ready. false = unreadable storage.
 bool journal_open(journal_t* r, const journal_storage_t* storage);
 
-// Acrescenta one registro. false = diario cheio ou erro of gravacao (o
-// registro nao entrou; os anteriores continuam intactos).
+// Adds a record. false = diary full or recording error (the
+// registration did not enter; the previous ones remain intact).
 bool journal_write(journal_t* r, const journal_entry_t* reg);
 
-// Aplica os pending EM ORDEM. 'fn' grava one registro no target e devolve
-// true when ele ja esta la of forma duravel; so entao o registro e marcado
-// como aplicado. Para no first false (a order importa: nao se pula one).
-// Sem pending no end, o diario e apagado. Devolve quantos foram aplicados
-// nesta chamada, ou -1 se o storage failed.
+// Apply the pending IN ORDER. 'fn' writes one record to the target and returns
+// true when it is already there in a durable way; only then the record is marked
+// as applied. Stop at first false (the order matters: you don't skip one).
+// Without pending at the end, the journal is deleted. Returns how many were applied
+// on this call, or -1 if the storage failed.
 typedef bool (*journal_apply_fn)(const journal_entry_t* reg, void* ctx);
 int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx);
 
-// Bytes ocupados (registros e lixo) e o total of storage.
+// Bytes occupied (registers and garbage) and total of storage.
 static inline uint32_t journal_used(const journal_t* r) { return r->end; }

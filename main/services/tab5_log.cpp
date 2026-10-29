@@ -1,5 +1,5 @@
 #include "tab5_log.hpp"
-#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - buffers grandes in PSRAM
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR - large buffers in PSRAM
 #include "tab5_sd.hpp"
 #include "tab5_time.hpp"   // tab5_day_filename
 
@@ -18,47 +18,47 @@
 
 static const char* TAG = "log";
 
-// 12KB - poucas dezenas of lines of log num sistema com varios servicos
-// falando on mesmo time (GPS, Mesh, camera, interface) cabem tranquilas
-// entre duas descargas of FLUSH_MS. Um unico bloco fixo, criado uma vez no
-// boot e nunca mais realocado - nao fragmenta. Fica in PSRAM: 12KB fixos in
-// SRAM interna saem das pilhas e dos buffers DMA of todo o resto. Pode, porque
-// ninguem escreve aqui com o cache disabled - o hook nao roda em ISR, e o
-// code of escrita in flash loga pela ROM (ESP_EARLY_LOG), nao por este
+// 12KB - a few dozen lines of log on a system with several services
+// speaking on the same team (GPS, Mesh, camera, interface) fits together calmly
+// between two flushes of FLUSH_MS. A single fixed block, created once in the
+// boot and never relocated again - does not fragment. Stays in PSRAM: 12KB fixed in
+// Internal SRAM comes out of the stacks and DMA buffers of everything else. It can, because
+// no one writes here with the cache disabled - the hook does not run in ISR, and the
+// code of writing in flash logs via ROM (ESP_EARLY_LOG), not via this
 // vprintf.
 #define LOG_BUF_TAM    (12 * 1024)
 
-// De quanto em quanto time o log (in tarefa "cartao") esvazia o buffer no cartao,
-// para lines INFORMATIVAS. Aviso e erro nao esperam (ver log_na_carona). Foi 15s
-// e as lines "sd: montado/desmontado" of cada descarga
-// realimentavam o buffer, montando o cartao a cada 15s para sempre.
-#define LOG_FLUSH_MS   60000   // era 15000 - ver "EM LOTE" em log_na_carona
+// How often does the log (in task "card") empty the buffer on the card,
+// for INFORMATIONAL lines. Warning and error do not wait (see log_na_carona). It was 15s
+// and the lines "sd: mounted/unmounted" of each download
+// fed back into the buffer, mounting the card every 15s forever.
+#define LOG_FLUSH_MS   60000   // was 15000 - see "EM BATCH" in log_na_carona
 
-// Cada chamada on vprintf of ESP_LOG e UMA line inteira ja formatada (tag,
-// level, message, contador of milissegundos, quebra of line - o proprio
-// esp_log_writev monta essa string e so entao chama esta funcao). 200 bytes
-// cobre qualquer line normal deste sistema; uma line mais longa e cortada,
-// nao estoura - ver o vsnprintf abaixo.
-#define LOG_LINHA_TAM  200
+// Each call on vprintf of ESP_LOG is ONE entire line already formatted (tag,
+// level, message, counter of milliseconds, break of line - itself
+// esp_log_writev assembles this string and only then calls this function). 200 bytes
+// covers any normal line of this system; a longer and cut line,
+// does not pop - see vsnprintf below.
+#define LOG_LINE_SIZE  200
 
 static StreamBufferHandle_t s_buf      = nullptr;
-static volatile bool        s_urgente  = false;   // chegou aviso/erro: descarregar ja
+static volatile bool        s_urgente  = false;   // warning/error arrived: download now
 static vprintf_like_t       s_original = nullptr;
 
-// UM ESCRITOR POR VEZ. O stream buffer of FreeRTOS e feito para
-// UM escritor e UM leitor - a documentacao manda serializar when ha mais of
-// one. E aqui ha muitos: toda tarefa que chama ESP_LOG escreve (interface,
-// WiFi, ESP-NOW, Mesh, a recepcao of esp_hosted...), e o esp_log of IDF (versao
-// 1, a nossa) NAO trava nada antes of chamar esta funcao. Duas lines on mesmo
-// time podiam embaralhar o indice of buffer. Espera curta, nunca infinita: se
-// a trava nao vier em 5 ms, a line exit no console e so nao vai on cartao
-// (conta como perdida) - log nunca pode lock quem loga.
-static SemaphoreHandle_t    s_escrita  = nullptr;
+// ONE WRITER AT A TIME. The stream buffer of FreeRTOS is made to
+// ONE writer and ONE reader - the documentation requires serialization when there is more than
+// one. And here there are many: every task that calls ESP_LOG writes (interface,
+// WiFi, ESP-NOW, Mesh, the reception of esp_hosted...), and the esp_log of IDF (version
+// 1, ours) DOES NOT lock anything before calling this function. Two lines on the same
+// time could shuffle the index of buffer. Short wait, never infinite: if
+// the lock doesn't come within 5 ms, the line exit on the console and just doesn't go on the card
+// (counts as lost) - log can never lock anyone who logs in.
+static SemaphoreHandle_t    s_write_lock = nullptr;
 
-static uint32_t s_lines_pendentes = 0;   // enfileiradas, ainda nao gravadas
-static uint32_t s_lines_gravadas  = 0;   // confirmadas no cartao
-static uint32_t s_lines_perdidas  = 0;   // buffer cheio, line descartada
-static char     s_arquivo_current[24] = "";
+static uint32_t s_lines_pendentes = 0;   // queued, not yet recorded
+static uint32_t s_lines_gravadas  = 0;   // confirmed on the card
+static uint32_t s_lines_perdidas  = 0;   // buffer full, line discarded
+static char     s_current_filename[24] = "";
 static bool     s_boot_marcado     = false;
 
 void tab5_log_estado(size_t* bytes_pendentes, uint32_t* lines_gravadas,
@@ -67,31 +67,31 @@ void tab5_log_estado(size_t* bytes_pendentes, uint32_t* lines_gravadas,
   if (bytes_pendentes) { *bytes_pendentes = s_buf ? xStreamBufferBytesAvailable(s_buf) : 0; }
   if (lines_gravadas) { *lines_gravadas = s_lines_gravadas; }
   if (lines_perdidas) { *lines_perdidas = s_lines_perdidas; }
-  if (arquivo)          { snprintf(arquivo, arquivo_size, "%s", s_arquivo_current); }
+  if (arquivo)          { snprintf(arquivo, arquivo_size, "%s", s_current_filename); }
 }
 
-// A FUNCAO QUE SUBSTITUI O vprintf DO ESP_LOG - ver o aviso grande no .hpp
-// sobre por que ela so FORMATA E ENFILEIRA, nunca escreve no cartao aqui.
+// THE FUNCTION THAT REPLACES ESP_LOG'S vprintf - see the big warning in the .hpp
+// about why it only FORMATS AND LINES, never writes on the card here.
 //
-// va_copy ANTES of touch em 'args': a lista original e consumida pela
-// PRIMEIRA formatacao que a usar (aqui, a chamada on vprintf original) -
-// reusa-la depois disso e comportamento indefinido em varias libc. Por
-// isso tiramos uma copia logo of cara e formatamos NOSSA copia a partir
-// dela, nunca of 'args' original depois que ele ja foi usado.
-// A MATRIZ DE COR RECUSADA PELO ISP - ruido conhecido, filtrado.
+// va_copy BEFORE touch in 'args': the original list is consumed by
+// FIRST formatting to use (here, the original vprintf call) -
+// reuse it after that and undefined behavior in several libc. By
+// so we make a copy right away and format OUR copy from
+// of it, never of original 'args' after it has already been used.
+// COLOR MATRIX REFUSED BY ISP - known noise, filtered.
 //
-// No P4 v1.0 cada coeficiente of CCM cabe em 13 bits com 2 of parte inteira
-// (isp_ll.h: ISP_LL_CCM_MATRIX_INT_BITS) - maximum +-4, fixo no silicio. Numa
-// virada brusca of luz o balanco of branco pede mais que isso, o driver
-// recusa e o ISP MANTEM a ultima matriz boa - que e justamente o que deixa a
-// color certa (limitar a matriz para caber deixava a imagem amarelada, testado
-// e desfeito). O efeito e so no log: cinco lines vermelhas por recusa.
+// In P4 v1.0 each coefficient of CCM fits in 13 bits with 2 of integer part
+// (isp_ll.h: ISP_LL_CCM_MATRIX_INT_BITS) - maximum +-4, fixed on silicon. In a
+// sudden turn of light, white balance demands more than that, the driver
+// refuses and the ISP KEEP the last good matrix - which is precisely what leaves the
+// right color (limiting the matrix to fit left the image yellowish, tested
+// and undone). The effect is only in the log: five red lines for refusal.
 //
-// A cadeia e reconhecida pelo TEXTO, nao pela etiqueta: 'isp_video',
-// 'esp_video' e 'ISP' tambem carregam erros of verdade, que continuam
-// aparecendo. So some o que vem logo depois (10 ms) of one "out of range" of
-// CCM. Cada recusa vira one contador; a tarefa of log imprime one summary, no
-// maximum uma line por minuto.
+// The string is recognized by the TEXT, not by the tag: 'isp_video',
+// 'esp_video' and 'ISP' also carry true errors, which continue
+// appearing. Just add what comes right after (10 ms) of one "out of range" of
+// CCM. Each refusal becomes a counter; the of log task prints one summary, in
+// maximum one line per minute.
 static volatile int64_t  s_ccm_cadeia_ate = 0;
 static volatile uint32_t s_ccm_recusas    = 0;
 
@@ -111,34 +111,34 @@ static bool ruido_of_ccm(const char* line)
 
 static int log_vprintf(const char* fmt, va_list args)
 {
-  char line[LOG_LINHA_TAM];
+  char line[LOG_LINE_SIZE];
   va_list copia;
   va_copy(copia, args);
   int n = vsnprintf(line, sizeof(line), fmt, copia);
   va_end(copia);
 
-  // Ruido conhecido of CCM: nem in serial, nem no cartao (ver acima).
+  // Known noise of CCM: neither in serial nor on card (see above).
   if (n > 0 && ruido_of_ccm(line)) { return n; }
 
-  // ORIGINAL com os argumentos ORIGINAIS - o console/serial continua
-  // identico on que sempre foi, ninguem que ja depende dele (o proprio
-  // flash.sh, quem acompanha on vivo) percebe qualquer diferenca.
+  // ORIGINAL with ORIGINAL arguments - console/serial continues
+  // identical to who he always was, no one who already depends on him (himself
+  // flash.sh, whoever follows it live) will notice any difference.
   const int ret = s_original ? s_original(fmt, args) : vprintf(fmt, args);
 
-  if (n > 0 && s_buf && s_escrita && !xPortInIsrContext()) {
-    if ((size_t)n >= sizeof(line)) { n = sizeof(line) - 1; }   // truncada, nao estourada
-    // AVISO E ERRO NAO ESPERAM O LOTE: a line comeca com "W (" / "E (" -
-    // depois of code of color, se houver ("\033[0;33mW (").
+  if (n > 0 && s_buf && s_write_lock && !xPortInIsrContext()) {
+    if ((size_t)n >= sizeof(line)) { n = sizeof(line) - 1; }   // truncated, not burst
+    // WARNING AND ERROR DO NOT WAIT FOR THE BATCH: the line starts with "W (" / "E (" -
+    // after the code of color, if any ("\033[0;33mW (").
     const char* c = line;
     if (c[0] == '\033') { while (*c && *c != 'm') { ++c; } if (*c) { ++c; } }
     if ((c[0] == 'W' || c[0] == 'E') && c[1] == ' ' && c[2] == '(') { s_urgente = true; }
-    // Com o escalonador parado nao se pode wait (assert of FreeRTOS).
-    const TickType_t espera = (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? pdMS_TO_TICKS(5) : 0;
-    if (xSemaphoreTake(s_escrita, espera) == pdTRUE) {
-      const size_t enviado = xStreamBufferSend(s_buf, line, (size_t)n, 0);   // 0 = nunca espera
+    // With the scheduler stopped, you cannot wait (assert of FreeRTOS).
+    const TickType_t wait_ticks = (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? pdMS_TO_TICKS(5) : 0;
+    if (xSemaphoreTake(s_write_lock, wait_ticks) == pdTRUE) {
+      const size_t enviado = xStreamBufferSend(s_buf, line, (size_t)n, 0);   // 0 = never wait
       if (enviado < (size_t)n) { s_lines_perdidas++; }
       else                     { s_lines_pendentes++; }
-      xSemaphoreGive(s_escrita);
+      xSemaphoreGive(s_write_lock);
     } else {
       s_lines_perdidas++;
     }
@@ -146,40 +146,40 @@ static int log_vprintf(const char* fmt, va_list args)
   return ret;
 }
 
-// Dia LOCAL no name, como energia e monitor (tab5_day_filename); as lines
-// e a marca of boot continuam em UTC.
-static void name_arquivo_hoje(char* out, size_t size)
+// LOCAL day in name, such as power and monitor (tab5_day_filename); the lines
+// and the of boot tag remain in UTC.
+static void today_log_filename(char* out, size_t size)
 {
   tab5_day_filename((uint32_t)time(nullptr), "log_", ".txt", out, size);
 }
 
-// Esvazia o que estiver no buffer para o arquivo of HOJE. Chamada so pela
-// tarefa "cartao" (log_na_carona), nunca por quem esta logando.
+// Empties whatever is in the buffer to the TODAY file. Call only by
+// "card" task (log_na_carona), never by anyone is logging in.
 //
-// Pela porta tab5_sd_append (hal/tab5_sd.hpp): com o cartao emprestado
-// on computador, o lote vai para o diario in flash e chega on arquivo in
-// iteration - o log of uma sessao of pendrive nao se perde.
+// Through port tab5_sd_append (hal/tab5_sd.hpp): with the borrowed card
+// on the computer, the batch goes to the diary in flash and arrives at the file in
+// iteration - the log of a pendrive session is not lost.
 static void descarregar(void)
 {
   if (!s_buf || xStreamBufferIsEmpty(s_buf)) { return; }
 
-  // HA PARA ONDE GRAVAR? O cartao (segurado ate o end of lote, para nao
-  // sumir no middle) ou, com ele emprestado, o diario. Sem nenhum dos dois NAO
-  // DESCARTA: as lines continuam no buffer, esperando o cartao voltar (ou
-  // cedendo lugar as mais novas se ele enche antes, a mesma politica que
-  // xStreamBufferSend ja aplica).
+  // IS THERE ANYWHERE TO RECORD? The card (insured until the end of batch, so as not to
+  // disappear in the middle) or, with it borrowed, the diary. Without either NO
+  // DISCARD: the lines remain in the buffer, waiting for the card to return (or
+  // giving way to the younger ones if he fills first, the same policy that
+  // xStreamBufferSend already applies).
   const bool montou = tab5_sd_mount();
   if (!montou && !tab5_sd_lent()) { return; }
 
   char name[24];
-  name_arquivo_hoje(name, sizeof(name));
+  today_log_filename(name, sizeof(name));
 
-  // MARCA DE BOOT, uma vez por sessao - o mesmo raciocinio of "BOOT" em
-  // energy_log.cpp/energia.csv: como varios boots of mesmo dia caem no MESMO
-  // arquivo (ver o aviso grande no .hpp sobre "por dia, nao por boot"), sem
-  // isto ficaria impossivel saber onde one reinicio separa duas sessoes. O
-  // "(N)" of cada line of ESP_LOG e so milissegundos since ESTE boot - a
-  // marca amarra esse clock local a uma data/hora of verdade.
+  // BOOT MARK, once per session - same reasoning as "BOOT" in
+  // energy_log.cpp/energia.csv: how several boots of the same day fail on the SAME
+  // file (see the big warning in the .hpp about "per day, not per boot"), without
+  // this would make it impossible to know where a restart separates two sessions. O
+  // "(N)" of each line of ESP_LOG and only milliseconds since THIS boot - a
+  // tag ties this local clock to a true date/time.
   if (!s_boot_marcado) {
     const time_t now = time(nullptr);
     struct tm t = { };
@@ -191,8 +191,8 @@ static void descarregar(void)
     if (tab5_sd_append(TAB5_SD_LOGS, name, marca, (size_t)n)) { s_boot_marcado = true; }
   }
 
-  // Drena em blocos, sem alocar por line, num bloco estatico of tamanho of
-  // buffer inteiro (12KB, in PSRAM - nunca in stack of quem descarrega).
+  // Drains in blocks, without allocating by line, in a static block of size
+  // entire buffer (12KB, in PSRAM - never in stack of anyone downloading).
   EXT_RAM_BSS_ATTR static uint8_t bloco[LOG_BUF_TAM];
   size_t total = 0;
   size_t n;
@@ -203,20 +203,20 @@ static void descarregar(void)
   if (montou) { tab5_sd_unmount(); }
 
   if (total > 0) {
-    snprintf(s_arquivo_current, sizeof(s_arquivo_current), "%s", name);
+    snprintf(s_current_filename, sizeof(s_current_filename), "%s", name);
     s_lines_gravadas  += s_lines_pendentes;
     s_lines_pendentes  = 0;
   }
 }
 
-// EM LOTE, NA CARONA DA TAREFA "cartao" (tab5_sd_carona) - o log nao tem
-// tarefa propria: a "cartao" ja acorda a cada 1 s e ja e quem grava no cartao.
-//   - informativo espera o lote of LOG_FLUSH_MS (60s);
-//   - AVISO ou ERRO vai on cartao em ate 1s (e o que se quer read depois of one
-//     travamento);
-//   - buffer passando of 3/4 descarrega in hora, para nao perder line.
-// Somado a desmontagem adiada of tab5_sd, gravacoes proximas (log, monitor,
-// energia) dividem uma montagem so.
+// IN BATCH, IN THE CARRONA OF THE TASK "card" (tab5_sd_carona) - the log does not have
+// own task: the "card" already wakes up every 1 s and it's already who writes to the card.
+// - informative wait for batch of LOG_FLUSH_MS (60s);
+// - WARNING or ERROR goes on the card within 1s (and what you want to read after one
+// crash);
+// - buffer passing 3/4 unloads instantly, so as not to lose line.
+// Added to the postponed unmounting of tab5_sd, upcoming recordings (log, monitor,
+// energy) share a single assembly.
 static void log_in_carona(void)
 {
   static int64_t  since_us      = esp_timer_get_time();
@@ -224,8 +224,8 @@ static void log_in_carona(void)
   static uint32_t ccm_contadas  = 0;
   const int64_t now = esp_timer_get_time();
 
-  // O summary das recusas of CCM filtradas (ver ruido_da_ccm): uma line, no
-  // maximum por minuto, so when houve recusa nova.
+  // The summary of filtered CCM refusals (see ccm_noise): one line, in
+  // maximum per minute, only when there is a new refusal.
   const uint32_t recusas = s_ccm_recusas;
   if (recusas != ccm_contadas && now - ccm_summary_us >= 60000000LL) {
     ESP_LOGI(TAG, "camera: %lu color adjustment(s) outside the chip limit were ignored (expected, not an error)",
@@ -245,29 +245,29 @@ void tab5_log_descarregar_logo(void) { s_urgente = true; }
 
 void tab5_log_start(void)
 {
-  // 1 byte of "trigger" - nao usamos xStreamBufferReceive bloqueante
+  // 1 byte of "trigger" - we do not use blocking xStreamBufferReceive
   s_buf = xStreamBufferCreateWithCaps(LOG_BUF_TAM, 1, MALLOC_CAP_SPIRAM);
-  s_escrita = xSemaphoreCreateMutex();              // ANTES of hook: ele so escreve com a trava
-  if (!s_buf || !s_escrita) {
+  s_write_lock = xSemaphoreCreateMutex();              // BEFORE hook: it only writes with the lock
+  if (!s_buf || !s_write_lock) {
     ESP_LOGE(TAG, "no RAM for the log buffer - card capture disabled");
     return;
   }
 
-  // Guarda a funcao ATUAL antes of switch - normalmente a vprintf() default
-  // of IDF, mas nao presumimos: o que estiver instalado continua recebendo
-  // TODO log, so que atraves of nossa funcao now.
+  // Store the CURRENT function before of switch - normally the default vprintf()
+  // of IDF, but we do not assume: whatever is installed continues to receive
+  // ALL log, only through our now function.
   s_original = esp_log_set_vprintf(log_vprintf);
 
-  // Sem tarefa propria: descarregar() roda in tarefa "cartao" (ver
-  // log_na_carona). O bloco of dreno of 12KB e 'static' in PSRAM, fora of stack.
+  // Without its own task: unload() runs in the "card" task (see
+  // log_na_carona). The block of drain of 12KB is 'static' in PSRAM, off of stack.
   tab5_sd_piggyback(log_in_carona);
 
   ESP_LOGI(TAG, "capture running: %dKB buffer, flush every %lus, /sdcard/apps/Sistema/logs/log_AAAA-MM-DD.txt",
            LOG_BUF_TAM / 1024, (unsigned long)(LOG_FLUSH_MS / 1000));
 
-  // POR QUE O APARELHO REINICIOU. Um travamento perde as lines que ainda
-  // estavam no buffer (ate 60 s of log informativo) - sem esta line, one
-  // reinicio no middle of algo parece so "o log acabou ali".
+  // WHY THE DEVICE RESTART. A crash loses the lines that are still
+  // were in the buffer (up to 60 s of informative log) - without this line, one
+  // restart in the middle of something just seems like "the log ended there".
   const esp_reset_reason_t r = esp_reset_reason();
   const char* reason = "outro";
   switch (r) {

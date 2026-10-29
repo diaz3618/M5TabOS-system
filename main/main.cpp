@@ -1,8 +1,8 @@
-// M5tabOS - esqueleto of sistema com aplicativos para o M5Stack Tab5.
+// M5tabOS - skeleton system with applications for the M5Stack Tab5.
 //
-// app_main = SETUP. Inicializa, aplica o profile of energia of boot, cria a
-// tarefa of interface e retorna. Quando ele retorna, o FreeRTOS destroi a
-// tarefa "main" e devolve a stack dela on heap - a interface continua running.
+// app_main = SETUP. Boots, applies the boot energy profile, creates the
+// task of interface and returns. When it returns, FreeRTOS destroys the
+// "main" task and returns its stack to the heap - the interface continues running.
 
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
@@ -15,89 +15,89 @@
 #include "settings.h"
 #include "tab5_emoji.hpp"
 #include "tab5_ui.hpp"
-#include "tab5_monitor.hpp"   // tab5_mem_marco - o extrato of RAM interna
+#include "tab5_monitor.hpp"   // tab5_mem_marco - extract of internal RAM
 #include "tab5_flashdrive.hpp"
 
 static const char *TAG = "main";
 
 
-// extern "C" e OBRIGATORIO: o startup of IDF e C e procura o simbolo "app_main"
-// cru. Sem isso o C++ decora para _Z8app_mainv e o link falha.
+// extern "C" is REQUIRED: the startup of IDF and C and looks for the "app_main" symbol
+// crude. Without this, C++ decorates to _Z8app_mainv and the link fails.
 extern "C" void app_main(void)
 {
-    // O profile of boot e a UNIAO of que os apps precisam que EXISTA (IMU, mic,
-    // alto-falante, RTC) - decisoes que so podem ser tomadas antes of begin.
-    // Tudo que e chaveavel depois stays disabled aqui e e enabled por app.
-    // Os ajustes precisam vir ANTES of begin: o brilho inicial of screen ja exit
-    // of que o user escolheu, sem piscar no valor default e corrigir depois.
-    // Extrato of RAM interna (tab5_monitor.hpp): cada marco anota quanto a
-    // etapa anterior consumiu. O first e a line of base of heap.
+    // The of boot profile and the UNION of that apps need to EXIST (IMU, mic,
+    // speaker, RTC) - decisions that can only be made before the beginning.
+    // Everything that is keyable then stays disabled here and is enabled per app.
+    // Adjustments need to come BEFORE begin: the initial brightness of screen already exit
+    // of that the user chose, without flashing the default value and correcting it later.
+    // Extract of internal RAM (tab5_monitor.hpp): each landmark notes as to
+    // previous step consumed. The first is the line of base of heap.
     tab5_memory_marco("boot: app_main");
     settings_init();
     tab5_memory_marco("ajustes (NVS)");
 
     tab5_profile_t boot = system_profile_of_boot();
 
-    // As preferences of user valem JA NO BOOT, nao a partir of first app
-    // open. Antes so o brilho era imposto aqui, e o 5V of Grove nascia
-    // disabled mesmo com a preferencia gravada como enabled.
+    // The preferences of user are valid NOW ON BOOT, not from the first app
+    // open. Before, only brightness was imposed here, and the 5V of Grove was born
+    // disabled even with the preference set to enabled.
     system_apply_preferences(boot);
 
     auto cfg = M5.config();
-    tab5_power_config(cfg, boot);     // fase 1: antes of begin
-    M5.begin(cfg);                    // trilhos, panel MIPI-DSI, touch
-    tab5_power_apply(boot);         // fase 2: depois of begin
+    tab5_power_config(cfg, boot);     // phase 1: before begin
+    M5.begin(cfg);                    // rails, MIPI-DSI panel, touch
+    tab5_power_apply(boot);         // phase 2: after begin
     tab5_memory_marco("M5.begin (painel, toque)");
-    tab5_panel();                     // qual das tres telas (tab5_power.hpp) - antes of mexer no clock
+    tab5_panel();                     // which of the three screens (tab5_power.hpp) - before changing the clock
 
-    // VOLUME salvo, aplicado JA - antes que qualquer app touch o first sound
-    // (M5.Speaker.tone()/playWav() sobe o ES8388 sozinho, in hora, ver o
-    // aviso grande em settings.h). Sem isto, o first sound of uma sessao
-    // sairia no volume of fabrica of objeto Speaker, so corrigindo depois se
-    // o user passasse por Ajustes.
+    // VOLUME saved, applied JA - before any app touches the first sound
+    // (M5.Speaker.tone()/playWav() raises the ES8388 alone, in time, see the
+    // big warning in settings.h). Without this, the first sound of a session
+    // would come out in the volume of factory of object Speaker, only correcting it later if
+    // the user went through Settings.
     M5.Speaker.setVolume(settings_volume());
 
-    // EMOJI, UMA VEZ SO, PARA O SISTEMA INTEIRO. Precisa vir depois of begin
-    // (o callback e one metodo of panel, que so existe daqui para frente) e
-    // antes of qualquer app poder draw text - dai o lugar, logo no boot.
-    // Nenhum app precisa saber que isto existe: e o mesmo drawing of resto of
-    // kernel, "quem desenha text nao deveria se preocupar com isso".
+    // EMOJI, ONCE, FOR THE ENTIRE SYSTEM. It needs to come after of begin
+    // (the callback is one method of panel, which only exists from now on) and
+    // before any app can draw text - give it the place, right at boot.
+    // No app needs to know this exists: and the same drawing of rest of
+    // kernel, "those who draw text shouldn't worry about this".
     tab5_emoji_start();
     tab5_memory_marco("emoji");
 
-    // FONTE PADRAO DO SISTEMA INTEIRO. setFont() e ESTADO GLOBAL of display
-    // (nao faz parte of TextStyle - ver o aviso identico em tab5_ui.hpp), entao
-    // set uma vez aqui, antes of qualquer app draw, vale para kernel e
-    // apps sem que nenhum precise chamar setFont() sozinho.
+    // SYSTEM-WIDE DEFAULT FONT. setFont() and GLOBAL STATE of display
+    // (not part of TextStyle - see identical warning in tab5_ui.hpp), so
+    // set once here, before any app draw, goes for kernel and
+    // apps without any need to call setFont() alone.
     //
-    // TAB5_FONTE_CORPO vive em tab5_ui.hpp (troca em andamento,: a
-    // Font0 embutida virou Font4, que nao deu conforto of leitura e virou
-    // DejaVu24 - so muda ali, nao aqui). Quem desenha one TITULO usa a
-    // Orbitron_Light por top e restaura o body depois (ver tab5_fonte_titulo
-    // / tab5_fonte_corpo em tab5_ui.hpp); todo o resto of sistema stays nela.
-    tab5_fontes_start();   // as fontes suaves (tab5_ui.hpp) - antes of first text
+    // TAB5_FONTE_CORPO lives in tab5_ui.hpp (swap in progress,: a
+    // Built-in Font0 became Font4, which did not provide reading comfort and became
+    // DejaVu24 - it only changes there, not here). Whoever draws a TITLE uses the
+    // Orbitron_Light by top and restores the body afterwards (see tab5_fonte_title
+    // / tab5_source_body in tab5_ui.hpp); everything else of system stays in it.
+    tab5_fontes_start();   // soft fonts (tab5_ui.hpp) - before first text
     M5.Display.setFont(TAB5_FONTE_CORPO);
     tab5_memory_marco("fontes");
 
     ESP_LOGI(TAG, "display %dx%d", M5.Display.width(), M5.Display.height());
     tab5_power_log("boot");
 
-    // Logo DEPOIS of M5.begin(), que e when o panel MIPI-DSI e inicializado:
-    // se e o panel que prende a CPU no maximum, a trava dele aparece aqui e nao
-    // antes. E a medicao que substitui a nossa deducao sobre o clock travado.
+    // Right AFTER M5.begin(), which is when the MIPI-DSI panel is initialized:
+    // If it is the panel that holds the CPU at maximum, its lock appears here and not
+    // before. It is the measurement that replaces our deduction about the stuck clock.
     tab5_power_locks("apos M5.begin");
 
-    // O SPLASH ("M5Tab OS" in screen) NAO desenha aqui - moveu para dentro of
-    // vTaskInterface (kernel/core.cpp), depois of tab5_power_dpi_clock(). Ver o
-    // aviso la: draw antes daquele ponto significa draw antes of
-    // panel assumir o clock final, e a troca of clock remonta o DSI e
-    // apaga o que estiver in screen - foi exatamente a piscada observada em
+    // SPLASH ("M5Tab OS" in screen) DOES NOT draw here - moved inside of
+    // vTaskInterface (kernel/core.cpp), after tab5_power_dpi_clock(). See the
+    // warning la: draw before that point means draw before of
+    // panel takes over the final clock, and the clock swap reassembles the DSI and
+    // erases whatever is on screen - it was exactly the blink observed in
     // .
     system_start();
 
-    // MODO PENDRIVE: o aviso e a vigia of cabo (liga o pendrive sozinho on
-    // conectar num computador, so com o ajuste enabled). Depois of sistema: ela
-    // consulta o app open e a screen of bloqueio.
+    // PENDRIVE MODE: warning and cable watch (connects the pendrive alone on
+    // connect to a computer, only with the setting enabled). After the system: she
+    // checks the open app and the lock screen.
     tab5_pendrive_servico_start();
 
     tab5_memory_marco("sistema_iniciar (fim)");

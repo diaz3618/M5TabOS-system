@@ -3,14 +3,14 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/). The
 firmware version is stored in `version.txt`. Rules for version increments and
-cutting releases (`tools/release.sh`) are documented in `VERSIONING.md`.
+cutting releases (`tools/release.sh`) are documented in `docs/VERSIONING.md`.
 
 ## [Unreleased]
 
 ### Added
 - Versioning: `tools/release.sh patch|minor|major` cuts a release (`version.txt`,
   CHANGELOG section, git commit, and tag) following the rules in
-  `VERSIONING.md`. The version string embedded in the binary identifies the
+  `docs/VERSIONING.md`. The version string embedded in the binary identifies the
   exact commit it was built from (`0.7.0+66.16a4d6d` = 66 commits past `0.7.0`),
   and the build fails if `version.txt` ever falls behind the latest git tag.
 - Mesh > Node > Location: toggle location sharing on/off (controls position
@@ -546,7 +546,7 @@ cutting releases (`tools/release.sh`) are documented in `VERSIONING.md`.
   (*"CSI not enabled in menuconfig!"*). The P4 now sets `csi_enable = 1` on
   Wi-Fi init (requiring no C6 reflash), and the C6 enables CSI through a single
   clean path including 802.11ax HE SU frames. Full root-cause analysis and proof
-  in [RADIO_C6.md](RADIO_C6.md).
+  in [RADIO_C6.md](docs/RADIO_C6.md).
 - 802.15.4 left Wi-Fi associated but unable to pass traffic due to two bugs.
   While active: missing `esp_coex_wifi_i154_enable()` coexistence registration.
   On shutdown: calling `esp_ieee802154_disable()` gated the MAC clock mid-RX

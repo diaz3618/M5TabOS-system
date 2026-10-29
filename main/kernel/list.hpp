@@ -1,37 +1,37 @@
-// LISTA ROLAVEL - o first componente default of nova base (COMPOSITOR.md,
-// etapa 3b). Mesma ideia of lista of LVGL e of qualquer sistema of celular:
+// SCROLLABLE LIST - the first default component of new base (docs/COMPOSITOR.md,
+// step 3b). Same idea of list of LVGL and of any cellular system:
 //
-//   O ITEM E MEDIDO UMA VEZ, QUANDO MUDA. A LISTA GUARDA O RESULTADO.
+// THE ITEM IS MEASURED ONCE, WHEN IT CHANGES. THE LIST SAVES THE RESULT.
 //
-// O app diz so tres coisas: quantos items existem, a height of cada one (que
-// ele calculou e guardou) e como draw o item i numa position y. A lista
-// cuida of resto - rolagem, limit, soma das alturas, recorte, barra of
-// rolagem, e o caminho barato of rolar: scroll o que ja esta drawn in
-// screen virtual e draw SO a faixa recem-exposta, e so com os items que a
-// cruzam.
+// The app only tells you three things: how many items there are, the height of each one (which
+// he calculated and saved) and how to draw item i in position y. The list
+// takes care of the rest - scrolling, limit, height sum, clipping, bar of
+// scrolling, and the cheap way of scrolling: scroll what is already drawn in
+// virtual screen and draw SO the newly exposed track, and only with the items that the
+// cross.
 //
-// Antes disto cada lista of sistema reimplementava esse miolo, e a of Mesh
-// media TODAS as mensagens a cada passo of rolagem (quebra of line, emoji,
-// mutex of servico) so para descobrir alturas que nao tinham mudado.
+// Before this, each system list reimplemented this core, and the Mesh
+// mediates ALL messages at every step of scrolling (line break, emoji,
+// mutex of service) just to discover pitches that hadn't changed.
 //
-// Uso (TODA lista rolavel of sistema segue isto - ver WRITING_APPS.md):
-//   static lista_t s_l;
-//   // on open:  lista_definir(&s_l, ROLAGEM_INICIO, n_itens, altura_de, desenhar_item, ctx);
-//   // items changed (entrou, exited, re-medido):  lista_itens_mudaram(&s_l, n);
-//   // UM item changed of valor (idade, contador):  lista_item_mudou(&s_l, i);
-//   // ao_tocar_nivel: if (lista_arrastar(&s_l, x, y, pressed)) sistema_pedir_redesenho();
-//   // ao_tocar:       const int i = lista_item_tocado(&s_l, x, y, &dy);   // -1 = nada/arraste
-//   // draw:       lista_desenhar(&s_l, d, window, fundo, everything);
+// Usage (EVERY system scrollable list follows this - see docs/WRITING_APPS.md):
+// static list_t s_l;
+// // on open: list_define(&s_l, ROLLAGEM_INICIO, n_items, height_of, draw_item, ctx);
+// // items changed (entered, exited, re-measured):lista_itens_mudaram(&s_l, n);
+// // UM item changed of value (age, counter): list_item_changed(&s_l, i);
+// // ao_tocar_nivel: if (lista_drag(&s_l, x, y, pressed))sistema_request_redesenho();
+// // when_touched: const int i = list_item_touched(&s_l, x, y, &dy);   // -1 = nothing/drag
+// // draw: list_desenhar(&s_l, d, window, background, everything);
 //
-// O TOQUE TAMBEM E DA LISTA. Antes cada app decidia "o finger esta
-// in lista?" e "qual item e este?" com a sua propria conta - a mesma geometria
-// escrita duas vezes (no drawing e no touch), com a rolagem somada a mao. Foi
-// exatamente assim que ja se abriu o item vizinho e que uma coluna escondida
-// pelo keyboard continuou rolando por bottom dele. Agora a lista usa a window of
-// ULTIMO drawing: o que ela nao desenhou, ela nao reage.
+// THE RINGER IS ALSO FROM THE LIST. Before each app decided "the finger is
+// inlist?" and "which item is this?" with its own account - the same geometry
+// written twice (in drawing and in touch), with scrolling added by hand. It was
+// exactly as soon as the neighboring item has already been opened and a hidden column
+// on the keyboard kept scrolling at the bottom of it. Now the list uses the window of
+// LAST drawing: what she didn't draw, she doesn't react to.
 //
-// A coluna of barra (8px a right of window) e of lista: nao desenhe items
-// ali.
+// The column of bar (8px to the right of window) and of list: do not draw items
+// there.
 
 #pragma once
 
@@ -47,51 +47,51 @@ typedef struct {
   list_draw_t draw;
   void*            ctx;
 
-  int              topo;   // respiro antes of item 0 (px) - rola junto
+  int              topo;   // breath before item 0 (px) - rolls along
 
-  // Estado interno.
-  int     total;         // topo + soma das alturas (valida se medida_ok)
+  // Internal state.
+  int     total;         // top + sum of heights (validates if measurement_ok)
   bool    measurement_ok;
-  bool    everything;          // next pass redesenha a window inteira
-  area_t  window_ant;    // para perceber que a window changed (keyboard abriu)
-  bool    no_ar;         // desenhada nesta screen (janela_ant vale para o touch)
-  int     dirty_of, dirty_ate;   // items a redesenhar sozinhos; of > ate = nenhum
+  bool    everything;          // next pass redraws the entire window
+  area_t  window_ant;    // to notice that the window changed (keyboard opened)
+  bool    no_ar;         // drawn on this screen (janela_ant applies to touch)
+  int     dirty_of, dirty_ate;   // items to redesign alone; of > ate = none
 } list_t;
 
-// Prepara a lista. ROLAGEM_INICIO = lida of topo; ROLAGEM_FIM = anchored no
-// end (mensagens: 0 = a mais recente, colada embaixo).
+// Prepare the list. ROLAGEM_INICIO = read of top; ROLAGEM_FIM = anchored in
+// end (messages: 0 = most recent, pasted at the bottom).
 void list_set(list_t* l, uint8_t anchoring, int n,
                    list_height_t height, list_draw_t draw, void* ctx);
 
-// Os items changed (entrou, exited, algum foi re-medido). Redesenha everything in
-// next pass. Numa lista anchored no FIM, lida no middle of historico,
-// o que CRESCEU entra embaixo sem drag o que voce esta lendo.
+// The items changed (entered, exited, some were re-measured). Redesign everything in
+// next pass. In a list anchored at the END, read in the middle of history,
+// what GREW goes below without dragging what you are reading.
 void list_items_changed(list_t* l, int n);
 
-// Um item changed of VALOR sem mudar of height (idade of one no, contador of nao
-// lidas). So ele e redesenhado in next pass - e so se estiver visivel.
+// An item changed of VALUE without changing of height (age of one no, counter of no
+// read). Only it is redrawn in next pass - and only if it is visible.
 void list_item_changed(list_t* l, int i);
 
-// Volta para a origem (topo, ou o end numa lista anchored no end).
+// Returns to the origin (top, or the end of a list anchored at the end).
 void list_on_start(list_t* l);
 
-// A screen que mostrava a lista exited (outra pagina of app): ela para of reagir
-// on touch ate ser desenhada of novo.
+// The screen that showed the exited list (another app page): it stops reacting
+// on touch until drawn again.
 void list_hide(list_t* l);
 
-// Desenha o que precisa: a window inteira se 'everything' (ou se algo changed), so a
-// faixa que a rolagem expos, ou so os items marcados com lista_item_mudou.
-// Devolve true se pintou alguma coisa.
+// Draw what you need: the entire window is 'everything' (or if something changed), just the
+// range that the scrolling exposed, or are the items marked with list_item_changed.
+// Returns true if you painted something.
 bool list_draw(list_t* l, lgfx::LovyanGFX& d, const area_t& window,
                     uint16_t fundo, bool everything);
 
-// TOQUE, em coordenadas of AREA of app (as que ao_tocar/ao_tocar_nivel
-// recebem). true = rolou (peca sistema_pedir_redesenho).
+// TOUCH, in coordinates of AREA of app (those that ao_tocar/ao_tocar_nivel
+// receive). true = rolled (system_request_redesign request).
 bool list_drag(list_t* l, int x, int y, bool pressed);
 
-// O item sob o finger no end of one touch; -1 = fora of lista ou em lugar vazio;
-// LISTA_ARRASTE = o touch foi o FIM of one arraste nesta lista (arraste nao e
-// click - o app nao deve tratar como touch em nada, nem em botao). dy = onde,
-// dentro of item, o finger caiu (0 = topo of item), para botoes dentro of item.
+// The item under the finger at the end of one touch; -1 = out of list or in an empty place;
+// LIST_ARRASTE = the touch was the END of one drag in this list (drag is not
+// click - the app should not treat anything, not even a button, as a touch). dy = where,
+// inside of item, the finger dropped (0 = top of item), for buttons inside of item.
 #define LISTA_ARRASTE (-2)
 int  list_item_touched(list_t* l, int x, int y, int* dy);

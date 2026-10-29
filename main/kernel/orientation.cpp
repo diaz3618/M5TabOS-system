@@ -1,4 +1,4 @@
-// ORIENTACAO DA TELA - ver orientation.hpp.
+// SCREEN ORIENTATION - see orientation.hpp.
 #include "orientation.hpp"
 
 #include <math.h>
@@ -7,91 +7,91 @@
 #include "virtual_screen.hpp"
 #include "tab5_imu.hpp"
 #include "tab5_keyboard.hpp"
-#include "tab5_time.hpp"   // tab5_now_ms - o mesmo clock of laco of interface
+#include "tab5_time.hpp"   // tab5_now_ms - the same clock of laco of interface
 #include "esp_log.h"
 
 static const char* TAG = "orientacao";
 
-// As duas rotacoes of M5GFX que existem no sistema. 3 e nao 1: e a que deixa
-// o ExtPort1 - onde o keyboard encaixa - in borda of bottom, junto of quem
-// digita. Com a 1 a screen ficava of cabeca para bottom em relacao on keyboard.
-static const uint8_t ROT_EM_PE   = 0;
+// The two rotations of M5GFX that exist in the system. 3 and not 1: it is the one that leaves
+// o ExtPort1 - where the keyboard fits - at the edge of the bottom, next to who
+// types. With 1 the screen was upside down in relation to the keyboard.
+static const uint8_t ROT_UPRIGHT = 0;
 static const uint8_t ROT_DEITADO = 3;
 
-// ---------------------------------------------------------------------------
-// A DECISAO
-// ---------------------------------------------------------------------------
-// So o PLANO DA TELA importa (ax, ay). O eixo y of IMU corre on longo of lado
-// comprido of panel (o mesmo referencial of level of app IMU), entao:
+// -------------------------------------------------------------------------------
+// THE DECISION
+// -------------------------------------------------------------------------------
+// Only the SCREEN PLANE matters (ax, ay). The y-axis of IMU runs along the side
+// long of panel (the same reference as level of app IMU), then:
 //
-//   gravidade quase toda em y  -> em pe
-//   gravidade quase toda em x  -> deitado
+// gravity almost all in y -> in pe
+// almost all gravity in x -> lying down
 //
-// O SINAL NAO ENTRA, of proposito. Os dois estados sao one por eixo, e o lado
-// oposto of cada one (of cabeca para bottom, ou deitado com o keyboard em top)
-// cai no mesmo estado - a screen nao vira para o outro lado, so stays. Isso e o
-// que se quer, e ainda dispensa saber a polaridade of cada eixo of BMI270
-// neste aparelho: errar one sinal aqui inverteria a regra inteira em
-// silencio.
+// THE SIGNAL DOESN'T COME IN, on purpose. The two states are one per axis, and the side
+// opposite of each one (of head to bottom, or lying down with the keyboard on top)
+// falls into the same state - the screen doesn't turn to the other side, it just stays. That and the
+// that you want, and you still don't need to know the polarity of each axis of BMI270
+// on this device: getting one sign wrong here would invert the entire rule in
+// silence.
 //
-// DUAS ZONAS MORTAS, onde nada muda com o app ABERTO:
-//   - aparelho in mesa: a gravidade quase toda em z, o plano of screen com
-//     menos of ~0,4 g (inclinado menos of ~24 graus). Pousar o aparelho nao
-//     pode rotate a screen. Era 0,5 g (30 graus): segurando o aparelho recostado
-//     in mao, em pe, a leitura ficava abaixo disso e one app open deitado
-//     nunca se corrigia.
-//   - in diagonal: one eixo precisa passar o outro por PLANO_RAZAO (tangente
-//     of 60 graus). Entre 30 e 60 graus of giro, stays como esta - a histerese
-//     que impede a screen of pular of one estado para o outro in fronteira.
-static const float PLANO_MIN_G2 = 0.16f;   // (0,4 g)^2
-static const float PLANO_RAZAO  = 1.73f;
+// TWO DEAD ZONES, where nothing changes with the OPEN app:
+// - device in table: gravity almost entirely in z, the plane of screen with
+// less than ~0.4 g (tilted less than ~24 degrees). Do not put the device down
+// can rotate the screen. It was 0.5 g (30 degrees): holding the device lying down
+// in hand, standing up, the reading was below that and one app opened lying down
+// never corrected himself.
+// - in diagonal: one axis must pass the other through PLANO_RAZAO (tangent
+// of 60 degrees). Between 30 and 60 degrees of rotation, it stays like this - the hysteresis
+// which prevents the screen from jumping from one state to another in border.
+static const float SCREEN_PLANE_MIN_G2 = 0.16f;   // (0.4 g)^2
+static const float SCREEN_PLANE_AXIS_RATIO = 1.73f;
 
-// NA ABERTURA NAO HA ESTADO ANTERIOR A PROTEGER: a histerese existe para nao
-// pular of one lado para o outro, e abrindo nao ha "outro lado" ainda. Vale o
-// eixo que domina, com folga pequena (tangente of ~50 graus), e one plano
-// menor (0,3 g, ~17 graus of inclinacao). Fora disso - in mesa, ou
-// exatamente in diagonal - abre in position em que a screen ja esta (a home e
-// sempre em pe), nunca num palpite fixo.
-static const float ABRIR_MIN_G2 = 0.09f;   // (0,3 g)^2
-static const float ABRIR_RAZAO  = 1.2f;
+// IN THE OPENING THERE IS NO PREVIOUS STATE TO PROTECT: hysteresis exists not to
+// jumping from one side to the other, and opening there is no "other side" yet. It's worth
+// axis that dominates, with small clearance (tangent of ~50 degrees), and one plane
+// smaller (0.3 g, ~17 degrees of tilt). Outside of that - in mesa, or
+// exactly diagonal - opens in the position the screen is already in (the home and
+// always standing), never on a fixed guess.
+static const float OPENING_PLANE_MIN_G2 = 0.09f;   // (0.3 g)^2
+static const float OPENING_AXIS_RATIO = 1.2f;
 
-// TEMPO. Uma sample a cada 200 ms (5 Hz) e a pose precisa se repetir em 3
-// seguidas: ~0,6 s parado in postura nova antes of rotate. Um balanco of mao
-// nao gira; virar o aparelho of proposito gira logo. Depois of rotate, 1,5 s
-// of carencia: a pass complete leva one frame, e switch of novo no middle
-// of gesto seria pior que wait.
-static const uint32_t AMOSTRA_MS   = 200;
+// TIME. One sample every 200 ms (5 Hz) and the pose must be repeated in 3
+// in a row: ~0.6 s stopped in new posture before rotating. A swing of hand
+// does not rotate; Turn the device on purpose and it turns right away. After rotating, 1.5 s
+// of deficiency: pass complete takes one frame, and switch of new in the middle
+// of gesture would be worse than wait.
+static const uint32_t ORIENTATION_SAMPLE_MS = 200;
 static const int      SEGUIDAS     = 3;
 static const uint32_t CARENCIA_MS  = 1500;
 
 static orientation_t s_modo      = ORIENTATION_PORTRAIT;   // o of app open
 static uint32_t     s_ultima_ms = 0;
 static uint32_t     s_girou_ms  = 0;
-static int          s_cand      = -1;          // a rotation que esta pedindo passagem
+static int          s_cand      = -1;          // the rotation that is asking for passage
 static int          s_seguidas  = 0;
 
-// A rotation que a postura of AGORA pede, ou -1 (zona morta, IMU sem leitura).
+// The rotation that the posture of AGORA requires, or -1 (dead zone, IMU no reading).
 static int rotation_requested(tab5_imu_data_t* m)
 {
-  // Teclado fisico encaixado: deitado, sempre. Em pe ele ficaria pendurado
-  // in lateral, e rotate no colo enquanto se digita seria o pior defeito.
+  // Docked physical keyboard: always lying down. Standing he would hang
+  // on the side, and rotating on your lap while typing would be the worst defect.
   if (tab5_keyboard_present()) { return ROT_DEITADO; }
   if (!tab5_imu_latest(m)) { return -1; }
   const float ax = fabsf(m->ax), ay = fabsf(m->ay);
-  if (ax * ax + ay * ay < PLANO_MIN_G2) { return -1; }
-  if (ay > ax * PLANO_RAZAO) { return ROT_EM_PE; }
-  if (ax > ay * PLANO_RAZAO) { return ROT_DEITADO; }
+  if (ax * ax + ay * ay < SCREEN_PLANE_MIN_G2) { return -1; }
+  if (ay > ax * SCREEN_PLANE_AXIS_RATIO) { return ROT_UPRIGHT; }
+  if (ax > ay * SCREEN_PLANE_AXIS_RATIO) { return ROT_DEITADO; }
   return -1;
 }
 
-// UMA LEITURA EM QUE DA PARA CONFIAR, para a abertura. O cache of IMU e
-// atualizado 1x/s e pode estar velho; e a primeira leitura depois of o chip
-// ficar quieto pode vir zerada (o M5Unified so atualiza os valores when ha
-// dado novo, e no modo of economia of BMI270 o dado novo demora). Uma leitura
-// zerada caia in zona morta, e a screen abria deitada com o aparelho em pe.
-// Aqui: ate 6 leituras, 10 ms entre elas, ate o modulo of gravidade fazer
-// sentido (0,6 a 1,4 g - parado, so a gravidade). ~60 ms no pior caso, uma vez
-// por abertura of app.
+// A READ YOU CAN TRUST, for the opening. The cache of IMU and
+// updated 1x/s and may be old; and the first reading after the chip
+// being quiet may be reset (M5Unified only updates the values when there is
+// new data, and in the economy mode of BMI270 the new data takes time). A reading
+// when reset fell into the dead zone, and the screen opened when the device was lying down.
+// Here: up to 6 readings, 10 ms between them, until the gravity module does
+// sense (0.6 to 1.4 g - stationary, just gravity). ~60 ms worst case once
+// by opening of app.
 static bool read_postura_fresca(tab5_imu_data_t* m)
 {
   for (int k = 0; k < 6; ++k) {
@@ -105,15 +105,15 @@ static bool read_postura_fresca(tab5_imu_data_t* m)
   return false;
 }
 
-// A rotation para ABRIR (ver ABRIR_RAZAO), ou -1 para ficar como a screen esta.
+// The rotation to OPEN (see ABRIR_RAZAO), or -1 to stay as the screen is.
 static int rotation_para_open(tab5_imu_data_t* m)
 {
   if (tab5_keyboard_present()) { return ROT_DEITADO; }
   if (!read_postura_fresca(m)) { return -1; }
   const float ax = fabsf(m->ax), ay = fabsf(m->ay);
-  if (ax * ax + ay * ay < ABRIR_MIN_G2) { return -1; }
-  if (ay > ax * ABRIR_RAZAO) { return ROT_EM_PE; }
-  if (ax > ay * ABRIR_RAZAO) { return ROT_DEITADO; }
+  if (ax * ax + ay * ay < OPENING_PLANE_MIN_G2) { return -1; }
+  if (ay > ax * OPENING_AXIS_RATIO) { return ROT_UPRIGHT; }
+  if (ax > ay * OPENING_AXIS_RATIO) { return ROT_DEITADO; }
   return -1;
 }
 
@@ -131,29 +131,29 @@ void orientation_on_open(const app_t* app)
   s_seguidas = 0;
   s_ultima_ms = s_girou_ms = tab5_now_ms();
 
-  uint8_t rot = ROT_EM_PE;
+  uint8_t rot = ROT_UPRIGHT;
   tab5_imu_data_t m = { };
   int p = -1;
   if (s_modo == ORIENTATION_LANDSCAPE) {
     rot = ROT_DEITADO;
   } else if (s_modo == ORIENTATION_FOLLOWS_IMU) {
-    // A postura of now, measurement now (ver ler_postura_fresca). Sem decisao
-    // clara, abre como a screen ja esta - quem abre one app of home esta olhando
-    // para ela em pe. Antes o default era deitado, e era o que aparecia sempre
-    // que a leitura falhava.
+    // The posture of now, measurement now (see ler_postura_fresca). No decision
+    // clearly, it opens as the screen already is - whoever opens one app of home is looking
+    // for her in pe. Before, the default was flat, and that was what always appeared
+    // that the reading failed.
     p = rotation_para_open(&m);
     const uint8_t now = M5.Display.getRotation();
-    rot = (p >= 0) ? (uint8_t)p : (now == ROT_DEITADO ? ROT_DEITADO : ROT_EM_PE);
+    rot = (p >= 0) ? (uint8_t)p : (now == ROT_DEITADO ? ROT_DEITADO : ROT_UPRIGHT);
   }
   aplicar(rot);
   if (s_modo == ORIENTATION_FOLLOWS_IMU) {
-    // A gravidade junto, como no giro: confirma no log por que abriu assim.
+    // Gravity together, as in the spin: confirm in the log why it opened like that.
     ESP_LOGI(TAG, "'%s' abre %s, seguindo o aparelho (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s", app->name,
-             rot == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
+             rot == ROT_UPRIGHT ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
              (double)m.ax, (double)m.ay, (double)m.az,
              tab5_keyboard_present() ? "  (teclado encaixado)" : p < 0 ? "  (sem decisao: a posicao da tela)" : "");
   } else {
-    ESP_LOGI(TAG, "'%s' abre %s (%dx%d)", app->name, rot == ROT_EM_PE ? "em pe" : "deitado",
+    ESP_LOGI(TAG, "'%s' abre %s (%dx%d)", app->name, rot == ROT_UPRIGHT ? "em pe" : "deitado",
              M5.Display.width(), M5.Display.height());
   }
 }
@@ -161,23 +161,23 @@ void orientation_on_open(const app_t* app)
 void orientation_on_close(void)
 {
   s_modo = ORIENTATION_PORTRAIT;
-  if (M5.Display.getRotation() != ROT_EM_PE) {
-    aplicar(ROT_EM_PE);
+  if (M5.Display.getRotation() != ROT_UPRIGHT) {
+    aplicar(ROT_UPRIGHT);
     ESP_LOGI(TAG, "tela de volta em pe (%dx%d)", M5.Display.width(), M5.Display.height());
   }
 }
 
-uint32_t orientation_prazo_ms(uint32_t now)
+uint32_t orientation_time_until_sample_ms(uint32_t now)
 {
   if (s_modo != ORIENTATION_FOLLOWS_IMU) { return UINT32_MAX; }
   const uint32_t dec = now - s_ultima_ms;
-  return (dec < AMOSTRA_MS) ? (AMOSTRA_MS - dec) : 0;
+  return (dec < ORIENTATION_SAMPLE_MS) ? (ORIENTATION_SAMPLE_MS - dec) : 0;
 }
 
 bool orientation_vigiar(uint32_t now, bool pode_rotate)
 {
   if (s_modo != ORIENTATION_FOLLOWS_IMU) { return false; }
-  if ((now - s_ultima_ms) < AMOSTRA_MS) { return false; }
+  if ((now - s_ultima_ms) < ORIENTATION_SAMPLE_MS) { return false; }
   s_ultima_ms = now;
 
   tab5_imu_measure();
@@ -197,10 +197,10 @@ bool orientation_vigiar(uint32_t now, bool pode_rotate)
   s_girou_ms = now;
   s_cand = -1;
   s_seguidas = 0;
-  // A gravidade junto: e o que confirma no log, sem adivinhar, que o eixo e o
-  // limiar estao certos neste aparelho.
+  // Gravity together: and what confirms in the log, without guessing, that the axis and the
+  // threshold is correct in this device.
   ESP_LOGI(TAG, "girou para %s (%dx%d)  ax=%+.2f ay=%+.2f az=%+.2f%s",
-           p == ROT_EM_PE ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
+           p == ROT_UPRIGHT ? "em pe" : "deitado", M5.Display.width(), M5.Display.height(),
            (double)m.ax, (double)m.ay, (double)m.az, tab5_keyboard_present() ? "  (teclado encaixado)" : "");
   return true;
 }

@@ -1,4 +1,4 @@
-// Redes of Wi-Fi of no - ver tab5_mesh_wifi_node.hpp.
+// Networks of Wi-Fi of no - see tab5_mesh_wifi_node.hpp.
 #include "tab5_mesh_wifi_node.hpp"
 
 #include <stdio.h>
@@ -21,28 +21,28 @@ static bool     s_carregado = false;
 static volatile bool s_gravar_pend = false;
 static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// Roda in tarefa "cartao" (carona): reescreve o arquivo when algo changed.
+// Runs in task "cartao" (ride): rewrites the file when something changes.
 static void in_carona(void)
 {
-  // A lista so e reescrita depois of lida of cartao (ver mesh_wifi_no_salvar).
-  if (!s_carregado) { mesh_wifi_no_carregar(); return; }
+  // The list is only rewritten after reading the card (see mesh_wifi_no_save).
+  if (!s_carregado) { mesh_wifi_node_load(); return; }
   if (!s_gravar_pend) { return; }
   s_gravar_pend = false;
-  // Copia of lista com a trava e escreve fora dela (cartao e lento).
+  // Copies of list with the lock and writes outside of it (card is slow).
   static mesh_wifi_rede_t copia[MESH_WIFI_REDES_MAX];
   int n;
   taskENTER_CRITICAL(&s_mux);
   n = s_n;
   memcpy(copia, s_r, sizeof(copia));
   taskEXIT_CRITICAL(&s_mux);
-  // O arquivo inteiro in memoria e UMA troca pela porta of sistema
-  // (tab5_sd_replace): nunca middle arquivo, e com o cartao emprestado on
-  // computador vai para o diario. SIGILOSO: as senhas of arquivo antigo sao
-  // zeradas antes of ele exit.
+  // The entire file in memory is exchanged by the system port
+  // (tab5_sd_replace): never middle file, and with the card borrowed on
+  // computer goes to the diary. CONFIDENTIAL: the passwords of the old file are
+  // reset before exit.
   const size_t cap = 64 + (size_t)MESH_WIFI_REDES_MAX * (sizeof(copia[0].ssid) + TAB5_WIFI_CIPHER_HEX + 2);
   char* txt = (char*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
   if (!txt) { s_gravar_pend = true; memset(copia, 0, sizeof(copia)); return; }
-  size_t k = (size_t)snprintf(txt, cap, "# redes do Wi-Fi do no Meshtastic (senhas cifradas)\n");
+  size_t k = (size_t)snprintf(txt, cap, "# Meshtastic Wi-Fi networks (encrypted passwords)\n");
   for (int i = 0; i < n && k < cap; ++i) {
     char hex[TAB5_WIFI_CIPHER_HEX];
     if (copia[i].open) { snprintf(hex, sizeof(hex), "-"); }
@@ -50,19 +50,19 @@ static void in_carona(void)
     k += (size_t)snprintf(txt + k, cap - k, "%s\n%s\n", copia[i].ssid, hex);
   }
   if (!tab5_sd_replace(PASTA, ARQ, txt, k < cap ? k : cap - 1, TAB5_SD_SIGILOSO)) {
-    s_gravar_pend = true;   // sem cartao: tenta of novo in next iteration
+    s_gravar_pend = true;   // without card: try again in next iteration
   }
   heap_caps_free(txt);
-  memset(copia, 0, sizeof(copia));   // senhas em text: nao deixa copia in RAM
+  memset(copia, 0, sizeof(copia));   // text passwords: no copy left in RAM
 }
 
-void mesh_wifi_no_carregar(void)
+void mesh_wifi_node_load(void)
 {
   if (s_carregado) { return; }
   static bool carona = false;
   if (!carona) { carona = tab5_sd_piggyback(in_carona); }
-  // Sem cartao NAO marca como carregado: a lista vazia of RAM nao pode virar
-  // o arquivo. Tenta of novo in carona, ate o cartao aparecer.
+  // Without card DOES NOT mark as loaded: the empty list of RAM cannot turn
+  // the file. Try the ride again, until the card appears.
   if (!tab5_sd_mount()) { return; }
   FILE* f = tab5_sd_open(PASTA, ARQ, "r");
   if (f) {
@@ -80,7 +80,7 @@ void mesh_wifi_no_carregar(void)
       memset(&r, 0, sizeof(r));
       snprintf(r.ssid, sizeof(r.ssid), "%s", ssid);
       if (strcmp(hex, "-") == 0) { r.open = true; }
-      else if (!tab5_wifi_decrypt_text(hex, r.senha, sizeof(r.senha))) { continue; }   // outro aparelho: nao decifra
+      else if (!tab5_wifi_decrypt_text(hex, r.senha, sizeof(r.senha))) { continue; }   // other device: cannot decrypt
       taskENTER_CRITICAL(&s_mux);
       s_r[s_n++] = r;
       taskEXIT_CRITICAL(&s_mux);
@@ -105,14 +105,14 @@ bool mesh_wifi_no_rede(int i, mesh_wifi_rede_t* o)
   return ok;
 }
 
-// Poe 'r' no topo, removendo a anterior of mesmo name. Com a trava tomada.
+// Put 'r' at the top, removing the previous one of the same name. With the lock taken.
 static void topo_locked(const mesh_wifi_rede_t& r)
 {
   int onde = -1;
   for (int i = 0; i < s_n; ++i) { if (strcmp(s_r[i].ssid, r.ssid) == 0) { onde = i; break; } }
   if (onde < 0) {
     if (s_n < MESH_WIFI_REDES_MAX) { onde = s_n++; }
-    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // cheia: exit a mais antiga
+    else                           { onde = MESH_WIFI_REDES_MAX - 1; }   // full: exit oldest
   }
   for (int k = onde; k > 0; --k) { s_r[k] = s_r[k - 1]; }
   s_r[0] = r;
@@ -121,9 +121,9 @@ static void topo_locked(const mesh_wifi_rede_t& r)
 bool mesh_wifi_no_salvar(const char* ssid, const char* senha)
 {
   if (!ssid || !ssid[0] || strlen(ssid) > 32 || (senha && strlen(senha) > 64)) { return false; }
-  // A LISTA DO CARTAO PRIMEIRO: mudar uma lista que nao foi lida e grava-la
-  // apagaria as redes guardadas. Sem cartao (ou ele no computador), recusa.
-  mesh_wifi_no_carregar();
+  // THE CARD LIST FIRST: change an unread list and save it
+  // would delete the saved networks. Without a card (or it on the computer), refuse.
+  mesh_wifi_node_load();
   if (!s_carregado) { return false; }
   mesh_wifi_rede_t r;
   memset(&r, 0, sizeof(r));
@@ -141,7 +141,7 @@ bool mesh_wifi_no_salvar(const char* ssid, const char* senha)
 
 bool mesh_wifi_no_esquecer(int i)
 {
-  if (!s_carregado) { return false; }   // ver mesh_wifi_no_salvar
+  if (!s_carregado) { return false; }   // see mesh_wifi_no_save
   bool ok = false;
   taskENTER_CRITICAL(&s_mux);
   if (i >= 0 && i < s_n) {
@@ -165,7 +165,7 @@ int mesh_wifi_no_trazer_of_tab5(void)
     bool ja = false;
     for (int k = 0; k < s_n; ++k) { if (strcmp(s_r[k].ssid, ssid) == 0) { ja = true; break; } }
     if (ja) { continue; }
-    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // cheia: nao expulsa as of no
+    if (s_n >= MESH_WIFI_REDES_MAX) { break; }   // full: does not expel as of no
     mesh_wifi_no_salvar(ssid, senha);
     ++novas;
   }

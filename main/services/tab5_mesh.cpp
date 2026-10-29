@@ -411,14 +411,14 @@ static int carregar_desfechos(desfecho_t* tab, int max)
   return n;
 }
 
-static uint32_t buscar_carimbo(const desfecho_t* tab, int n, uint32_t id)
+static uint32_t find_delivery_timestamp(const desfecho_t* tab, int n, uint32_t id)
 {
   if (id == 0) { return 0; }
   for (int i = 0; i < n; ++i) { if (tab[i].id == id) { return tab[i].when; } }
   return 0;
 }
 
-static uint8_t buscar_desfecho(const desfecho_t* tab, int n, uint32_t id, uint8_t* erro)
+static uint8_t find_delivery_state(const desfecho_t* tab, int n, uint32_t id, uint8_t* erro)
 {
   if (id == 0) { return MESH_ENVIO_NA; }
   for (int i = 0; i < n; ++i) {
@@ -1488,7 +1488,7 @@ static void desmarcar_apagada(bool canal, uint32_t chave)
   tab5_sd_replace(MESH_PASTA, MESH_ARQ_APAGADAS, txt, k);
 }
 
-static void arquivo_of_conversa(const mesh_conversa_t* c, char* out, size_t size)
+static void conversation_filename(const mesh_conversa_t* c, char* out, size_t size)
 {
   if (c->channel && mesh_canal_internet(c->idx)) { snprintf(out, size, "internet-%u.txt", (unsigned)(c->idx & 0x7F)); }
   else if (c->channel) { snprintf(out, size, "canal-%u.txt", (unsigned)c->idx); }
@@ -1551,7 +1551,7 @@ static void gravar_msg(int ci, const mesh_msg_t* m)
 {
   if (ci < 0) { return; }
   char arquivo[32];
-  arquivo_of_conversa(&s_conv[ci], arquivo, sizeof(arquivo));
+  conversation_filename(&s_conv[ci], arquivo, sizeof(arquivo));
   // "M4" e nao "M3": o registro ganhou os saltos - etiqueta nova
   // em vez of field a mais, e o leitor sabe o que wait antes of read.
   char line[sizeof(((mesh_msg_t*)0)->text) + 96];
@@ -2155,7 +2155,7 @@ int tab5_mesh_historico_of(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
   if (!tab5_sd_mount()) { return 0; }
 
   char name[32];
-  arquivo_of_conversa(&c, name, sizeof(name));
+  conversation_filename(&c, name, sizeof(name));
 
   // Volta a usar o servico: quem sabe distinguir "ainda nao existe" of "deu
   // errado" e o tab5_sd, nao cada app. Conversa sem historico devolve 0
@@ -2218,8 +2218,8 @@ int tab5_mesh_historico_of(bool canal, uint8_t idx, uint32_t no, mesh_msg_t* sai
     // ENVIANDO que nunca vai para o cartao; o cartao tem os desfechos of todos
     // os envios que ja sairam of anel ou of antes of ultimo reinicio.
     m.send_state = tab5_mesh_estado_send_state(m.id, &m.erro);
-    if (m.send_state == MESH_ENVIO_NA) { m.send_state = buscar_desfecho(desf, n_desf, m.id, &m.erro); }
-    const uint32_t corrigido = buscar_carimbo(desf, n_desf, m.id);
+    if (m.send_state == MESH_ENVIO_NA) { m.send_state = find_delivery_state(desf, n_desf, m.id, &m.erro); }
+    const uint32_t corrigido = find_delivery_timestamp(desf, n_desf, m.id);
     if (corrigido) { m.when = corrigido; }
     snprintf(m.text, sizeof(m.text), "%s", line + pos);
     m.text[strcspn(m.text, "\r\n")] = 0;
@@ -4194,7 +4194,7 @@ static void start_via(uint8_t via)
   // Os nos que o Tab5 ja conhecia (alem of teto of radio).
   carregar_nodedb();
   mesh_diario_carregar();   // reinicios of no ja anotados (cartao)
-  mesh_wifi_no_carregar();  // redes of Wi-Fi of no ja usadas (cartao)
+  mesh_wifi_node_load();  // redes of Wi-Fi of no ja usadas (cartao)
 
   // FAVORITOS NA TABELA DESDE O INICIO, mesmo sem ter falado: estao fixos.
   recordar_favs();

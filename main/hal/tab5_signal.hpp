@@ -2,10 +2,10 @@
 //
 // Log-distance model, as used by "find my tracker" apps:
 //
-//   d = 10 ^ ((P1m - RSSI) / (10 * n))
+// d = 10 ^ ((P1m - RSSI) / (10 * n))
 //
-//   P1m - expected RSSI one meter from the transmitter;
-//   n   - environmental attenuation (2 in free space, 2.5-3.5 indoors).
+// P1m - expected RSSI one meter from the transmitter;
+// n - environmental attenuation (2 in free space, 2.5-3.5 indoors).
 //
 // THIS IS A ROUGH ESTIMATE: walls, bodies, antenna orientation, and reflections
 // shift RSSI by 5-10 dB, roughly doubling or halving the estimated distance.
@@ -22,7 +22,7 @@
 // first meter is about 40 dB.
 #define TAB5_SIGNAL_P1M_WIFI   (-40)
 #define TAB5_SIGNAL_P1M_BLE    (-59)
-#define TAB5_SIGNAL_LOSS_1M   41     // tx_power of anuncio -> P1m
+#define TAB5_SIGNAL_LOSS_1M   41     // tx_power of advertisement -> P1m
 #define TAB5_SIGNAL_N_INDOOR  2.7f
 
 static inline float tab5_signal_distance_m(int rssi, int p1m)

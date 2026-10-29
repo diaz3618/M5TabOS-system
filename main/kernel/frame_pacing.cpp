@@ -3,16 +3,16 @@
 #include "esp_timer.h"
 #include "tab5_frame.hpp"
 
-// Comecar one pouco DEPOIS of varredura: a ISR que a anota ja rodou, e a
-// troca of pagina requested neste frame so pode valer in seguinte.
-static const int64_t FOLGA_US = 1500;
-// Desenho que comeca a menos disto of next varredura nao stays pronto a
-// time: vai on ar in outra (e o dt ja exit certo).
-static const int64_t EM_CIMA_US = 3000;
+// Start a little AFTER scanning: the ISR that notes it has already run, and the
+// change of page requested in this frame can only be valid in the following one.
+static const int64_t FRAME_HEADROOM_US = 1500;
+// Drawing that starts less than this of next scan is not ready to
+// time: goes on air in another (and the dt already exits correctly).
+static const int64_t FRAME_DEADLINE_MARGIN_US = 3000;
 
 static const void* s_dono     = nullptr;
-static int64_t     s_on_ar    = 0;     // when o frame em andamento vai on ar (estimado)
-static int64_t     s_prox_us  = 0;     // when comecar o next periodico (0 = nenhum)
+static int64_t     s_on_ar    = 0;     // when the frame in progress goes live (estimated)
+static int64_t     s_prox_us  = 0;     // when the next periodic begins (0 = none)
 static float       s_dt       = 0.033f;
 
 static uint32_t periodo_panel(void)
@@ -29,16 +29,16 @@ void pacing_frame(const void* dono, uint32_t periodo_ms)
   const int64_t vs = tab5_frame_last_end_us();
   const int64_t request = (int64_t)periodo_ms * 1000;
 
-  // Sem measurement of panel (boot, logo depois of wake): o clock of antes.
+  // No measurement of panel (boot, just after wake): the clock of before.
   const bool measured = P && vs > 0 && t >= vs && t - vs < 1000000;
   int64_t on_ar = t;
   if (measured) {
-    on_ar = vs + ((t - vs) / P + 1) * P;   // a next varredura
-    if (on_ar - t < EM_CIMA_US) { on_ar += P; }
+    on_ar = vs + ((t - vs) / P + 1) * P;   // the next scan
+    if (on_ar - t < FRAME_DEADLINE_MARGIN_US) { on_ar += P; }
   }
 
   const int64_t ant = (dono == s_dono) ? s_on_ar : 0;
-  // Dois quadros nunca vao on ar in mesma varredura: o segundo espera a troca
+  // Two frames will never air in the same scan: the second waits for the exchange
   // of first (comp_abrir).
   if (measured && ant && on_ar < ant + P) { on_ar = ant + P; }
   s_dt = ant ? (float)(on_ar - ant) * 1e-6f
@@ -49,9 +49,9 @@ void pacing_frame(const void* dono, uint32_t periodo_ms)
 
   if (!periodo_ms) { s_prox_us = 0; return; }
   if (measured) {
-    int64_t n = (request + P / 2) / P;      // varreduras inteiras, o mais perto of request
+    int64_t n = (request + P / 2) / P;      // entire scans, closest to request
     if (n < 1) { n = 1; }
-    s_prox_us = on_ar + (n - 1) * P + FOLGA_US;
+    s_prox_us = on_ar + (n - 1) * P + FRAME_HEADROOM_US;
   } else {
     s_prox_us = t + request;
   }

@@ -1,37 +1,37 @@
 #include "nmea.h"
 
-// O nmea.c e parser PURO - nao conhece M5GFX nem hardware. O FreeRTOS entra
-// so pelo clock of ticks, usado para carimbar QUANDO a position foi observada.
+// nmea.c is a PURE parser - it does not know M5GFX or hardware. FreeRTOS enters
+// only for the clock of ticks, used to stamp WHEN the position was observed.
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include <string.h>
 #include <stdlib.h>
 
-// TABELA PERSISTENTE of satelites, com switch_number (constelacao, PRN).
+// PERSISTENT TABLE of satellites, with switch_number (constellation, PRN).
 //
-// A version anterior tinha one bug serio: ela zerava o acumulador sempre que
-// chegava uma sentenca com msgNum == 1. Acontece que CADA CONSTELACAO tem a sua
-// propria numeracao - o $GLGSV,2,1 of GLONASS tem msgNum 1 e apagava everything que o
-// $GPGSV acabara of preencher. O mapa alternava entre "so GPS" e "so GLONASS",
-// com satelites aparecendo e sumindo a cada segundo.
+// The previous version had a serious bug: it reset the accumulator whenever
+// a sentence arrived with msgNum == 1. It turns out that EACH CONSTELLATION has its own
+// own numbering - the $GLGSV,2,1 of GLONASS has msgNum 1 and erased everything that the
+// $GPGSV had just been filled. The map alternated between "only GPS" and "only GLONASS",
+// with satellites appearing and disappearing every second.
 //
-// Agora cada constelacao tem a sua propria round, e a tabela guarda todas
-// juntas. Um satelite que para of ser reportado some depois of algumas rodadas,
-// em vez of ficar preso in screen para sempre.
+// Now each constellation has its own round, and the table stores all
+// together. A satellite that disappears after a few rounds to be reported,
+// instead of being stuck in screen forever.
 #define AUSENCIAS_PARA_SUMIR 3
 
 typedef struct {
     SatelliteInfo_t sat;
-    uint8_t ausencias;         // rodadas seguidas em que nao apareceu
-    bool    visto_in_round;   // marcado durante a round corrente of talker
-    bool    ocupado;
-} entrada_t;
+    uint8_t ausencias;         // consecutive rounds in which he did not appear
+    bool    visto_in_round;   // scored during the current round of talker
+    bool    occupied;
+} satellite_entry_t;
 
-static entrada_t s_tab[MAX_SATS_TRACKED];
+static satellite_entry_t s_tab[MAX_SATS_TRACKED];
 
-// Constelacao pelo prefixo of talker: $GPGSV, $GLGSV, $GAGSV, $GBGSV...
-static GnssType tipo_of_talker(const char *sentence)
+// Constellation by the prefix of talker: $GPGSV, $GLGSV, $GAGSV, $GBGSV...
+static GnssType constellation_from_talker(const char *sentence)
 {
     const char a = sentence[1];
     const char b = sentence[2];
@@ -45,11 +45,11 @@ static GnssType tipo_of_talker(const char *sentence)
     return UNKNOWN;
 }
 
-static entrada_t* achar_ou_create(GnssType type, uint8_t prn)
+static satellite_entry_t* find_or_add_satellite(GnssType type, uint8_t prn)
 {
-    entrada_t *free_space = NULL;
+    satellite_entry_t *free_space = NULL;
     for (int i = 0; i < MAX_SATS_TRACKED; ++i) {
-        if (s_tab[i].ocupado) {
+        if (s_tab[i].occupied) {
             if (s_tab[i].sat.type == type && s_tab[i].sat.prn == prn) { return &s_tab[i]; }
         } else if (free_space == NULL) {
             free_space = &s_tab[i];
@@ -57,12 +57,12 @@ static entrada_t* achar_ou_create(GnssType type, uint8_t prn)
     }
     if (free_space) {
         memset(free_space, 0, sizeof(*free_space));
-        free_space->ocupado   = true;
+        free_space->occupied   = true;
         free_space->sat.type  = type;
         free_space->sat.prn   = prn;
         free_space->sat.valid = true;
     }
-    return free_space;   // NULL = tabela cheia, ignora este satelite
+    return free_space;   // NULL = table full, ignore this satellite
 }
 
 void nmea_reset(void)
@@ -75,11 +75,11 @@ bool nmea_checksum_ok(const char *sentence)
     if (sentence == NULL || sentence[0] != '$') { return false; }
 
     uint8_t calc = 0;
-    const char *p = sentence + 1;          // pula o '$'
+    const char *p = sentence + 1;          // skips the '$'
     while (*p && *p != '*') { calc ^= (uint8_t)*p++; }
-    if (*p != '*') { return false; }       // sentenca sem field of checksum
+    if (*p != '*') { return false; }       // sentence without field of checksum
 
-    // Os dois caracteres depois of '*' sao o checksum em hexadecimal.
+    // The two characters after '*' are the checksum in hexadecimal.
     char hex[3] = { p[1], p[2], 0 };
     if (hex[0] == 0 || hex[1] == 0) { return false; }
     return (uint8_t)strtol(hex, NULL, 16) == calc;
@@ -109,15 +109,15 @@ void nmea_field(const char *sentence, int indice, char *out, size_t out_size)
 }
 
 // $GPGSV,3,1,11,10,63,137,42,07,61,098,45,...*7F
-//         |  | |  |------ sat 1 ------|
-//         |  | total of satelites of constelacao
-//         |  numero desta sentenca
-//         total of sentencas of round
+// |  | |  |------ sat 1 ------|
+// |  | total of satellites of constelacao
+// |  number of this sentence
+// total of sentences of round
 bool nmea_parse_rmc(const char *sentence, nmea_time_t *output)
 {
     char field[16];
 
-    // Campo 1: hhmmss.ss - so os seis primeiros digitos interessam.
+    // Field 1: hhmmss.ss - only the first six digits matter.
     nmea_field(sentence, 1, field, sizeof(field));
     if (strlen(field) < 6) { return false; }
 
@@ -125,14 +125,14 @@ bool nmea_parse_rmc(const char *sentence, nmea_time_t *output)
     const int min  = (field[2]-'0')*10 + (field[3]-'0');
     const int seg  = (field[4]-'0')*10 + (field[5]-'0');
 
-    // Campo 2: status. 'A' = position valid, 'V' = aviso. Guardamos o state,
-    // mas NAO exigimos 'A' para aceitar a data: muitos receptores ja entregam
-    // hora e data corretas antes of close o fix, e para nomear o file of
-    // dia isso basta.
+    // Field 2: status. 'A' = position valid, 'V' = warning. We keep the state,
+    // but we DO NOT require 'A' to accept the date: many receivers already deliver
+    // correct time and date before closing the fix, and to name the file of
+    // day that's enough.
     nmea_field(sentence, 2, field, sizeof(field));
     const bool fix = (field[0] == 'A');
 
-    // Campo 9: ddmmyy.
+    // Field 9: ddmmyy.
     nmea_field(sentence, 9, field, sizeof(field));
     if (strlen(field) < 6) { return false; }
 
@@ -140,14 +140,14 @@ bool nmea_parse_rmc(const char *sentence, nmea_time_t *output)
     const int mes = (field[2]-'0')*10 + (field[3]-'0');
     const int ano = (field[4]-'0')*10 + (field[5]-'0');
 
-    // Faixas fisicas. Linha ruidosa passa pelo checksum of vez em when, e one
-    // mes 47 viraria one name of file absurdo que ficaria la para sempre.
+    // Physical tracks. Noisy line goes through the checksum of once in when, and one
+    // month 47 would become an absurd name of file that would stay there forever.
     if (hora > 23 || min > 59 || seg > 60) { return false; }
     if (dia < 1 || dia > 31 || mes < 1 || mes > 12) { return false; }
 
     output->valid = true;
     output->fix    = fix;
-    output->ano    = (uint16_t)(2000 + ano);   // NMEA of o ano com 2 digitos
+    output->ano    = (uint16_t)(2000 + ano);   // NMEA of the year with 2 digits
     output->mes    = (uint8_t)mes;
     output->dia    = (uint8_t)dia;
     output->hora   = (uint8_t)hora;
@@ -156,10 +156,10 @@ bool nmea_parse_rmc(const char *sentence, nmea_time_t *output)
     return true;
 }
 
-// Converte one field of coordenada NMEA (ddmm.mmmm ou dddmm.mmmm) para graus
-// decimais com signal. 'digitos_grau' e 2 para latitude, 3 para longitude - a
-// diferenca entre os dois formatos e exatamente essa, e e por isso que a
-// funcao pede o numero em vez of adivinhar pelo size of string.
+// Converts one field of NMEA coordinate (ddmm.mmmm or dddmm.mmmm) to degrees
+// decimals with signal. 'degree_digits' and 2 for latitude, 3 for longitude - a
+// difference between the two formats is exactly this, and that is why the
+// function asks for the number instead of guessing by the size of string.
 static double nmea_coord(const char *field, char hemisferio, int digitos_grau)
 {
     if ((int)strlen(field) <= digitos_grau) { return 0.0; }
@@ -188,9 +188,9 @@ bool nmea_parse_gga(const char *sentence, nmea_position_t *output)
     nmea_field(sentence, 8, hdop, sizeof(hdop));
     nmea_field(sentence, 9, alt,  sizeof(alt));
 
-    // O field of qualidade e a UNICA coisa que o GGA garante mandar sempre,
-    // com ou sem fix. Sem ele, a sentenca esta truncada ou nao e one GGA of
-    // verdade - o resto dos campos nao tem em que confiar.
+    // The field of quality is the ONLY thing that GGA guarantees to always deliver,
+    // with or without fix. Without it, the sentence is truncated or not one GGA of
+    // true - the rest of the fields have nothing to trust.
     if (qual[0] == '\0') { return false; }
 
     output->qualidade   = (uint8_t)atoi(qual);
@@ -198,12 +198,12 @@ bool nmea_parse_gga(const char *sentence, nmea_position_t *output)
     output->hdop         = (hdop[0] != '\0') ? (float)atof(hdop)  : 0.0f;
     output->altitude_m   = (alt[0]  != '\0') ? (float)atof(alt)   : 0.0f;
 
-    // SEM FIX, LAT/LON NAO EXISTEM DE VERDADE.
+    // NO FIX, LAT/LON DOESN'T REALLY EXIST.
     //
-    // Com qualidade 0 o receptor manda os campos of position VAZIOS, nao "0.0" -
-    // e a mesma logica of tem_posicao no GSV (ver nmea.h). Zerar aqui em vez of
-    // deixar o atof("") passar batido evita que one (0,0) - o storage of Oceano
-    // Atlantico - seja confundido com uma leitura of verdade por who desenha.
+    // With quality 0, the receiver sends the fields of position EMPTY, not "0.0" -
+    // and the same logic of tem_posicao in GSV (see nmea.h). Zero here instead of
+    // leaving atof("") overlooked prevents one (0,0) - the storage of Oceano
+    // Atlantico - be confused with a reading of truth by whoever draws.
     if (output->qualidade > 0 && lat[0] && lon[0]) {
         output->lat = nmea_coord(lat, lat_h[0], 2);
         output->lon = nmea_coord(lon, lon_h[0], 3);
@@ -220,7 +220,7 @@ bool nmea_parse_gsv(const char *sentence, SatelliteSnapshot_t *output)
 {
     char field[16];
 
-    const GnssType type = tipo_of_talker(sentence);
+const GnssType type = constellation_from_talker(sentence);
 
     nmea_field(sentence, 1, field, sizeof(field));
     const int total_msgs = atoi(field);
@@ -228,20 +228,20 @@ bool nmea_parse_gsv(const char *sentence, SatelliteSnapshot_t *output)
     nmea_field(sentence, 2, field, sizeof(field));
     const int num_msg = atoi(field);
 
-    if (total_msgs <= 0 || num_msg <= 0) { return false; }   // sentenca malformada
+    if (total_msgs <= 0 || num_msg <= 0) { return false; }   // malformed sentence
 
-    // Comeco of round DESTA constelacao: desmarca so os satelites dela.
+    // Start of round THIS constellation: deselect only its satellites.
     if (num_msg == 1) {
         for (int i = 0; i < MAX_SATS_TRACKED; ++i) {
-            if (s_tab[i].ocupado && s_tab[i].sat.type == type) {
+            if (s_tab[i].occupied && s_tab[i].sat.type == type) {
                 s_tab[i].visto_in_round = false;
             }
         }
     }
 
-    // Cada GSV traz ate 4 satelites, em blocos of 4 campos a partir of field 4.
-    for (int bloco = 0; bloco < 4; ++bloco) {
-        const int base = 4 + bloco * 4;
+    // Each GSV brings up to 4 satellites, in blocks of 4 fields starting from field 4.
+    for (int block = 0; block < 4; ++block) {
+        const int base = 4 + block * 4;
 
         char prn[8], elev[8], az[8], snr[8];
         nmea_field(sentence, base + 0, prn,  sizeof(prn));
@@ -249,54 +249,54 @@ bool nmea_parse_gsv(const char *sentence, SatelliteSnapshot_t *output)
         nmea_field(sentence, base + 2, az,   sizeof(az));
         nmea_field(sentence, base + 3, snr,  sizeof(snr));
 
-        if (prn[0] == '\0') { continue; }              // bloco vazio
+        if (prn[0] == '\0') { continue; }              // empty block
 
-        entrada_t *e = achar_ou_create(type, (uint8_t)atoi(prn));
-        if (e == NULL) { continue; }                   // tabela cheia
+        satellite_entry_t *e = find_or_add_satellite(type, (uint8_t)atoi(prn));
+        if (e == NULL) { continue; }                   // table full
 
-        // AQUI o filtro que faltava. Campo vazio nao e zero: e "nao sei".
-        // Testamos a STRING, nao o resultado of atoi.
-        const bool tem_pos = (elev[0] != '\0') && (az[0] != '\0');
+        // HERE is the missing filter. Empty field is not zero: it is "I don't know".
+        // We test the STRING, not the result of atoi.
+        const bool has_position = (elev[0] != '\0') && (az[0] != '\0');
 
-        if (tem_pos) {
+        if (has_position) {
             const int  el = atoi(elev);
             const int  azi = atoi(az);
-            // Descarta value fora of faixa fisica - line ruidosa produz isso.
+            // Discards value outside of physical range - noisy line produces this.
             if (el >= 0 && el <= 90 && azi >= 0 && azi <= 359) {
                 e->sat.elevation   = (uint8_t)el;
                 e->sat.azimuth     = (uint16_t)azi;
                 e->sat.tem_position = true;
-                // Carimba SO aqui: e o unico point em que a position vem of uma
-                // observacao of verdade.
+                // Stamp SO here: it is the only point at which the position comes from a
+                // observation of truth.
                 e->sat.pos_ms      = pdTICKS_TO_MS(xTaskGetTickCount());
             }
         }
-        // Se nao veio position now, MANTEM a latest known. O satelite nao
-        // se move of repente, e piscar entre "tem" e "nao tem" seria pior.
+        // If position now didn't come, KEEP the latest known. The satellite does not
+        // moves suddenly, and flashing between "has" and "doesn't have" would be worse.
 
         e->sat.snr = (snr[0] == '\0') ? 0 : (uint8_t)atoi(snr);
         e->visto_in_round = true;
         e->ausencias = 0;
     }
 
-    if (num_msg != total_msgs) { return false; }   // round ainda nao fechou
+    if (num_msg != total_msgs) { return false; }   // round hasn't closed yet
 
-    // Fim of round desta constelacao: envelhece who nao apareceu e remove
-    // who sumiu ha varias rodadas.
+    // End of round of this constellation: age who did not appear and remove
+    // who has been missing for several rounds.
     for (int i = 0; i < MAX_SATS_TRACKED; ++i) {
-        if (!s_tab[i].ocupado || s_tab[i].sat.type != type) { continue; }
+        if (!s_tab[i].occupied || s_tab[i].sat.type != type) { continue; }
         if (s_tab[i].visto_in_round) { continue; }
         if (++s_tab[i].ausencias >= AUSENCIAS_PARA_SUMIR) {
             memset(&s_tab[i], 0, sizeof(s_tab[i]));
         }
     }
 
-    // Publica a tabela INTEIRA - todas as constelacoes juntas, nao so a que
-    // acabou of close a round.
+    // Publishes the ENTIRE table - all constellations together, not just the one that
+    // finished close a round.
     uint8_t n = 0;
     memset(output, 0, sizeof(*output));
     for (int i = 0; i < MAX_SATS_TRACKED && n < MAX_SATS_TRACKED; ++i) {
-        if (s_tab[i].ocupado) { output->satellites[n++] = s_tab[i].sat; }
+        if (s_tab[i].occupied) { output->satellites[n++] = s_tab[i].sat; }
     }
     output->count = n;
     return true;

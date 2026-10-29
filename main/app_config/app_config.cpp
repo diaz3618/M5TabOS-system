@@ -3,18 +3,18 @@
 // NOVA FORMA, a of qualquer celular:
 //
 //   - no TOPO, o que se mexe sem pensar: BRILHO e VOLUME, direto in barra;
-//   - uma line, e embaixo a LISTA das paginas - icon, name, e uma line of
+//   - a line, and below the LIST of pages - icon, name, and a line of
 //     estado ("Conectado a ...", "Desligado") para saber sem entrar;
-//   - cada pagina tem VOLTAR e as opcoes dela. A lista rola (kernel/list):
-//     opcao nova e UMA line in tabela PAGINAS, nao one remendo of position.
+//   - each page has BACK and its options. The list scrolls (kernel/list):
+//     The new option is ONE line in the PAGES table, not a patch of position.
 //
-// A versao anterior empilhava todas as secoes numa coluna of 1800 px que o
-// sistema rolava; cada secao nova empurrava as outras, e as alturas eram
-// numeros somados a mao (e erraram mais of uma vez).
+// The previous version stacked all sections in a column of 1800 px which
+// system rolled; each new section pushed the others, and the heights were
+// numbers added by hand (and they got it wrong more than once).
 //
-// O que mora aqui e of USUARIO, nao of aplicativo: cada app continua
+// What lives here is of the USER, not of the application: each app continues
 // declarando o hardware que precisa no profile dele; este app controla o que
-// atravessa todos (settings.h).
+// traverses all (settings.h).
 
 #include <math.h>
 #include "tab5_time.hpp"   // tab5_now_ms
@@ -133,7 +133,7 @@ static const pagina_def_t PAGINAS[PAG_N] = {
 static paint_t s_p;
 static int       s_pag = PAG_INICIO;
 static list_t   s_lista;
-static char      s_sub[PAG_N][48];     // a line of estado of cada item, como desenhada
+static char      s_sub[PAG_N][48];     // a line of status of each item, as drawn
 static int       s_ub = -1, s_uv = -1; // brilho/volume desenhados
 static char      s_assin[512];         // "assinatura" of pagina open: changed, redesenha
 static char      s_aviso[96];          // recado curto numa pagina ("escolhido para o Mesh")
@@ -187,7 +187,7 @@ static int paragrafo(lgfx::LovyanGFX& d, int x, int y, int width, const char* s)
 }
 
 
-// Chevron ">" drawn (a fonte teria outro peso a cada tamanho).
+// Chevron ">" drawn (the font would have a different weight for each size).
 static void chevron(lgfx::LovyanGFX& d, int cx, int cy, uint16_t color)
 {
   for (int k = 0; k < 3; ++k) {
@@ -363,7 +363,7 @@ static void ic_grove(lgfx::LovyanGFX& d, int x, int y, int l)
   d.fillRect(cx - l / 20, y + l * 65 / 100, l / 10, l / 6, TFT_WHITE);
 }
 
-// O simbolo of USB: haste, triangulo in ponta, e os dois ramos (bola e
+// The symbol of USB: rod, triangle at the tip, and the two branches (ball and
 // quadrado) - o mesmo drawing gravado no plugue.
 static void ic_usb(lgfx::LovyanGFX& d, int x, int y, int l)
 {
@@ -391,7 +391,7 @@ static void ic_sobre(lgfx::LovyanGFX& d, int x, int y, int l)
 }
 
 // ---------------------------------------------------------------------------
-// LINHA DE ESTADO DE CADA PAGINA (o subtitulo in lista)
+// STATUS LINE OF EACH PAGE (subtitle in list)
 // ---------------------------------------------------------------------------
 static void est_wifi(char* o, size_t t)
 {
@@ -409,8 +409,8 @@ static void est_bt(char* o, size_t t)
   const tab5_ble_state_t e = tab5_ble_state();
   if (e == TAB5_BLE_READY)       { snprintf(o, t, "On"); }
   else if (e == TAB5_BLE_STARTING) { snprintf(o, t, "Turning on..."); }
-  // C6 com o firmware of fabrica (Wi-Fi funciona, Bluetooth nao): nao e
-  // defeito, e uma atualizacao opcional - o text tem que dizer isso.
+  // C6 with the factory firmware (Wi-Fi works, Bluetooth does not): it is not
+  // defect, and an optional update - the text has to say that.
   else if (e == TAB5_BLE_FAILED && tab5_wifi_c6_link() && !tab5_wifi_c6_is_ours())
                                   { snprintf(o, t, "Factory C6 radio: update optional"); }
   else if (e == TAB5_BLE_FAILED)  { snprintf(o, t, "Failed - the C6 did not bring up Bluetooth"); }
@@ -421,7 +421,7 @@ static void est_bt(char* o, size_t t)
 static void est_espnow(char* o, size_t t)
 {
   if (!tab5_espnow_c6_compativel()) {
-    // Sem enlace ainda nao of para saber qual firmware o C6 tem.
+    // Without a link, I still can't find out which firmware the C6 has.
     snprintf(o, t, tab5_wifi_c6_link() ? "Factory C6 radio: update optional"
                                          : "Turn on Wi-Fi");
     return;
@@ -522,7 +522,7 @@ static void est_sobre(char* o, size_t t)
 static int barra_x(const area_t& a) { return a.x + MARGEM + PM_L + 16; }
 static int barra_l(const area_t& a) { return a.width - 2 * MARGEM - 2 * (PM_L + 16); }
 
-// BRILHO NA ESCALA DO OLHO. O valor of PWM e linear in luz, mas o olho nao:
+// BRIGHTNESS ON THE EYE SCALE. The value of PWM is linear in light, but the eye does not:
 // 4% of duty ja parece "one quarto of brilho". Com a barra linear quase todo o
 // progress ficava no claro e o first degrau (10 -> 25) pulava of 4% para 10%.
 // A barra anda numa position 0..1000 e o PWM exit dela pela curva gama 2,2 - a
@@ -567,7 +567,7 @@ static void draw_rapido(lgfx::LovyanGFX& d, const area_t& a, int y0, const char*
     d.fillRoundRect(bx + 4, by + 4, dentro_l, CTRL_A - 8, (CTRL_A - 8) / 2, d.color565(34, 38, 46));
     if (cheio > 0) { d.fillRoundRect(bx + 4, by + 4, cheio < CTRL_A - 8 ? CTRL_A - 8 : cheio, CTRL_A - 8, (CTRL_A - 8) / 2, TFT_SKYBLUE); }
   } else if (cheio != antes) {
-    // Redesenha a barra inteira por dentro - os cantos redondos nao deixam
+    // Redesigns the entire bar from the inside - the round corners won't let you
     // paint so a diferenca sem sobrar serrilhado.
     d.fillRoundRect(bx + 4, by + 4, dentro_l, CTRL_A - 8, (CTRL_A - 8) / 2, d.color565(34, 38, 46));
     if (cheio > 0) { d.fillRoundRect(bx + 4, by + 4, cheio < CTRL_A - 8 ? CTRL_A - 8 : cheio, CTRL_A - 8, (CTRL_A - 8) / 2, TFT_SKYBLUE); }
@@ -584,7 +584,7 @@ static void item_draw(lgfx::LovyanGFX& d, int i, int x0, int y, int width, void*
   PAGINAS[i].icon(d, ix, iy, ICONE_L);
   const int tx = ix + ICONE_L + 24;
   text(d, tx, y + 18, 32, true, TFT_WHITE, PAGINAS[i].name);
-  // Estado cortado MEDINDO, para nao passar por bottom of chevron.
+  // State cut MEASUREMENT, so as not to go through the bottom of chevron.
   char sub[48];
   snprintf(sub, sizeof(sub), "%s", s_sub[i]);
   d.setFont(tab5_fonte_suave(false, 24));
@@ -609,7 +609,7 @@ static void draw_start(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   }
   if (everything) { d.drawFastHLine(a.x, a.y + DIVISOR_Y, a.width, color_line(d)); }
 
-  // Estado of cada pagina: so o item cujo text changed e redesenhado.
+  // State of each page: only the item whose text changed and redesigned.
   for (int i = 0; i < PAG_N; ++i) {
     char now[48];
     PAGINAS[i].state(now, sizeof(now));
@@ -651,7 +651,7 @@ static void mexer_rapido(int y0, int tx, int ty, bool so_barra)
   if (novo == current) { return; }
   if (brilho) {
     int b = pos_para_brilho(novo);
-    // No pe of curva dois touches of "-"/"+" podem cair no mesmo valor of PWM:
+    // In the case of curve two touches of "-"/"+" can fall into the same value of PWM:
     // o botao sempre anda pelo menos one.
     const int b_current = settings_brightness();
     if (b == b_current) { b += (novo > current) ? 1 : -1; }
@@ -670,7 +670,7 @@ static void mexer_rapido(int y0, int tx, int ty, bool so_barra)
 // ---------------------------------------------------------------------------
 // PAGINAS
 // ---------------------------------------------------------------------------
-// Cada pagina: draw(everything) e touch(x,y). A pagina redesenha o content
+// Each page: draw(everything) and touch(x,y). The page redesigns the content
 // inteiro when a ASSINATURA (os valores que ela mostra) muda - e so entao.
 static void content_limpo(lgfx::LovyanGFX& d, const area_t& a)
 {
@@ -680,7 +680,7 @@ static void content_limpo(lgfx::LovyanGFX& d, const area_t& a)
 // ---- Wi-Fi -----------------------------------------------------------------
 // Estado, enable/disable, procurar, e a LISTA of redes em iteration. Tocar numa
 // rede conhecida conecta; numa nova, pede a senha (keyboard of screen ou of
-// ExtPort1), guarda cifrada no cartao e conecta. Tocar duas vezes in rede em
+// ExtPort1), save it encrypted on the card and connect. Double tap on network
 // uso a esquece.
 static const int WF_ITEM_A = 92;
 static list_t   s_l_wifi;
@@ -797,15 +797,15 @@ static void pag_wifi(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   list_draw(&s_l_wifi, d, window, TFT_BLACK, changed);
 }
 
-// Gravar no cartao e conectar: no worker (o cartao demora), com a senha
+// Write to the card and connect: to the worker (the card takes a while), with the password
 // numa copia propria que o work apaga on terminar.
 typedef struct { char ssid[33]; char senha[65]; bool esquecer; } wf_request_t;
 
 static void wf_work(void* arg)
 {
   wf_request_t* p = (wf_request_t*)arg;
-  // A gravacao monta o cartao sozinha (e, com ele emprestado on computador,
-  // vai para o diario - a rede nova nao se perde).
+  // The recording mounts the card alone (and, with it borrowed from the computer,
+  // goes to the diary - the new network is not lost).
   if (p->esquecer) { tab5_wifi_forget(p->ssid); }
   else             { tab5_wifi_save_credentials(p->ssid, p->senha[0] ? p->senha : "-"); }
   if (!p->esquecer) { tab5_wifi_connect(p->ssid); }
@@ -850,7 +850,7 @@ static void wf_key(int ac)
 {
   if (ac == TECVIRT_ENVIAR) { wf_send_senha(); return; }
   if (ac == TECVIRT_FECHAR) { wf_close_senha(); return; }
-  // Senha e ASCII (como no keyboard fisico): o acento of pagina of simbolos nao entra.
+  // Password and ASCII (as on the physical keyboard): the accent of the page of symbols does not enter.
   virtual_keyboard_edit(s_wf_txt, sizeof(s_wf_txt), ac, true);
   system_request_redraw();
 }
@@ -920,7 +920,7 @@ static void type_wifi(const char* txt, uint8_t code)
   if (code == TAB5_KEY_ENTER)  { wf_send_senha(); return; }
   if (code == TAB5_KEY_BACKSPACE) { wf_key(TECVIRT_APAGAR); return; }
   if (code == TAB5_KEY_ESC)    { wf_close_senha(); return; }
-  // Senha e ASCII: a letra que a key morta compos iteration a ser as duas teclas.
+  // Password and ASCII: the letter that the dead key composed iteration to be the two keys.
   char cru[8];
   tab5_keyboard_ascii(txt, cru, sizeof(cru));
   for (const char* c = cru; *c; ++c) { if ((unsigned char)*c >= 0x20) { wf_key((unsigned char)*c); } }
@@ -938,7 +938,7 @@ static void bt_item_draw(lgfx::LovyanGFX& d, int i, int x0, int y, int width, vo
   d.fillRect(x0, y, width, BT_ITEM_A, TFT_BLACK);
   char end[18], line[80], dist[12];
   tab5_ble_address_text(v.addr, end);
-  // Rastreador em laranja: e o que se procura when se quer saber "tem uma
+  // Tracker in orange: and what do you look for when you want to know "does it have a
   // etiqueta perto of mim?".
   const uint16_t color = v.meshtastic ? TFT_GREENYELLOW
                      : v.class_id == TAB5_BLE_TRACKER ? TFT_ORANGE : TFT_WHITE;
@@ -966,7 +966,7 @@ static void bt_reload(void)
   for (int i = 1; i < k; ++i) {
     tab5_ble_seen_t t = s_bt[i];
     int j = i - 1;
-    // Meshtastic, depois rastreadores, depois o resto - cada grupo por sinal.
+    // Meshtastic, then trackers, then the rest - each group by the way.
     auto grupo = [](const tab5_ble_seen_t& x) {
       return x.meshtastic ? 0 : x.class_id == TAB5_BLE_TRACKER ? 1 : 2;
     };
@@ -1027,7 +1027,7 @@ static void touch_bt(int tx, int ty)
   int y = CONTEUDO_Y + 84 + 84;
   if (tab5_dentro(tx, ty, MARGEM, y, l, BTN_A)) {
     // Descendo: o botao espera a stack terminar (o touch repetido of quem
-    // achou que nao pegou nao empilha pedidos).
+    // thought you didn't get it, don't stack orders).
     if (tab5_ble_state() == TAB5_BLE_STOPPING) { return; }
     system_bluetooth(tab5_ble_state() == TAB5_BLE_OFF);
     s_aviso[0] = 0;
@@ -1046,7 +1046,7 @@ static void touch_bt(int tx, int ty)
   char end[18];
   tab5_ble_address_text(s_bt[i].addr, end);
   const char* name = s_bt[i].name[0] ? s_bt[i].name : end;
-  // Todo touch responde: one aparelho que o sistema nao sabe usar diz isso, em
+  // Every touch responds: one device that the system does not know how to use says this, in
   // vez of o touch parecer perdido.
   if (!s_bt[i].meshtastic) {
     char dist[12];
@@ -1061,7 +1061,7 @@ static void touch_bt(int tx, int ty)
     return;
   }
   // Meshtastic: vira o no of Mesh, e o Mesh passa para o Bluetooth - touch e
-  // o request of conectar, e a line "Conexão" acompanha o que acontece.
+  // the request to connect, and the "Connection" line follows what happens.
   settings_set_mesh_ble_address(end);
   if (settings_mesh_transport() != SETTINGS_MESH_TRANSPORT_BLUETOOTH) { settings_set_mesh_transport(SETTINGS_MESH_TRANSPORT_BLUETOOTH); }
   // Conectar liga o Bluetooth - e stays gravado, como no botao.
@@ -1118,14 +1118,14 @@ static void touch_espnow(int tx, int ty)
 static int mesh_y_via(void)    { return CONTEUDO_Y + 30; }
 static int mesh_y_pin(void)    { return mesh_y_via() + BTN_A + 24 + 84 + 84; }
 // A position of GPS para a malha exited daqui: e of grupo Localizacao of app
-// Mesh (Configurar o no), junto of que o NO faz com ela - dois lugares para a
+// Mesh (Configure the node), along with what the NO does with it - two places for the
 // mesma coisa deixavam one contradizer o outro.
 static int mesh_y_net(void)    { return mesh_y_pin() + 34 + BTN_A + 24; }   // bloco of internet (MQTT)
 
 static bool s_pin_para_no = false;   // o editor abriu porque o no esta pedindo o PIN now
 static char s_pin_pintado[16];       // o numero que esta in screen
 
-// O numero of PIN, sozinho: limpa so a faixa dele (ate o botao) e escreve.
+// The PIN number, alone: ​​just clear its track (up to the button) and write it.
 static void pin_valor(lgfx::LovyanGFX& d, const area_t& a, bool forcar)
 {
   char pin[16];
@@ -1139,7 +1139,7 @@ static void pin_valor(lgfx::LovyanGFX& d, const area_t& a, bool forcar)
 
 static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool everything)
 {
-  // O no pediu o PIN (modo aleatorio): o keyboard abre sozinho.
+  // No asked for the PIN (random mode): the keyboard opens by itself.
   if (mesh_ble_esperando_pin() && !s_pin_editando) {
     s_pin_editando = true;
     s_pin_para_no = true;
@@ -1153,12 +1153,12 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool everything)
            (unsigned long)settings_mesh_pin(), 0u, (int)s_pin_editando, "",
            (int)settings_mesh_internet(), tab5_mesh_internet_estado());
   // A memoria of assinatura (s_assin) guarda 159 caracteres: o que muda
-  // depois disso (os estados, que vem no end) nao repintaria. Vai o HASH of
-  // assinatura inteira (FNV-1a), que cabe e muda com qualquer caractere.
+  // After that (the states, which come at the end) I would not repaint. Go the HASH of
+  // entire signature (FNV-1a), which fits and changes with any character.
   uint32_t h = 2166136261u;
   for (const char* c = assin; *c; ++c) { h = (h ^ (uint8_t)*c) * 16777619u; }
   snprintf(assin, sizeof(assin), "mesh|%08lx", (unsigned long)h);
-  // O PIN digitado stays FORA of assinatura: a letra repinta so o numero.
+  // The entered PIN stays OUTSIDE of signature: the letter only repaints the number.
   if (s_pin_editando) { virtual_keyboard_position(&s_kb, a); }
   if (!paint_changed_s(&s_p, s_assin, sizeof(s_assin), assin) && !everything) {
     if (s_pin_editando) { pin_valor(d, a, false); virtual_keyboard_paint(&s_kb, d, false); }
@@ -1167,8 +1167,8 @@ static void pag_mesh(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   content_limpo(d, a);
   const int l3 = (a.width - 2 * MARGEM - 32) / 3;
 
-  // TRES VIAS. O Grove ganha sozinho when o C6L e achado no cabo; depois
-  // disso a escolha aqui vale ate o next achado (ver settings.h).
+  // THREE WAY. The Grove wins alone when the C6L is found on the cable; after
+  // Therefore, the choice here is valid until the next finding (see settings.h).
   text(d, a.x + MARGEM, a.y + CONTEUDO_Y, 22, false, color_sub(d), "Talk to the mesh over (Grove takes priority)");
   int y = mesh_y_via();
   static const char* const ROTULO[3] = { "CABO GROVE", "BLUETOOTH", "INTERNET" };
@@ -1221,7 +1221,7 @@ static void aplicar_pin(void)
     const uint32_t pin = (uint32_t)atol(s_pin_txt);
     if (s_pin_para_no) {
       // PIN PEDIDO AGORA PELO NO (o que aparece in screen dele): vai so para
-      // este pareamento. Nao e salvo - o no gera outro in next vez, e one
+      // this pairing. No is saved - no generates another in next time, and one
       // numero velho salvo so faria o pareamento seguinte falhar.
       if (mesh_ble_esperando_pin()) { mesh_ble_digitar_pin(pin); }
     } else {
@@ -1306,12 +1306,12 @@ static void type_mesh(const char* txt, uint8_t code)
 }
 
 // ---- LoRa ------------------------------------------------------------------
-// Diagnostico of transceptor NU no M5-Bus. Nao usa nem altera o servico
+// Diagnostics of NU transceiver on M5-Bus. Do not use or change the service
 // Meshtastic: sao aparelhos e caminhos eletricos diferentes.
 static const int LORA_BOTAO_Y = 840;
 
-// Uma line "sw2=G4* · sw3=G2 · sw4=G47" a partir of tabela of HAL - gerada,
-// nao copiada a mao, para nunca mais destoar dela (era assim que o "24/G35"
+// A line "sw2=G4* · sw3=G2 · sw4=G47" from table of HAL - generated,
+// not copied by hand, never to clash with it again (that's how "24/G35"
 // of NSS, que o esquematico provou nunca ter existido, tinha sobrevivido).
 // '*' marca o switch que battery com a rota tentada now (gpio_ativo).
 static void lora_line_candidatos(char* out, size_t cap, const tab5_lora_pin_t* pins, size_t n,
@@ -1376,9 +1376,9 @@ static void pag_lora(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   y += 84;
 
   // CONFERIDO no esquematico of modulo e cruzado com o of Tab5 (M5_BUS) -
-  // ver o aviso grande em hal/tab5_lora.hpp. O switch 1 of SW1 (rotulado
-  // "ISO_G0" no modulo) nao aparece aqui of proposito: nao vai a pino
-  // nenhum of M5-Bus, so NSS tem 3 candidatos of verdade, nao 4.
+  // see the large warning in hal/tab5_lora.hpp. The switch 1 of SW1 (labeled
+  // "ISO_G0" in the module) does not appear here on purpose: it does not go to pin
+  // None of M5-Bus, only NSS has 3 true candidates, not 4.
   char line[128];
   text(d, a.x + MARGEM, a.y + y, 22, false, color_sub(d), "SW1 · switches 2-4 = NSS, 5-8 = BUSY");
   y += 30;
@@ -1433,8 +1433,8 @@ static void pag_screen(lgfx::LovyanGFX& d, const area_t& a, bool everything)
 {
   char assin[64], v1[16], v2[16];
   snprintf(v1, sizeof(v1), "%u s", (unsigned)settings_screen_timeout_s());
-  // O clock EM USO, e nao o gravado: in screen TDDI ele stays no of fabrica
-  // (tab5_painel em hal/tab5_power.hpp) e o gravado nao vale.
+  // The clock is IN USE, not recorded: in screen TDDI it remains not of factory
+  // (tab5_panel in hal/tab5_power.hpp) and the recording is not valid.
   snprintf(v2, sizeof(v2), "%d MHz", tab5_power_dpi_clock());
   snprintf(assin, sizeof(assin), "%s|%s|%d|%d", v1, v2, (int)settings_lock_screen(), (int)settings_wallpaper());
   if (!paint_changed_s(&s_p, s_assin, sizeof(s_assin), assin) && !everything) { return; }
@@ -1493,7 +1493,7 @@ static void touch_screen(int tx, int ty)
     if (v < SETTINGS_PANEL_CLOCK_MIN_MHZ) { v = SETTINGS_PANEL_CLOCK_MIN_MHZ; }
     if (v > SETTINGS_PANEL_CLOCK_MAX_MHZ) { v = SETTINGS_PANEL_CLOCK_MAX_MHZ; }
     // Aplica first, grava so se deu certo: one valor que o panel recusou
-    // nao pode virar o of next boot.
+    // cannot turn on the of next boot.
     if (tab5_power_dpi_clock(v)) {
       settings_set_panel_clock_mhz((uint8_t)v);
       system_request_redraw_complete();
@@ -1502,7 +1502,7 @@ static void touch_screen(int tx, int ty)
 }
 
 // ---- Aplicativos -----------------------------------------------------------
-// A lista vem of tabela complete of apps, nunca of home ja filtrada.
+// The list comes from the complete table of apps, never from home already filtered.
 static const int APPS_ITEM_A = 92;
 static const int APPS_LISTA_Y = CONTEUDO_Y + 52;
 
@@ -1527,8 +1527,8 @@ static void apps_item_draw(lgfx::LovyanGFX& d, int i, int x0, int y, int width, 
 static void apps_alternar(int alvo)
 {
   if (alvo < 0 || alvo >= SISTEMA_NUM_APPS) { return; }
-  // Ajustes stays sempre visivel para a pessoa nao perder o caminho of iteration
-  // ate esta pagina.
+  // Adjustments always remain visible so the person does not lose the path of iteration
+  // until this page.
   if (strcasecmp(SISTEMA_APPS[alvo]->name, "Settings") == 0) { return; }
 
   char novos[sizeof(s_apps_ocultos)];
@@ -1652,7 +1652,7 @@ static void pag_sobre(lgfx::LovyanGFX& d, const area_t& a, bool everything)
 
 // ---- USB (pendrive) --------------------------------------------------------
 // A screen of pendrive inteira: estado, transferencia, o diario das gravacoes
-// guardadas, o resultado of ultima iteration e o ajuste of enable sozinho. O
+// saved, the result of last iteration and the setting of enable alone. THE
 // work mora no servico (services/tab5_flashdrive) - esta pagina so pede e
 // mostra, e a pessoa pode exit dela a vontade: o pendrive segue em segundo
 // plano. A CONFIRMACAO of return sem o computador ter ejetado e daqui.
@@ -1681,7 +1681,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
   tab5_sd_summary_t r;
   tab5_sd_summary(&r);
   if (e.fase != PENDRIVE_ATIVO) { s_usb_confirm = false; }
-  // Aberta com one resultado esperando: a pessoa viu - o aviso of barra exit.
+  // Opened with one result waiting: the person saw - the warning of bar exit.
   if (e.fase == PENDRIVE_PARADO) { tab5_pendrive_resultado_visto(); }
 
   // O QUE MOSTRAR
@@ -1711,8 +1711,8 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
     snprintf(l3, sizeof(l3), "%u write(s) held (%u of %u KB)",
              (unsigned)r.in_journal, (unsigned)(r.journal_used / 1024), (unsigned)(r.journal_total / 1024));
   }
-  // DIAGNOSTICO: ate onde o computador chegou, in order em que ele faz. E o
-  // que diz, num disco que nao aparece, se o problema e no USB (nem
+  // DIAGNOSIS: how far the computer has gotten, in the order in which it does it. And the
+  // which says, on a disk that does not appear, if the problem is with the USB (or
   // reconheceu), no request of disco ou in leitura (o sistema dele desistiu).
   char diag[96] = "";
   if (e.fase == PENDRIVE_ATIVO) {
@@ -1727,8 +1727,8 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
     else                        { snprintf(diag, sizeof(diag), "USB: %u read(s), %u delivered, slowest %u ms",
                                            (unsigned)u.n_cmd_leitura, (unsigned)u.n_leituras_ok,
                                            (unsigned)u.leitura_max_ms); }
-    // Parou ha mais of 3 s: diz ONDE - e o que separa one travamento of USB
-    // (ou of cartao) of computador que simplesmente parou of request.
+    // It stopped more than 3 s ago: it says WHERE - and what separates a crash from USB
+    // (or of card) of computer that simply stopped of request.
     if (u.n_config && u.parado_ms >= 3000) {
       switch (u.onde) {
         case PENDRIVE_ESPERA_CARTAO:
@@ -1762,8 +1762,8 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
       case PENDRIVE_RECUSA_USB:        snprintf(end, sizeof(end), "USB did not start. The card stays on the Tab5."); break;
       default:
         if (e.sem_ejetar) {
-          // Ver tab5_flashdrive.cpp (s_saiu_sem_ejetar): o disco nao aparecer
-          // logo of next vez e o computador verificando o cartao.
+          // See tab5_flashdrive.cpp (s_saiu_sem_ejetar): the disk does not appear
+          // soon of next time and the computer checking the card.
           snprintf(end, sizeof(end), "Removed without ejecting: the computer checks the card before opening it.");
         } else if (r.complete) {
           snprintf(end, sizeof(end), "Last time: %u write(s) applied%s%s",
@@ -1807,7 +1807,7 @@ static void pag_usb(lgfx::LovyanGFX& d, const area_t& a, bool everything)
       break;
     default:
       y = usb_botao(d, a, 0, y, "PLEASE WAIT...", TFT_DARKGREY);
-      s_usb_bt[0] = { };   // nao responde
+      s_usb_bt[0] = { };   // does not respond
       break;
   }
   y = usb_botao(d, a, 2, y, settings_flash_drive() ? "TURN ON BY ITSELF ON THE COMPUTER: YES" : "TURN ON BY ITSELF ON THE COMPUTER: NO",
@@ -1908,7 +1908,7 @@ static bool on_open(void)
   for (int i = 0; i < PAG_N; ++i) { PAGINAS[i].state(s_sub[i], sizeof(s_sub[i])); }
   list_set(&s_lista, ROLAGEM_INICIO, PAG_N, item_height, item_draw, nullptr);
   paint_request(&s_p);
-  // O aviso of pendrive (barra of status) abre Ajustes: cai direto in pagina.
+  // The pendrive warning (status bar) opens Settings: it goes straight to the page.
   if (tab5_pendrive_pede_atencao()) { open_pagina(PAG_USB); }
   return true;
 }
@@ -1984,24 +1984,24 @@ static void on_type(const char* txt, uint8_t code, uint8_t)
 // ICONE DA TELA INICIAL
 // ---------------------------------------------------------------------------
 // Primitivas e fracao of lado, como a marca of Mesh: exit limpo em qualquer
-// tamanho, nao gasta flash e nao serrilha. A letra grande que estava aqui era
-// a fonte embutida ampliada 6x - cada pixel dela virava one quadrado of 6.
+// size, no flash and no serration. The big letter that was here was
+// the embedded font magnified 6x - each pixel of it became a square of 6.
 
-// ENGRENAGENS QUE ENGRENAM DE VERDADE (terceira versao).
+// GEARS THAT REALLY MESH (third version).
 //
-// A anterior tinha a composicao certa - grande, e duas menores on
+// The previous one had the right composition - large, and two smaller ones on
 // lado, como in referencia of icon of ajustes classico - mas as tres se
 // SOBREPUNHAM: a distancia entre centros era bem menor que a soma dos raios, e
 // viravam one borrao so. Agora e engrenagem of verdade:
 //   - MESMO PASSO of dente nas tres (PASSO, % of lado): so assim o dente of
-//     uma cabe no vao of outra; o raio of cada uma exit of numero of dentes;
+//     one fits in the space of another; the radius of each exit of number of teeth;
 //   - distancia entre centros = soma dos raios primitivos (onde os dentes se
 //     encontram);
 //   - FASE calculada: a grande aponta one dente para a media, a media poe one
-//     VAO ali; para a pequena, a fase compensa onde o dente of grande caiu.
+//     GO there; for the small one, the phase compensates for where the big tooth fell out.
 // Dente TRAPEZIOIDAL (mais largo in raiz que in ponta), bottom e largo - o
-// dente fino e comprido of primeira prova lia como sol, nao engrenagem.
-// Prototipado em imagem antes (a mesma conta), conferido tambem a 96 px.
+// thin and long tooth of first test read like sun, not gear.
+// Prototyped in a before image (the same account), also checked at 96 px.
 static const float ENG_PASSO = 10.5f;   // passo circular, % of lado
 static const float ENG_DENTE = 6.0f;    // height of dente, % of lado
 
@@ -2043,7 +2043,7 @@ static void icon_config(lgfx::LovyanGFX& d, int x, int y, int lado)
 
   // Grande embaixo a left; a media engrena nela para cima-direita (-40
   // graus), a pequena para baixo-direita (+20). Folgas conferidas: none
-  // encosta in borda arredondada, e media e pequena nao se tocam.
+  // slopes on a rounded edge, and medium and small do not touch.
   const int   nG = 14, nM = 9, nP = 6;
   const float gx = 40.0f, gy = 58.0f;
   const float t1 = -40.0f, t2 = 20.0f;
@@ -2056,7 +2056,7 @@ static void icon_config(lgfx::LovyanGFX& d, int x, int y, int lado)
   const float fG = t1;                              // dente of grande apontando para a media
   const float fM = t1 + 180.0f + 180.0f / nM;       // vao of media no mesmo ponto
   const float pG = 360.0f / nG;
-  const float dlt = t2 - (fG + roundf((t2 - fG) / pG) * pG);   // onde o dente of grande caiu
+  const float dlt = t2 - (fG + roundf((t2 - fG) / pG) * pG);   // where the big tooth fell out
   const float fP = (t2 + 180.0f - dlt * rG / rP) + 180.0f / nP;
 
   draw_engrenagem(d, x, y, lado, gx, gy, nG, fG, escuro, fundo);
@@ -2065,15 +2065,15 @@ static void icon_config(lgfx::LovyanGFX& d, int x, int y, int lado)
 }
 
 
-// 'extern' e OBRIGATORIO: em C++ one const no escopo of arquivo tem ligacao
-// interna, e o apps.cpp nao enxergaria este simbolo.
-// O RITMO DE CADA PAGINA. Era 500 ms em todas: a interface acordava 2x/s com
+// 'extern' is REQUIRED: in C++ a const in the scope of file has a link
+// internal, and apps.cpp would not see this symbol.
+// THE RHYTHM OF EACH PAGE. It was 500 ms in all: the interface woke up 2x/s with
 // Ajustes open, mesmo parada in pagina of Tela (que so muda pelo touch, e o
-// touch ja pede redraw). Agora: 0 onde nada muda sozinho, 500 ms so onde
+// touch already asks for redraw). Now: 0 where nothing changes on its own, 500 ms is where
 // algo anda depressa (procura of redes, varredura BLE, pendrive em uso,
 // sondagem of Grove), 1 s no resto (estados of Wi-Fi/BLE/Mesh, clock of
-// Sobre). Cada pagina continua comparando a assinatura antes of paint.
-static uint32_t periodo_now(void)
+// On). Each page continues comparing the signature before painting.
+static uint32_t current_redraw_period(void)
 {
   if (system_grove_probing()) { return 500; }
   switch (s_pag) {
@@ -2095,15 +2095,15 @@ extern const app_t APP_CONFIG = {
   .color   = TFT_YELLOW,
   .profile = { .speaker = true },
   .uses_sd = false,
-  .piso_sleep_mhz = 0,
+  .sleep_clock_floor_mhz = 0,
   .on_open  = on_open,
   .on_close = on_close,
   .draw  = draw,
   .on_touch  = on_touch,
   .on_touch_level = on_touch_level,
   .on_type = on_type,
-  .periodo_ms = 1000,                // o default; periodo_agora decide por pagina
-  .periodo_now = periodo_now,
-  .height_content = 0,   // nao rola inteiro: a lista e as paginas rolam por dentro
+  .redraw_period_ms = 1000,                // o default; periodo_agora decide por pagina
+  .current_redraw_period = current_redraw_period,
+  .height_content = 0,   // does not scroll completely: the list and pages scroll inside
   .icon = icon_config,
 };

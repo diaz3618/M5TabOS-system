@@ -57,7 +57,7 @@ static tab5_lora_status_t s_status = {
 // candidate - it's just the position that never connects to anything useful
 // here.
 static tab5_lora_pin_t s_pins[] = {
-  // fixed (no switch): M5IOE1 I2C
+  // fixed (on switch): M5IOE1 I2C
   { 17, 31, 0, TAB5_LORA_SIGNAL_I2C, TAB5_LORA_PIN_I2C_HIGH },
   { 18, 32, 0, TAB5_LORA_SIGNAL_I2C, TAB5_LORA_PIN_I2C_HIGH },
   // SW1, switches 2-4: NSS
@@ -233,7 +233,7 @@ bool tab5_lora_start(void)
   vTaskDelay(pdMS_TO_TICKS(120));
 
   // The module's own official example uses a 3.0 V TCXO and external reset
-  // through the M5IOE1. begin() also does the read that proves an SX1262 is
+  // through the M5IOE1. begin() also does the reading that proves an SX1262 is
   // actually there.
   s_radio.tcxoVoltage = 3.0f;
   s_status.radio_error = s_radio.begin(868.0f, 125.0f, 12, 5, 0x34,

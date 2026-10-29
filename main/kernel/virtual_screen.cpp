@@ -7,9 +7,9 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
-// DIAGNOSTICO (console: screen rolar cpu|dma). true = a rolagem desloca pela CPU
-// dentro of pagina of tras, como antes of DMA - para comparar os dois caminhos
-// no aparelho sem regravar.
+// DIAGNOSIS (console: screen scroll cpu|dma). true = scrolling shifts by CPU
+// within the page of behind, as before of DMA - to compare the two paths
+// on the device without re-recording.
 bool g_screen_rolar_cpu = false;
 
 static const char *TAG = "tela_virtual";
@@ -17,13 +17,13 @@ static const char *TAG = "tela_virtual";
 static const int FB_L = 720;
 static const int FB_A = 1280;
 
-// ---------------------------------------------------------------------------
-// A LIXEIRA
-// ---------------------------------------------------------------------------
-// Desenho SEM panel (sleep, troca of clock): nao ha pagina onde write,
-// e o ponteiro antigo aponta para one framebuffer ja liberado. O pixel tem que
-// ir para algum lugar - vai para ca, e o log avisa uma vez. So e alocada se
-// isso acontecer of fato; com o sistema certo, nunca existe.
+// -------------------------------------------------------------------------------
+// THE TRASH CAN
+// -------------------------------------------------------------------------------
+// Design WITHOUT panel (sleep, change of clock): there is no page where to write,
+// and the old pointer points to an already freed framebuffer. The pixel has to
+// go somewhere - goes here, and the log warns once. Only allocated if
+// this actually happens; with the right system, there never is.
 static void* s_lixeira = nullptr;
 
 static void* lixeira(void)
@@ -36,9 +36,9 @@ static void* lixeira(void)
   return s_lixeira;
 }
 
-// O PAINEL VOLTOU: a lixeira exit. Ela so existe para one drawing fora of hora
-// com o panel disabled (sleep); guardada, eram 1,8 MB of PSRAM presos ate
-// reiniciar por causa of one unico drawing perdido.
+// THE PANEL RETURNED: the trash can exit. It only exists for one drawing out of turn
+// with panel disabled (sleep); saved, there were 1.8 MB of PSRAM stuck until
+// restart because of one single drawing lost.
 static void release_lixeira(void)
 {
   if (!s_lixeira) { return; }
@@ -47,37 +47,37 @@ static void release_lixeira(void)
   ESP_LOGI(TAG, "painel de volta - lixeira solta (1,8 MB de PSRAM devolvidos)");
 }
 
-// ---------------------------------------------------------------------------
-// O PAINEL RASTREADOR
-// ---------------------------------------------------------------------------
-// Um Panel_Sprite comum, que antes of cada escrita ABRE o frame e anota o
-// rectangle touched. Sao TODAS as portas por onde o M5GFX escreve num sprite
+// -------------------------------------------------------------------------------
+// THE TRACKER PANEL
+// -------------------------------------------------------------------------------
+// A common Panel_Sprite, which before each writing OPENS the frame and notes the
+// rectangle touched. These are ALL the ports through which M5GFX writes to a sprite
 // (LGFX_Sprite.hpp: setWindow+writeBlock/writePixels, drawPixel, fillRect,
-// writeImage[ARGB], copyRect). Texto, line, circulo, imagem - everything desce
-// para uma delas.
+// writeImage[ARGB], copyRect). Text, line, circle, image - everything goes down
+// for one of them.
 //
-// As coordenadas que chegam aqui sao LOGICAS (ja giradas pela rotation). O
-// rectangle anotado tem que ser FISICO, porque e o que o compositor copia -
-// entao a conversao e a MESMA que o Panel_Sprite faz por dentro
-// (LGFX_Sprite.cpp, writeFillRectPreclipped), repetida aqui.
+// The coordinates that arrive here are LOGICAL (already rotated by rotation). O
+// annotated rectangle has to be PHYSICAL, because that's what the composer copies -
+// so the conversion is the SAME as Panel_Sprite does inside
+// (LGFX_Sprite.cpp, writeFillRectPreclipped), repeated here.
 struct TrackedPanel : public lgfx::Panel_Sprite
 {
-  // TROCA SO O PONTEIRO. setBuffer() refaria a rotation e zeraria a window of
-  // escrita - e a troca acontece no MEIO of uma escrita (entre o setWindow e
-  // o writeBlock, when a primeira escrita of iteration abre o frame).
-  // SpriteBuffer::reset() com memoria "preallocated" nao libera nada.
+  // JUST CHANGE THE POINTER. setBuffer() would redo the rotation and reset the window of
+  // writing - and the switch happens in the MIDDLE of a write (between the setWindow and
+  // o writeBlock, when the first write of iteration opens the frame).
+  // SpriteBuffer::reset() with "preallocated" memory does not free anything.
   void apontar(void* buf)
   {
     if (buf != _img.get()) { _img.reset(buf); }
   }
 
-  // Abre o frame (se ainda nao estiver) e garante que o pixel vai para a
-  // pagina of tras dele. Chamado ANTES of toda escrita.
+  // Opens the frame (if it isn't already) and ensures that the pixel goes to the
+  // page behind it. Called BEFORE all writing.
   void open(void)
   {
     void* tras = comp_abrir();
     apontar(tras ? tras : lixeira());
-    if (tras && s_lixeira) { release_lixeira(); }   // ja apontando para a pagina, nao para ela
+    if (tras && s_lixeira) { release_lixeira(); }   // already pointing to the page, not to it
   }
 
   tab5_rect_t fisico(int x, int y, int w, int h) const
@@ -91,23 +91,23 @@ struct TrackedPanel : public lgfx::Panel_Sprite
     return { (int16_t)x, (int16_t)y, (int16_t)w, (int16_t)h };
   }
 
-  // 'opaco': a escrita cobre o rectangle inteiro com color solida (fillRect) -
-  // o que a pagina of tras tinha of atrasado ali nao precisa vir of frente.
+  // 'opaque': writing covers the entire rectangle with solid color (fillRect) -
+  // what the back page had was late doesn't need to come from the front.
   void anotar(int x, int y, int w, int h, bool opaco = false)
   {
     if (w <= 0 || h <= 0) { return; }
     open();
     const tab5_rect_t f = fisico(x, y, w, h);
-    // Atalho: o mesmo rectangle of novo (text sao dezenas of fillRect
-    // pequenos dentro of one mesmo glifo) nao precisa ir ate a lista.
-    // Vale so dentro of MESMA round: depois que o compositor consumiu a
-    // lista, o mesmo rectangle touched of novo e mudanca nova.
+    // Shortcut: the same rectangle of new (text are tens of fillRect
+    // small ones within the same glyph) do not need to go to the list.
+    // It is valid only within the SAME round: after the composer has consumed the
+    // list, the same rectangle touched of new and new change.
     const uint32_t round = comp_rodada();
     if (round == _ult_round
      && f.x >= _ult_x && f.y >= _ult_y && f.x + f.l <= _ult_x + _ult_l && f.y + f.a <= _ult_y + _ult_a) { return; }
-    // A pagina of tras ainda pode estar sem o que o frame anterior changed
-    // aqui (sincronia preguicosa): vem of frente ANTES of pixel. O atalho
-    // acima pode pular isto - o rectangle maior que o contains ja foi preparado.
+    // The page behind may still be missing what the previous frame changed
+    // here (lazy sync): comes of front BEFORE of pixel. The shortcut
+    // above can skip this - the rectangle larger than contains has already been prepared.
     if (opaco) { comp_cobrir(f); } else { comp_preparar(f); }
     comp_invalidar(f);
     _ult_x = f.x; _ult_y = f.y; _ult_l = f.l; _ult_a = f.a; _ult_round = round;
@@ -134,15 +134,15 @@ struct TrackedPanel : public lgfx::Panel_Sprite
     anotar(x, y, 1, 1);
     Panel_Sprite::drawPixelPreclipped(x, y, color);
   }
-  // RETANGULO GRANDE VAI PARA O PPA. A limpeza of area util (1,6 MB) custava
-  // 20-25 ms of CPU em toda abertura of app; o motor of preenchimento so
-  // escreve, sem a CPU. Retangulo pequeno (text, bordas) stays in CPU: ai a
-  // ida e iteration on PPA custa mais que paint.
-  static constexpr uint32_t PREENCHER_PPA_MIN = 16384;   // px (ex.: 720x23)
+  // LARGE RECTANGULE GOES TO PPA. Cleaning the usable area (1.6 MB) cost
+  // 20-25 ms of CPU every time the app is opened; the fill engine
+  // writes, without the CPU. Small rectangle (text, borders) stays in CPU: ai a
+  // round trip and iteration on PPA costs more than paint.
+  static constexpr uint32_t PREENCHER_PPA_MIN = 16384;   // px (e.g. 720x23)
 
   void writeFillRectPreclipped(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, uint32_t color) override
   {
-    anotar(x, y, w, h, true);   // color solida no rectangle inteiro
+    anotar(x, y, w, h, true);   // solid color in entire rectangle
     if ((uint32_t)w * h >= PREENCHER_PPA_MIN && _write_bits == 16
      && tab5_frame_fill(_img.get(), fisico(x, y, w, h), (uint16_t)color)) { return; }
     Panel_Sprite::writeFillRectPreclipped(x, y, w, h, color);
@@ -158,16 +158,16 @@ struct TrackedPanel : public lgfx::Panel_Sprite
     Panel_Sprite::writeImageARGB(x, y, w, h, p);
   }
 
-  // A ROLAGEM PELO DMA. Deslocar o content of uma window era one memmove of
-  // CPU dentro of mesma imagem (~1,6 MB por passo of arraste). Agora a pagina
-  // of FRENTE - que tem exatamente o que esta in screen - e copiada, deslocada,
-  // para a of tras: buffers diferentes, sem sobreposicao, e o DMA2D faz o
-  // work ~1,8x mais rapido que a CPU, que stays livre.
+  // ROLLING BY DMA. Moving the content of a window was one memmove of
+  // CPU within the same image (~1.6 MB per drag step). Now the page
+  // of FRONT - which has exactly what is on screen - and copied, moved,
+  // for the back: different buffers, without overlapping, and DMA2D does the
+  // work ~1.8x faster than the CPU, which stays free.
   //
-  // A condicao: a ORIGEM nao pode ter sido desenhada neste frame (a frente
-  // nao tem esse drawing); se tiver, cai no copyRect of CPU, que le a of
-  // tras. E o que a sincronia tinha pending dentro of destino nunca e
-  // copiado: o DMA escreve por top (comp_copiar_da_frente).
+  // The condition: the ORIGIN cannot have been drawn in this frame (the front
+  // doesn't have this drawing); if so, it falls into copyRect of CPU, which reads the of
+  // back. And what the sync had pending within the destination was never
+  // copied: DMA writes by top (comp_copiar_da_frente).
   void copyRect(uint_fast16_t dx, uint_fast16_t dy, uint_fast16_t w, uint_fast16_t h, uint_fast16_t sx, uint_fast16_t sy) override
   {
     if (w == 0 || h == 0) { return; }
@@ -178,13 +178,13 @@ struct TrackedPanel : public lgfx::Panel_Sprite
       anotar(dx, dy, w, h);
       return;
     }
-    comp_preparar(src);          // a CPU vai LER a origem in pagina of tras
+    comp_preparar(src);          // the CPU will READ the source on the back page
     anotar(dx, dy, w, h);
     Panel_Sprite::copyRect(dx, dy, w, h, sx, sy);
   }
 
-  // LEITURA tambem precisa of pagina of tras em dia (text suave sem fundo,
-  // e quem mais read pixel of iteration).
+  // READING also needs a back page (smooth text with no background,
+  // and who else read pixel of iteration).
   void readRect(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, void* dst, lgfx::pixelcopy_t* p) override
   {
     if (w && h) { comp_preparar(fisico(x, y, w, h)); }
@@ -192,8 +192,8 @@ struct TrackedPanel : public lgfx::Panel_Sprite
   }
 
 private:
-  // A window inteira, uma vez por setWindow - writeBlock/writePixels podem vir
-  // em varias chamadas para a mesma window.
+  // Entire window, once per setWindow - writeBlock/writePixels can come
+  // in several calls to the same window.
   void marcar_window(void)
   {
     if (_jan_marcada) { return; }
@@ -205,7 +205,7 @@ private:
   uint32_t _ult_round = 0;
 };
 
-// O objeto of drawing: one LovyanGFX comum cujo panel e o rastreador.
+// The object of drawing: a common LovyanGFX whose panel is the tracker.
 class TelaVirtual : public lgfx::LovyanGFX
 {
 public:
@@ -213,14 +213,14 @@ public:
 
   TelaVirtual(void) { _panel = &panel; }
 
-  // O tamanho e o formato vem of pagina of panel; o ponteiro em si muda a
-  // cada frame (TrackedPanel::apontar).
+  // The size and format comes from the page of panel; the pointer itself changes the
+  // each frame (TrackedPanel::point).
   bool create(void* pagina)
   {
-    // O MESMO formato of framebuffer (Panel_DSI forca rgb565_nonswapped).
+    // SAME format of framebuffer (Panel_DSI forces rgb565_nonswapped).
     setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
     panel.setBuffer(pagina, FB_L, FB_A, &_write_conv);
-    setRotation(0);   // tambem arma o recorte of tamanho of screen
+    setRotation(0);   // also sets screen size cropping
     return true;
   }
 };
@@ -235,12 +235,12 @@ bool virtual_screen_start(void)
     return false;
   }
   s_tv = new TelaVirtual();
-  // Comeca apontando para a FRENTE: so leitura ate a primeira escrita, que
-  // abre o frame e troca para a of tras.
+  // It starts pointing to the FRONT: only reading until the first writing, which
+  // opens the frame and switches to the back.
   s_tv->create(tab5_screen_page(false));
-  // O drawing of emoji e one hook POR OBJETO of screen (setEmojiCallback): o
-  // of display fisico nao vale aqui. Sem copiar, todo text drawn pelo
-  // compositor perdia os emojis.
+  // The drawing of emoji and one hook BY OBJECT of screen (setEmojiCallback): o
+  // of physical display is not valid here. Without copying, all text drawn by
+  // composer lost emojis.
   s_tv->setEmojiCallback(M5.Display.getEmojiCallback());
   tab5_screen_set_target(s_tv);
   ESP_LOGI(TAG, "desenho direto na pagina escondida, sem copia intermediaria");
@@ -273,14 +273,14 @@ void virtual_screen_invalidate_everything(void)
   comp_invalidar_tudo();
 }
 
-// ---------------------------------------------------------------------------
-// SUPERFICIE DE DMA (kernel/app.h)
-// ---------------------------------------------------------------------------
-// Uma imagem 720x1280 PROPRIA, alocada no first request e devolvida when o
-// app fecha: o DMA of app (o PPA of camera) escreve nela no ritmo dele, e a
-// cada draw() a area mudada vai para a pagina of tras por DMA2D
-// (sistema_superficie_mudou). Antes era a propria screen virtual - que existia
-// sempre, para todos; now so quem usa paga, e so enquanto usa.
+// -------------------------------------------------------------------------------
+// DMA SURFACE (kernel/app.h)
+// -------------------------------------------------------------------------------
+// An OWN 720x1280 image, allocated in the first request and returned when the
+// app closes: the DMA of app (the PPA of camera) writes to it at his own pace, and the
+// each draw() the changed area goes to the back page by DMA2D
+// (system_surface_changed). Before it was the virtual screen itself - which existed
+// always, for everyone; Now only those who use it pay, and only while using it.
 static void* s_surface = nullptr;
 
 bool system_surface(const area_t& r, surface_t* sup)
@@ -288,11 +288,11 @@ bool system_surface(const area_t& r, surface_t* sup)
   if (!s_tv || !sup || s_tv->getRotation() != 0) { return false; }
   if (r.x < 0 || r.y < 0 || r.width <= 0 || r.height <= 0
    || r.x + r.width > FB_L || r.y + r.height > FB_A) { return false; }
-  // LARGURA INTEIRA E LINHAS ALINHADAS. O PPA of quem escreve INVALIDA o
-  // cache das lines of destino inteiras (ppa_srm.c, "out_ext_window"),
-  // arredondadas para a line of cache of 128 B. Uma line tem 1440 B; 8
-  // lines = 11520 B = 90 x 128: com bordas em multiplos of 8, none line
-  // of cache stays dividida com one vizinho.
+  // FULL WIDTH AND ALIGNED LINES. The PPA of whoever writes INVALIDATES the
+  // cache of entire destination lines (ppa_srm.c, "out_ext_window"),
+  // rounded to the line of cache of 128 B. A line is 1440 B; 8
+  // lines = 11520 B = 90 x 128: with borders in multiples of 8, none line
+  // of cache stays divided with one neighbor.
   if (r.x != 0 || r.width != FB_L || (r.y % 8) != 0 || (r.height % 8) != 0) {
     ESP_LOGE(TAG, "superficie %dx%d em (%d,%d) recusada: precisa largura inteira e y/altura multiplos de 8",
              r.width, r.height, r.x, r.y);
@@ -319,8 +319,8 @@ void system_surface_changed(const area_t& r)
   if (!s_surface) { return; }
   const tab5_rect_t f = { (int16_t)r.x, (int16_t)r.y, (int16_t)r.width, (int16_t)r.height };
   comp_copiar_imagem(s_surface, f);
-  // A copia abriu o frame: o rastreador passa a apontar para a pagina of
-  // tras ja now, e nao so in next escrita.
+  // The copy opened the frame: the tracker now points to the page of
+  // back now, and not just in next writing.
   if (s_tv) { s_tv->panel.open(); }
 }
 

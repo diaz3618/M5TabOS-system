@@ -1,8 +1,8 @@
 // SINGLE EVENT LISTENER, with removal that WAITS for an in-flight call.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // WHY THIS EXISTS
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // Three modules deliver events to ONE registered listener: BLE scanning
 // (tab5_ble), Wi-Fi sniffing, and CSI. All three used to keep only a volatile
 // pointer: the caller copied and invoked it, while removal wrote nullptr. The
@@ -13,11 +13,11 @@
 // a listener took longer than the guess.
 //
 // Here removal (setting nullptr) RETURNS only after no call is in flight. Once
-// it returns, the remover may safely destroy anything it wants.
+// it returns, the remove may safely destroy anything it wants.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HOW, WITHOUT A LOCK
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // A caller counts itself as in flight BEFORE reading the pointer; removal
 // changes the pointer BEFORE reading the count. With sequentially consistent
 // atomics there are only two cases: the call read the old pointer and was

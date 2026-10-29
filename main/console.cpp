@@ -79,22 +79,22 @@
 
 
 // ---------------------------------------------------------------------------
-// 'screen medir' / 'screen' - O CUSTO DOS QUADROS NUMA JANELA
+// 'screen measure' / 'screen' - THE COST OF PAGES IN A WINDOW
 // ---------------------------------------------------------------------------
-// O compositor so acumula (comp_estat); a window e daqui: 'screen medir' guarda
-// a foto of now, e 'screen' mostra a diferenca ate o instante of leitura. O
-// monitor tem a foto dele - one nao apaga a window of outro.
+// The composer only accumulates (comp_estat); the window and from here: 'screen measure' guard
+// the photo of now, and 'screen' shows the difference until the moment of reading. THE
+// monitor has his photo - one does not erase the window of another.
 static comp_estat_t s_medir_base = {};
 static int64_t      s_medir_since = 0;
 
-static void screen_medir_marcar(void)
+static void screen_measure_reset(void)
 {
   comp_estat(&s_medir_base);
   s_medir_since = esp_timer_get_time();
   printf("measurement reset - use the device (scroll, open apps), then run 'screen'\n");
 }
 
-static void screen_medir_mostrar(void)
+static void screen_measure_show(void)
 {
   if (s_medir_since == 0) { printf("\n  (run 'screen measure' to start a measurement window)\n"); return; }
   comp_estat_t a;
@@ -102,7 +102,7 @@ static void screen_medir_mostrar(void)
   const comp_estat_t& b = s_medir_base;
   const double seg = (double)(esp_timer_get_time() - s_medir_since) / 1e6;
   const uint32_t q = a.frames - b.frames;
-  // Cada pixel copiado por DMA e lido (2 B) e escrito (2 B) in PSRAM. Por
+  // Each pixel copied by DMA is read (2 B) and written (2 B) in PSRAM. Put
   // isso x4. "drawn" e o que a CPU pintou direto in pagina (so escrita).
   const double mb_d  = (double)(a.px_frame    - b.px_frame)    * 2.0 / 1e6;
   const double mb_s  = (double)(a.px_sinc      - b.px_sinc)      * 4.0 / 1e6;
@@ -161,10 +161,10 @@ static void screen_medir_mostrar(void)
            (unsigned long)g.rec_espaco, (unsigned long)g.rec_sem_fundo, (unsigned long)g.rec_invade,
            (unsigned long)g.rec_destino, (unsigned long)g.rec_escala, (unsigned long)g.rec_outro);
   }
-  static const char* const FAIXA[COMP_FAIXAS] = { "1", "2", "3", "4+" };
+  static const char* const RANGE_LABELS[COMP_FAIXAS] = { "1", "2", "3", "4+" };
   printf("  frame iteration (average) : %.2f ms   panel periods:", ms_por(a.us_iteration - b.us_iteration));
   for (int f = 0; f < COMP_FAIXAS; ++f) {
-    printf(" %s:%lu", FAIXA[f], (unsigned long)(a.voltas[f] - b.voltas[f]));
+    printf(" %s:%lu", RANGE_LABELS[f], (unsigned long)(a.voltas[f] - b.voltas[f]));
   }
   printf("\n");
 }
@@ -231,17 +231,17 @@ static void cmd_c6(void)
     printf("  firmware   : no response\n");
   }
 
-  // SO A VERSAO VIAJA.
+  // ONLY THE TRAVEL VERSION.
   //
   // O esp_hosted_app_desc_t tem project_name, date, time e idf_ver, e a
-  // primeira versao deste comando imprimia os quatro. Vem vazios, e o
-  // proprio header diz por que:
+  // The first version of this command printed all four. It comes empty, and the
+  // header itself says why:
   //
   //   /* App descriptor; wire carries version + idf_target only. */
   //
   // Os campos existem no struct porque ele espelha o esp_app_desc_t of IDF,
-  // mas o RPC nao transporta o resto. Imprimir field que nunca chega e pior que
-  // nao imprimir: parece defeito of coprocessador.
+  // but the RPC does not transport the rest. Print field that never arrives and worse than
+  // does not print: it seems like a coprocessor defect.
   esp_hosted_app_desc_t d = { };
   if (eh_host_sys_get_cp_app_desc(&d) == ESP_OK) {
     printf("  app version: %.*s\n", (int)sizeof(d.version), d.version);
@@ -263,14 +263,14 @@ static void cmd_c6(void)
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   }
 
-  // Aviso por ULTIMO, depois dos data. Ele estava no middle of relatorio e
-  // partia a lista em duas - os MACs apareciam depois of one bloco of alerta,
+  // LAST notice, after the date. He was in the middle of reporting and
+  // split the list in two - the MACs appeared after one block of alert,
   // como se fossem parte dele.
   //
-  // A tabela of docs/migration.md of esp_hosted:
-  //   host 3.x + coprocessador 3.x    Suportado
-  //   host 3.x + coprocessador 1.x    Retrocompativel, atualizacao RECOMENDADA
-  //   host < 3.x + coprocessador 3.x  Nao suportado
+  // The table of docs/migration.md of esp_hosted:
+  //   3.x host + 3.x coprocessor Supported
+  //   3.x host + 1.x backwards compatible coprocessor, update RECOMMENDED
+  //   host < 3.x + 3.x coprocessor Not supported
   if (v.major1 != 0 && v.major1 < 3) {
     printf("\n  ATENCAO: host 3.x com coprocessador %d.x.\n"
            "  Combinacao retrocompativel, mas o esp_hosted RECOMENDA atualizar\n"
@@ -282,7 +282,7 @@ static void cmd_c6(void)
 // ---------------------------------------------------------------------------
 // RECEIVE A FILE OVER SERIAL
 // ---------------------------------------------------------------------------
-//   receber <app> <arquivo> <bytes>
+//   receive <app> <file> <bytes>
 //
 // This was created to send 1.4 MB of C6 firmware to the card without removing
 // the card from the device.
@@ -299,20 +299,20 @@ static void cmd_c6(void)
 //    controle of fluxo: se a gente stop para write no SD - e o FATFS para,
 //    as vezes por centenas of milissegundos, when fecha one cluster - o buffer
 //    of recepcao enche e os bytes se perdem em silencio. Com 32MB of PSRAM,
-//    receber inteiro e depois gravar desacopla as duas coisas por complete.
+//    receiving integer and then recording decouples the two things completely.
 //
 // 3. Print nothing while receiving. The natural way to send the file is
-//    "cat arquivo > /dev/cu.usbmodem*", e nesse arranjo NINGUEM esta lendo a
+//    "cat file > /dev/cu.usbmodem*", and in this arrangement NOBODY is reading the
 //    saida. Se a gente write, o buffer of TX enche e a escrita bloqueia -
-//    stopping justamente o loop que precisa consume a entrada. Silencio ate o
+//    stopping precisely the loop that needs to consume the input. Silence until
 //    end e o que mantem o fluxo vivo.
-#define RECEBER_MAX (6u * 1024u * 1024u)
+#define RECEIVE_MAX_BYTES (6u * 1024u * 1024u)
 
 // Human-readable size in a private static buffer. It is static rather than
-// porque ele aparece duas vezes in MESMA line of printf em alguns pontos - e
-// dois usos simultaneos of mesmo buffer se atropelariam. Por isso alterna
-// entre dois.
-static const char* tamanho_curto(uint64_t bytes)
+// because it appears twice in the SAME line of printf at some points - and
+// two simultaneous uses of the same buffer would run over each other. That's why it alternates
+// between two.
+static const char* format_short_size(uint64_t bytes)
 {
   static char buf[2][16];
   static int  alt = 0;
@@ -327,7 +327,7 @@ static const char* tamanho_curto(uint64_t bytes)
 //
 // `list` shows ONE folder and is used to find a file. This answers the other
 // first question: "what is here, and how much space is it using?"
-static void cmd_cartao(void)
+static void cmd_card(void)
 {
   {
     // O gravador of sistema (hal/tab5_sd.hpp): o que ainda espera, o que ja foi.
@@ -343,17 +343,17 @@ static void cmd_cartao(void)
 
   printf("--- card ---\n  %s\n", tab5_sd_description());
 
-  // Espaco livre pelo FATFS. O statvfs of VFS nao e implementado para FAT no
+  // Free space by FATFS. statvfs of VFS is not implemented for FAT in
   // IDF, entao vamos on driver: clusters livres x setores por cluster.
   FATFS* fs = nullptr;
   DWORD livres = 0;
   if (f_getfree("0:", &livres, &fs) == FR_OK && fs) {
-    // SETOR REAL, nao FF_MAX_SS. O FF_MAX_SS e o setor MAXIMO que o FATFS foi
-    // compilado para aceitar (4096 no IDF); o of cartao e 512. Multiplicar pelo
-    // maximum dava 8x a mais - one cartao of 14,5GB aparecia com 118GB.
+    // REAL SECTOR, not FF_MAX_SS. The FF_MAX_SS and the MAXIMO sector that FATFS was
+    // compiled to accept (4096 in IDF); the of card is 512. Multiply by
+    // maximum gave 8x more - one card of 14.5GB appeared with 118GB.
     //
     // Quando FF_MAX_SS == FF_MIN_SS o field ssize nem existe (o FATFS o remove,
-    // porque so ha one tamanho possivel), dai o #if.
+    // because there is only one size possible), hence the #if.
 #if FF_MAX_SS != FF_MIN_SS
     const uint64_t setor = fs->ssize;
 #else
@@ -380,31 +380,31 @@ static void cmd_cartao(void)
     yield(k++);
     if (e->d_name[0] == '.') { continue; }
 
-    char sub[288];   // TAB5_SD_APPS + '/' + ate 255 of d_name + nulo
+    char sub[288];   // TAB5_SD_APPS + '/' + up to 255 of d_name + null
     snprintf(sub, sizeof(sub), "%s/%s", TAB5_SD_APPS, e->d_name);
 
-    // Conta e soma sem recursao: as pastas of app sao planas por convencao
+    // Count and sum without recursion: of app folders are flat by convention
     // (ver tab5_sd.hpp), e lower em arvore aqui so criaria caminho para
-    // estourar stack num cartao que alguem encheu of subpastas.
+    // blowing the stack on a card that someone filled with subfolders.
     DIR* sd = opendir(sub);
     if (!sd) { continue; }
 
-    // Guarda os nomes para imprimir DEPOIS of cabecalho of pasta - o total tem
+    // Save the names to print AFTER the folder header - the total has
     // que aparecer em top, e so of para saber o total depois of percorrer.
-    #define CARTAO_MOSTRA 10
-    char nomes[CARTAO_MOSTRA][256];   // ate 255 of d_name + nulo
-    uint64_t tams[CARTAO_MOSTRA];
+    #define CARD_MAX_SHOWN 10
+    char names[CARD_MAX_SHOWN][256];   // up to 255 of d_name + null
+    uint64_t tams[CARD_MAX_SHOWN];
     int n = 0; uint64_t bytes = 0;
 
     struct dirent* f2;
     while ((f2 = readdir(sd)) != nullptr) {
       if (f2->d_name[0] == '.') { continue; }
-      char cam[560];   // sub + '/' + ate 255 of d_name + nulo
+      char cam[560];   // sub + '/' + up to 255 of d_name + null
       snprintf(cam, sizeof(cam), "%s/%s", sub, f2->d_name);
       struct stat st;
       if (stat(cam, &st) != 0 || !S_ISREG(st.st_mode)) { continue; }
-      if (n < CARTAO_MOSTRA) {
-        snprintf(nomes[n], sizeof(nomes[0]), "%s", f2->d_name);
+      if (n < CARD_MAX_SHOWN) {
+        snprintf(names[n], sizeof(names[0]), "%s", f2->d_name);
         tams[n] = (uint64_t)st.st_size;
       }
       ++n;
@@ -412,17 +412,17 @@ static void cmd_cartao(void)
     }
     closedir(sd);
 
-    printf("  %-16s %6d  %s\n", e->d_name, n, tamanho_curto(bytes));
+    printf("  %-16s %6d  %s\n", e->d_name, n, format_short_size(bytes));
 
     // Os arquivos, indentados. Faltava exatamente isto: dava para ver que a
-    // pasta Sistema tinha 3 arquivos e 1,5MB, e NAO dava para ver se o firmware
+    // System folder had 3 files and 1.5MB, and it was NOT possible to see if the firmware
     // of C6 era one deles.
-    const int mostrar = (n < CARTAO_MOSTRA) ? n : CARTAO_MOSTRA;
-    for (int i = 0; i < mostrar; ++i) {
-      printf("      %-28.28s %10s\n", nomes[i], tamanho_curto(tams[i]));
+    const int shown = (n < CARD_MAX_SHOWN) ? n : CARD_MAX_SHOWN;
+    for (int i = 0; i < shown; ++i) {
+      printf("      %-28.28s %10s\n", names[i], format_short_size(tams[i]));
     }
-    if (n > CARTAO_MOSTRA) {
-      printf("      ... and %d more\n", n - CARTAO_MOSTRA);
+    if (n > CARD_MAX_SHOWN) {
+      printf("      ... and %d more\n", n - CARD_MAX_SHOWN);
     }
   }
   closedir(d);
@@ -430,7 +430,7 @@ static void cmd_cartao(void)
   printf("\n  'list %s/<folder>' shows the files in one folder\n", TAB5_SD_APPS);
 }
 
-static void cmd_receber(int argc, char** argv)
+static void cmd_receive(int argc, char** argv)
 {
   if (argc < 4) {
     printf("usage: receive <app> <file> <bytes>\n"
@@ -447,8 +447,8 @@ static void cmd_receber(int argc, char** argv)
   }
 
   const long size = atol(argv[3]);
-  if (size <= 0 || (unsigned long)size > RECEBER_MAX) {
-    printf("invalid size (1 to %u bytes)\n", (unsigned)RECEBER_MAX);
+  if (size <= 0 || (unsigned long)size > RECEIVE_MAX_BYTES) {
+    printf("invalid size (1 to %u bytes)\n", (unsigned)RECEIVE_MAX_BYTES);
     return;
   }
 
@@ -467,9 +467,9 @@ static void cmd_receber(int argc, char** argv)
     else if (++vazios >= 10) { break; }   // gave up waiting
   }
 
-  // GRAVA O QUE CHEGOU, mesmo incompleto. Jogar 1,4MB fora por causa dos
-  // ultimos 2KB nao ajuda ninguem: com o arquivo no cartao e o md5 in screen,
-  // of para ver SE faltou e QUANTO faltou. Quem decide se serve e voce - e o
+  // RECORD WHAT ARRIVED, even incomplete. Throw 1.4MB away because of
+  // last 2KB doesn't help anyone: with the file on the card and the md5 in screen,
+  // of to see IF you missed and HOW MUCH you missed. Who decides if it serves is you - and the
   // `c6 gravar` confere o cabecalho antes of usar, of qualquer forma.
   const bool complete = (lidos == (size_t)size);
   if (lidos == 0) {
@@ -483,8 +483,8 @@ static void cmd_receber(int argc, char** argv)
            (unsigned)lidos, size, size - (long)lidos);
   }
 
-  // MD5 para conferir contra o `md5 -q` of Mac. Um tamanho igual nao prova
-  // nada: byte trocado no middle of serial of o mesmo tamanho.
+  // MD5 to check against `md5 -q` of Mac. An equal size does not prove
+  // nothing: byte swapped in the middle of serial of the same size.
   unsigned char md5[16];
   mbedtls_md5(buf, lidos, md5);
 
@@ -511,7 +511,7 @@ static void cmd_receber(int argc, char** argv)
 // two snapshots with uxTaskGetSystemState. Each snapshot requires a long
 // critical section and internal allocations; the monitor snapshot covers the
 // last second and includes ownership information.
-static void cmd_tarefas(void)
+static void cmd_tasks(void)
 {
   mon_foto_t* f = (mon_foto_t*)heap_caps_malloc(sizeof(mon_foto_t), MALLOC_CAP_SPIRAM);
   if (!f) { printf("not enough memory for the snapshot\n"); return; }
@@ -519,8 +519,8 @@ static void cmd_tarefas(void)
 
   // EM QUE ESTADO ISTO FOI MEDIDO. Sem esta line a measurement e ambigua: o mesmo
   // comando com a screen acesa e com ela apagada of numeros muito diferentes, e
-  // nada no retrato dizia qual dos dois voce estava olhando. Digitar no serial
-  // NAO acorda a screen (so o touch acorda), entao of para medir o sleep of
+  // Nothing in the portrait said which of the two you were looking at. Type in serial
+  // Does NOT wake up the screen (only the touch wakes up), so to measure the sleep of
   // verdade - mas so se der para conferir que era sleep mesmo.
   printf("--- %d tasks   [%s]   CPU %.1f%%   snapshot %lu us (worst %lu) ---\n", f->n,
          tab5_power_is_sleeping() ? "SLEEPING - screen off" : "SCREEN ON",
@@ -529,7 +529,7 @@ static void cmd_tarefas(void)
 
   for (int i = 0; i < f->n; ++i) {
     const mon_tarefa_t& t = f->t[i];
-    // xCoreID vale tskNO_AFFINITY (0x7FFFFFFF) when a tarefa roda nos dois -
+    // xCoreID is worth tskNO_AFFINITY (0x7FFFFFFF) when the task runs on both -
     // testar por negativo nunca acerta, e imprimir cru mostra one numero
     // gigante. Foi one bug real in coluna CORE of app.
     char nucleo[8];
@@ -539,31 +539,31 @@ static void cmd_tarefas(void)
            t.name, (unsigned)t.priority, nucleo, (double)t.pct,
            (unsigned)t.stack_livre, t.dono);
   }
-  // A CONTA E DO APARELHO, NAO POR NUCLEO: as porcentagens somam 100% (os
-  // dois nucleos juntos), a mesma conta of app Tarefas. Os dois IDLE juntos
-  // sao a ociosidade of aparelho; one nucleo inteiro ocupado aparece como 50%.
+  // THE ACCOUNT IS FOR THE DEVICE, NOT PER CORE: the percentages add up to 100% (the
+  // two cores together), the same Tasks app account. The two IDLE together
+  // are the idleness of the device; The entire core occupied appears as 50%.
   printf("\n  Device CPU%% (both cores total 100%%): one full core = 50%%.\n");
   heap_caps_free(f);
 }
 
 static void cmd_memoria(void)
 {
-  // O QUE O idf.py size NAO CONTA.
+  // WHAT idf.py size DOESN'T COUNT.
   //
-  // O relatorio of compilacao mostra so o ESTATICO: .text, .data, .bss. Ele nao
+  // The compilation report only shows the STATIC: .text, .data, .bss. He doesn't
   // sabe nada of que e alocado depois - stack of tarefa, buffer of UART, queue
-  // of WiFi, os dois framebuffers of 1,8MB of panel. E justamente isso que
-  // decide se cabe mais one app.
+  // of WiFi, the two framebuffers of 1.8MB of panel. And that's exactly what
+  // decide if one more app fits.
   printf("--- memory ---\n");
 
   const size_t i_liv = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
   const size_t i_tot = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
-  const size_t i_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+  const size_t internal_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
   const size_t i_blk = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
 
   const size_t p_liv = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
   const size_t p_tot = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-  const size_t p_min = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+  const size_t psram_min = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
   const size_t p_blk = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
 
   printf("  P4 SRAM     : %u KB usable (768 - L2 cache); heap %u KB, fixed (code+data) %u KB\n",
@@ -573,17 +573,17 @@ static void cmd_memoria(void)
          (unsigned)((i_tot - i_liv) / 1024), (unsigned)(i_tot / 1024),
          (unsigned)(i_tot ? ((i_tot - i_liv) * 100 / i_tot) : 0),
          (unsigned)(i_liv / 1024));
-  // O "minimum ja visto" e o numero que importa para saber se falta: o livre of
-  // now nao mostra o pico of uso que ja passou.
+  // The "minimum already seen" is the number that matters to know if it is missing: the livre of
+  // now it does not show the peak of usage that has already passed.
   printf("                minimum seen %u KB, largest block %u KB\n",
-         (unsigned)(i_min / 1024), (unsigned)(i_blk / 1024));
+         (unsigned)(internal_min / 1024), (unsigned)(i_blk / 1024));
 
   printf("  PSRAM       : %u of %u KB used (%u%%), %u KB free\n",
          (unsigned)((p_tot - p_liv) / 1024), (unsigned)(p_tot / 1024),
          (unsigned)(p_tot ? ((p_tot - p_liv) * 100 / p_tot) : 0),
          (unsigned)(p_liv / 1024));
   printf("                minimum seen %u KB, largest block %u KB\n",
-         (unsigned)(p_min / 1024), (unsigned)(p_blk / 1024));
+         (unsigned)(psram_min / 1024), (unsigned)(p_blk / 1024));
 
   const esp_partition_t* app = esp_ota_get_running_partition();
   if (app) {
@@ -591,42 +591,42 @@ static void cmd_memoria(void)
   }
 }
 
-// MAPA DA RAM INTERNA - onde esta cada byte e quao picotado esta o livre.
+// INTERNAL RAM MAP - where each byte is and how chopped up the free one is.
 //
-// "livre 80 KB" nao diz se of para alocar 16 KB: se o livre estiver em 40
-// pedacos of 2 KB, nao of. O heap of IDF (TLSF) e dividido em REGIOES (cada
-// faixa of endereco que sobrou depois of .bss, a TCM, a RAM of LP, a reserva
-// DMA); one bloco nunca atravessa regioes. Aqui cada bloco of cada regiao e
-// visitado (heap_caps_walk) e contado por faixa of tamanho, usados e livres.
+// "free 80 KB" does not say whether to allocate 16 KB: if free is 40
+// pieces of 2 KB, not of. The heap of IDF (TLSF) is divided into REGIONS (each
+// track of address left after .bss, TCM, RAM of LP, reserve
+// DMA); a block never crosses regions. Here each block of each region and
+// visited (heap_caps_walk) and counted by size range, used and free.
 //
 // COMO LER:
 //   - blocos LIVRES pequenos e muitos = fragmentacao. O que importa e o
-//     "maior" of cada regiao, nao a soma;
+//     "greater" of each region, not the sum;
 //   - blocos USADOS entre 4 e 16 KB sao malloc() comuns que o
 //     SPIRAM_MALLOC_ALWAYSINTERNAL (16384) obriga a ficar in interna. Se forem
 //     muitos, baixar esse limit os manda para a PSRAM.
 #define MAPA_FAIXAS 6
-static const uint32_t s_faixa_lim[MAPA_FAIXAS] = { 64, 256, 1024, 4096, 16384, UINT32_MAX };
-static const char*    s_faixa_name[MAPA_FAIXAS] = { "<64", "<256", "<1K", "<4K", "<16K", ">=16K" };
+static const uint32_t s_range_limits[MAPA_FAIXAS] = { 64, 256, 1024, 4096, 16384, UINT32_MAX };
+static const char*    s_range_names[MAPA_FAIXAS] = { "<64", "<256", "<1K", "<4K", "<16K", ">=16K" };
 #define MAPA_REGIOES 8
 
 typedef struct {
   intptr_t ini, end;
-  uint32_t usado, livre, maior, n_livres, n_usados;
+  uint32_t usado, free_bytes, largest_free_block, n_livres, n_usados;
   uint32_t livres_n[MAPA_FAIXAS], usados_n[MAPA_FAIXAS], usados_b[MAPA_FAIXAS];
-} mapa_regiao_t;
+} heap_region_t;
 
 typedef struct {
-  mapa_regiao_t r[MAPA_REGIOES];
+  heap_region_t r[MAPA_REGIOES];
   int n;
   bool estourou;
 } mapa_t;
 
-// Roda com a trava of heap presa: nada of printf nem malloc aqui dentro.
+// It runs with the heap lock stuck: no printf or malloc in here.
 static bool mapa_visitar(walker_heap_into_t h, walker_block_info_t b, void* u)
 {
   mapa_t* m = (mapa_t*)u;
-  mapa_regiao_t* r = nullptr;
+  heap_region_t* r = nullptr;
   for (int i = 0; i < m->n; ++i) { if (m->r[i].ini == h.start) { r = &m->r[i]; break; } }
   if (!r) {
     if (m->n >= MAPA_REGIOES) { m->estourou = true; return false; }
@@ -635,21 +635,21 @@ static bool mapa_visitar(walker_heap_into_t h, walker_block_info_t b, void* u)
     r->ini = h.start; r->end = h.end;
   }
   int f = 0;
-  while (f < MAPA_FAIXAS - 1 && b.size >= s_faixa_lim[f]) { ++f; }
+  while (f < MAPA_FAIXAS - 1 && b.size >= s_range_limits[f]) { ++f; }
   if (b.used) {
     r->usado += b.size; r->n_usados++;
     r->usados_n[f]++; r->usados_b[f] += b.size;
   } else {
-    r->livre += b.size; r->n_livres++;
+    r->free_bytes += b.size; r->n_livres++;
     r->livres_n[f]++;
-    if (b.size > r->maior) { r->maior = b.size; }
+    if (b.size > r->largest_free_block) { r->largest_free_block = b.size; }
   }
   return true;
 }
 
 static void cmd_memory_mapa(void)
 {
-  // static: ~1 KB, fora of stack of console.
+  // static: ~1 KB, outside of stack of console.
   static mapa_t m;
   memset(&m, 0, sizeof(m));
   heap_caps_walk(MALLOC_CAP_INTERNAL, mapa_visitar, &m);
@@ -657,12 +657,12 @@ static void cmd_memory_mapa(void)
   printf("--- internal RAM map by region ---\n");
   uint32_t u_n[MAPA_FAIXAS] = {0}, u_b[MAPA_FAIXAS] = {0}, l_n[MAPA_FAIXAS] = {0};
   for (int i = 0; i < m.n; ++i) {
-    const mapa_regiao_t& r = m.r[i];
-    const uint32_t frag = r.livre ? (uint32_t)(100 - (uint64_t)r.maior * 100 / r.livre) : 0;
+    const heap_region_t& r = m.r[i];
+    const uint32_t frag = r.free_bytes ? (uint32_t)(100 - (uint64_t)r.largest_free_block * 100 / r.free_bytes) : 0;
     printf("  %08x-%08x %4u KB: usado %4u KB em %4u blocos | livre %4u KB em %3u, maior %3u KB (frag %u%%)\n",
            (unsigned)r.ini, (unsigned)r.end, (unsigned)((r.end - r.ini) / 1024),
            (unsigned)(r.usado / 1024), (unsigned)r.n_usados,
-           (unsigned)(r.livre / 1024), (unsigned)r.n_livres, (unsigned)(r.maior / 1024),
+           (unsigned)(r.free_bytes / 1024), (unsigned)r.n_livres, (unsigned)(r.largest_free_block / 1024),
            (unsigned)frag);
     for (int f = 0; f < MAPA_FAIXAS; ++f) {
       u_n[f] += r.usados_n[f]; u_b[f] += r.usados_b[f]; l_n[f] += r.livres_n[f];
@@ -672,28 +672,28 @@ static void cmd_memory_mapa(void)
 
   printf("\n  range    used (count / KB)   free (count)\n");
   for (int f = 0; f < MAPA_FAIXAS; ++f) {
-    printf("  %-6s   %5u / %5u       %5u\n", s_faixa_name[f],
+    printf("  %-6s   %5u / %5u       %5u\n", s_range_names[f],
            (unsigned)u_n[f], (unsigned)(u_b[f] / 1024), (unsigned)l_n[f]);
   }
 }
 
-// CACA AO VAZAMENTO: 'memory marca' tira uma foto of heap; 'memory delta' diz o que
+// LEAK HUNT: 'memory brand' takes a photo of heap; 'memory delta' says what
 // changed since ela. O uso e open e close o app (ou enable e disable o servico)
-// algumas vezes entre os dois: o que NAO iteration on valor of marca e o que became
-// preso. Compara bytes e QUANTIDADE of blocos usados (uma lista que cresce of
-// 1 em 1 bloco escapa of conta em bytes), por faixa of tamanho in interna (a
-// faixa que cresce diz o tipo of coisa: stack, buffer, objeto pequeno), e as
-// tarefas vivas (uma tarefa que nao morre segura a stack dela).
+// sometimes between the two: what NAO iteration on value of brand and what became
+// arrested. Compares bytes and QUANTITY of blocks used (a list that grows of
+// 1 in 1 block escapes from count in bytes), by range of size in internal (the
+// growing range tells the type of thing: stack, buffer, small object), and the
+// living tasks (a task that doesn't die holds its stack).
 typedef struct {
   bool     ok;
   mapa_t   mapa;                 // so a interna, por faixa
   uint32_t i_bytes, i_blocos;    // total usado, internal
   uint32_t p_bytes, p_blocos;    // total usado, PSRAM
-  uint32_t tarefas;
-} marca_memory_t;
-static marca_memory_t s_marca_memory;
+  uint32_t task_count;
+} memory_snapshot_t;
+static memory_snapshot_t s_marked_memory;
 
-static void foto_memory(marca_memory_t* o)
+static void capture_memory_snapshot(memory_snapshot_t* o)
 {
   memset(o, 0, sizeof(*o));
   heap_caps_walk(MALLOC_CAP_INTERNAL, mapa_visitar, &o->mapa);
@@ -702,41 +702,41 @@ static void foto_memory(marca_memory_t* o)
   o->i_bytes = (uint32_t)hi.total_allocated_bytes; o->i_blocos = (uint32_t)hi.allocated_blocks;
   heap_caps_get_info(&hi, MALLOC_CAP_SPIRAM);
   o->p_bytes = (uint32_t)hi.total_allocated_bytes; o->p_blocos = (uint32_t)hi.allocated_blocks;
-  o->tarefas = (uint32_t)uxTaskGetNumberOfTasks();
+  o->task_count = (uint32_t)uxTaskGetNumberOfTasks();
   o->ok = true;
 }
 
-static void cmd_memory_marca(void)
+static void cmd_memory_mark(void)
 {
-  foto_memory(&s_marca_memory);
+  capture_memory_snapshot(&s_marked_memory);
   printf("snapshot taken: internal %u KB in %u blocks, PSRAM %u KB in %u blocks, %u tasks.\n"
          "Open and close the app a few times, then run 'memory delta'.\n",
-         (unsigned)(s_marca_memory.i_bytes / 1024), (unsigned)s_marca_memory.i_blocos,
-         (unsigned)(s_marca_memory.p_bytes / 1024), (unsigned)s_marca_memory.p_blocos,
-         (unsigned)s_marca_memory.tarefas);
+         (unsigned)(s_marked_memory.i_bytes / 1024), (unsigned)s_marked_memory.i_blocos,
+         (unsigned)(s_marked_memory.p_bytes / 1024), (unsigned)s_marked_memory.p_blocos,
+         (unsigned)s_marked_memory.task_count);
 }
 
 static void cmd_memory_delta(void)
 {
-  if (!s_marca_memory.ok) { printf("no snapshot - run 'memory mark' first\n"); return; }
-  static marca_memory_t now;
-  foto_memory(&now);
+  if (!s_marked_memory.ok) { printf("no snapshot - run 'memory mark' first\n"); return; }
+  static memory_snapshot_t now;
+  capture_memory_snapshot(&now);
   printf("--- changes since snapshot ---\n");
-  printf("  internal : %+ld B in %+ld blocks\n", (long)now.i_bytes - (long)s_marca_memory.i_bytes,
-         (long)now.i_blocos - (long)s_marca_memory.i_blocos);
-  printf("  PSRAM   : %+ld B em %+ld blocos\n", (long)now.p_bytes - (long)s_marca_memory.p_bytes,
-         (long)now.p_blocos - (long)s_marca_memory.p_blocos);
-  printf("  tasks    : %+ld\n", (long)now.tarefas - (long)s_marca_memory.tarefas);
+  printf("  internal : %+ld B in %+ld blocks\n", (long)now.i_bytes - (long)s_marked_memory.i_bytes,
+         (long)now.i_blocos - (long)s_marked_memory.i_blocos);
+  printf("  PSRAM   : %+ld B em %+ld blocos\n", (long)now.p_bytes - (long)s_marked_memory.p_bytes,
+         (long)now.p_blocos - (long)s_marked_memory.p_blocos);
+  printf("  tasks    : %+ld\n", (long)now.task_count - (long)s_marked_memory.task_count);
   uint32_t a_n[MAPA_FAIXAS] = {0}, a_b[MAPA_FAIXAS] = {0}, m_n[MAPA_FAIXAS] = {0}, m_b[MAPA_FAIXAS] = {0};
   for (int i = 0; i < now.mapa.n; ++i) {
     for (int f = 0; f < MAPA_FAIXAS; ++f) { a_n[f] += now.mapa.r[i].usados_n[f]; a_b[f] += now.mapa.r[i].usados_b[f]; }
   }
-  for (int i = 0; i < s_marca_memory.mapa.n; ++i) {
-    for (int f = 0; f < MAPA_FAIXAS; ++f) { m_n[f] += s_marca_memory.mapa.r[i].usados_n[f]; m_b[f] += s_marca_memory.mapa.r[i].usados_b[f]; }
+  for (int i = 0; i < s_marked_memory.mapa.n; ++i) {
+    for (int f = 0; f < MAPA_FAIXAS; ++f) { m_n[f] += s_marked_memory.mapa.r[i].usados_n[f]; m_b[f] += s_marked_memory.mapa.r[i].usados_b[f]; }
   }
   printf("\n  internal used blocks by range (difference):\n");
   for (int f = 0; f < MAPA_FAIXAS; ++f) {
-    printf("  %-6s   %+5ld blocos  %+7ld B\n", s_faixa_name[f],
+    printf("  %-6s   %+5ld blocos  %+7ld B\n", s_range_names[f],
            (long)a_n[f] - (long)m_n[f], (long)a_b[f] - (long)m_b[f]);
   }
   printf("\n  Near zero after opening/closing means no leak. If the same number\n"
@@ -759,41 +759,41 @@ static void cmd_memory_extrato(void)
 
 // QUEM ESTA PROIBINDO O LIGHT SLEEP.
 //
-// Toda a economia of energia of IDF passa pelas travas of PM. Um driver que
-// precisa of clock estavel cria uma trava in inicializacao e a segura; enquanto
-// houver UMA trava alive, o sistema nao desce para o modo que ela proibe - e nao
-// ha aviso nenhum, o esp_pm simplesmente nao dorme.
+// All the energy savings of IDF pass through the PM locks. A driver that
+// need for stable clock creates a lock on startup and secures it; while
+// there is a latch alive, the system does not go down to the mode it prohibits - and it does not
+// there is no warning, esp_pm simply does not sleep.
 //
-// Foi assim que se descobriu que o panel DPI segurava duas travas
+// This is how it was discovered that the DPI panel held two latches
 // since a criacao e so as soltava no destrutor - o que levou on
 // DESMONTAR_DSI_NO_REPOUSO em tab5_power.cpp. Sem este despejo, aquilo teria
 // sido adivinhacao.
 //
-// COMO USAR: o numero que interessa nao e este, com a screen acesa. E o of DENTRO
+// HOW TO USE: the number that matters is not this one, with the screen on. And the of INSIDE
 // of sleep - e por isso o comando aceita one atraso em segundos:
 //
-//     energia travas 30      (deixa a screen erase e so entao despeja)
+//     energy locks 30 (let the screen erase and only then dump)
 //
 // Tipos que importam: NO_LIGHT_SLEEP proibe dormir; CPU_FREQ_MAX prende o
-// clock no teto; APB_FREQ_MAX prende o barramento - e este tambem impede o
+// clock on the ceiling; APB_FREQ_MAX traps the bus - and this also prevents
 // light sleep, porque dormir pararia o APB.
-static void cmd_travas(int segundos)
+static void cmd_travas(int seconds)
 {
 #if CONFIG_PM_ENABLE
-  // O time of screen vem of Ajustes e pode ser qualquer coisa. Dizer qual e
+  // The time of screen comes from Settings and can be anything. Say which one and
   // evita a measurement inutil mais provavel: wait menos que ele e despejar as
-  // travas com a screen ainda acesa, when o panel ainda segura as duas.
+  // locks with the screen still on, when the panel still holds both.
   const int screen = (int)settings_screen_timeout_s();
-  if (segundos > 0 && segundos <= screen) {
+  if (seconds > 0 && seconds <= screen) {
     printf("WARNING: the screen turns off in %d s, but you requested %d. The measurement will be awake.\n"
-           "         use 'power locks %d' or more.\n", screen, segundos, screen + 10);
+           "         use 'power locks %d' or more.\n", screen, seconds, screen + 10);
   }
 
-  if (segundos > 0) {
+  if (seconds > 0) {
     printf("waiting %d s - do not touch the screen (you may use the serial keyboard)...\n",
-           segundos);
+           seconds);
     fflush(stdout);
-    vTaskDelay(pdMS_TO_TICKS((uint32_t)segundos * 1000));
+    vTaskDelay(pdMS_TO_TICKS((uint32_t)seconds * 1000));
   }
 
   const bool dormindo = tab5_power_is_sleeping();
@@ -812,35 +812,35 @@ static void cmd_travas(int segundos)
            screen, screen + 10);
   }
 #else
-  (void)segundos;
+  (void)seconds;
   printf("CONFIG_PM_ENABLE is disabled: there are no locks to show\n");
 #endif
 }
 
-// FORCA O REPOUSO AGORA, no clock que voce escolher - para descobrir se one
+// FORCE SLEEP NOW, at the clock you choose - to find out if one
 // piso MENOR que os 40MHz of hoje (ver o "int piso = ... : 40" em
-// core.cpp) e aceito pelo silicio e pelo panel, sem regravar a cada
-// numero novo. Mesma ideia of 'screen clock <mhz>' - comparar em execucao em
+// core.cpp) and accepted by the silicon and the panel, without rewriting each
+// new number. Same idea of ​​'screen clock <mhz>' - compare running on
 // vez of adivinhar.
 //
-// SEGURO CHAMAR DO CONSOLE (uma tarefa diferente of interface): reli
-// tab5_power_sleep()/resume() e none das duas toca I2C - so mexem no
+// SAFE CALL FROM CONSOLE (a different task from interface): reread
+// tab5_power_sleep()/resume() and neither of them touch I2C - they just change the
 // panel DSI, no PM (esp_pm_configure) e no AXI-ICM. A regra of "so a
-// interface fala com o barramento interno" e sobre o INA226/touch/keyboard/
-// IMU, e nao vale aqui.
+// interface talks to the internal bus" and about INA226/touch/keyboard/
+// IMU, and it doesn't apply here.
 //
 // UM CUIDADO QUE FICA COM QUEM TESTA: se o sleep AUTOMATICO (o timer of
-// ociosidade of screen, em Ajustes) disparar no MESMO instante que este comando,
-// as duas chamadas correm sem trava none por top of mesmo estado
+// screen idleness, in Settings) triggers at the SAME instant as this command,
+// both calls run without any hangs due to top of the same state
 // (s_em_repouso e companhia sao globais of modulo, sem mutex) - e o resultado
-// seria desmontar o panel duas vezes. Na pratica a window e estreitissima
+// it would be dismantling the panel twice. In practice, the window is very narrow
 // (o guard "ja em sleep?" barra o caso comum), mas para testar com sossego
-// aumente o time of screen em Ajustes antes, ou teste logo depois of touch a
-// screen (o clock of ociosidade acabou of reiniciar).
+// increase the time of screen in Settings before, or test right after touch a
+// screen (the idle clock has just reset).
 //
-// Se o MHz request nao existir nesta revisao of silicio (validos: 360, 180,
+// If the MHz request does not exist in this silicon revision (valids: 360, 180,
 // 90 e XTAL/N -> 40, 20, 10, 8, 5, 4, 2, 1), tab5_power_sleep() ja desfaz
-// sozinho e devolve false - a screen iteration a acender, sem lock nada.
+// alone and returns false - the screen iteration lighting up, without locking anything.
 static void cmd_sleep_forcar(int mhz)
 {
   if (mhz <= 0) {
@@ -868,11 +868,11 @@ static void cmd_sleep_forcar(int mhz)
   }
 }
 
-// TETO DO CPU COM A TELA ACORDADA - ver o aviso grande em tab5_power.hpp.
-// Diferente of 'energia sleep', a screen NAO apaga: o panel continua enabled,
+// CPU ROOF WITH SCREEN WOKEN - see large warning in tab5_power.hpp.
+// Unlike 'energia sleep', the screen DOES NOT go off: the panel remains enabled,
 // desenhando, no clock of pixel que estiver configurado now ('screen
 // clock <mhz>'). Existe para testar a combinacao que faltava: panel devagar
-// E CPU devagar, os dois ACORDADOS on mesmo time.
+// And CPU slowly, both AWAKE at the same time.
 static void cmd_teto_cpu(int mhz)
 {
   if (mhz <= 0) {
@@ -897,14 +897,14 @@ static void cmd_teto_cpu(int mhz)
   }
 }
 
-static void cmd_energia(void)
+static void cmd_power(void)
 {
-  // LEITURA DE CACHE, NAO DO INA226.
+  // CACHE READING, NOT INA226.
   //
-  // O I2C_Class of M5Unified nao tem mutex: se esta tarefa for on INA226
-  // enquanto a interface le o touch, as duas transacoes se intercalam e voce le
+  // The I2C_Class of M5Unified does not have a mutex: if this task is on INA226
+  // while the interface reads the touch, the two transactions are interspersed and you read
   // registrador errado - sem erro nenhum, so numero sem sentido. A interface
-  // mede uma vez por segundo e deixa o valor aqui; e daqui que se le.
+  // measure once per second and leave the value here; and from here it is read.
   const tab5_measurement_t m = tab5_power_latest();
 
   printf("--- energia ---\n");
@@ -917,10 +917,10 @@ static void cmd_energia(void)
   // O ESTIMADOR, on vivo - ver estimar_pct() em tab5_power.cpp. A diferenca
   // entre "estimador" e "curva" e o que a contagem of mAh esta corrigindo.
   {
-    float soc, curva, since; const char* fonte;
-    tab5_power_debug_soc(&soc, &curva, &fonte, &since);
+    float soc, curva, since; const char* source;
+    tab5_power_debug_soc(&soc, &curva, &source, &since);
     printf("  bateria  : estimador %.1f%%  | curva de tensao diria %.0f%%  | partiu de: %s\n",
-           soc, curva, fonte);
+           soc, curva, source);
     if (since >= 0) {
       printf("             ultima carga ha %.0f min%s\n", since,
              since < 60 ? " (a curva ainda nao corrige - tensao pos-carga mente)" : "");
@@ -934,8 +934,8 @@ static void cmd_energia(void)
     return;
   }
 
-  // Escala of barra pelo MAIOR consumo of window, e nao por one teto fixo: com
-  // teto fixo, uma window inteira em sleep viraria uma coluna of nada.
+  // Scale of bar due to GREATER consumption of window, and not due to a fixed roof: with
+  // fixed ceiling, an entire window in sleep would become a column of nothing.
   float pico = 1.0f;
   for (int i = 0; i < n; ++i) { const float v = fabsf(h[i].mA); if (v > pico) pico = v; }
 
@@ -943,38 +943,38 @@ static void cmd_energia(void)
          (n * TAB5_HIST_SEG) / 60, pico);
   printf("  %6s %7s %11s\n", "quando", "tensao", "corrente");
 
-  // De duas em duas amostras: com TAB5_HIST_SEG=30 isso of uma line por
+  // Every two samples: with TAB5_HIST_SEG=30 this is one line per
   // minuto, e 30 lines cabem numa screen of terminal. Todas as 60 obrigariam a
   // rolar para ver o comeco.
   for (int i = 0; i < n; i += 2) {
-    const int min_atras = ((n - 1 - i) * TAB5_HIST_SEG) / 60;
-    char barra[33];
+    const int minutes_ago = ((n - 1 - i) * TAB5_HIST_SEG) / 60;
+    char bar[33];
     int larg = (int)((fabsf(h[i].mA) / pico) * 32.0f);
     if (larg < 0)  { larg = 0; }
     if (larg > 32) { larg = 32; }
-    memset(barra, '#', (size_t)larg);
-    barra[larg] = 0;
-    printf("  -%3d m %6.2fV %7.0f mA  %s\n", min_atras, h[i].volts, h[i].mA, barra);
+    memset(bar, '#', (size_t)larg);
+    bar[larg] = 0;
+    printf("  -%3d m %6.2fV %7.0f mA  %s\n", minutes_ago, h[i].volts, h[i].mA, bar);
   }
 }
 
 
 
-// Caminho no cartao: absoluto como veio; relativo, a partir of /sdcard. Poupa
-// digitar o prefixo em todo comando of arquivo ('read apps/Sistema/x.txt').
-static const char* caminho_sd(const char* c, char* buf, size_t n)
+// Path on the card: absolute as it came; relative, from /sdcard. Save
+// type the prefix in every command of file ('read apps/Sistema/x.txt').
+static const char* sd_path(const char* c, char* buf, size_t n)
 {
   if (c[0] == '/') { return c; }
   snprintf(buf, n, "/sdcard/%s", c);
   return buf;
 }
 
-// Monta o cartao, roda o que voce passar, desmonta - sempre, inclusive when
-// o comando falha. Escrito como funcao porque cada comando esquecer o
-// desmontar seria one vazamento of contagem: o cartao ficaria montado para
-// sempre e o app que o usa nunca conseguiria desmontar of verdade.
+// Mount the card, run whatever you pass, dismount - always, including when
+// the command fails. Written as a function because each command forgets the
+// dismantling would be one leak of counting: the card would be assembled for
+// always and the app that uses it would never be able to truly dismantle it.
 template <typename F>
-static int com_cartao(F&& body)
+static int with_card(F&& body)
 {
   if (!tab5_sd_mount())
   {
@@ -989,22 +989,22 @@ static int com_cartao(F&& body)
 // ---------------------------------------------------------------------------
 // wifi gravar <ssid> [senha]
 // ---------------------------------------------------------------------------
-static int wifi_gravar(const char* ssid, const char* senha_ou_null)
+static int wifi_save_credentials(const char* ssid, const char* password_or_null)
 {
-  const char* senha = senha_ou_null ? senha_ou_null : "-";   // "-" = rede open
+  const char* password = password_or_null ? password_or_null : "-";   // "-" = rede open
 
-  return com_cartao([&]() -> int {
+  return with_card([&]() -> int {
     // tab5_wifi_save_credentials() cifra a senha antes of write (AES-128-CBC,
-    // ver tab5_wifi.cpp) e ja atualiza a copia em RAM tambem - reler o arquivo
-    // depois, com o C6 no ar, e justamente o que nao pode acontecer.
-    if (!tab5_wifi_save_credentials(ssid, senha))
+    // see tab5_wifi.cpp) and already update the copy in RAM too - reread the file
+    // then, with the C6 in the air, that's exactly what can't happen.
+    if (!tab5_wifi_save_credentials(ssid, password))
     {
       printf("error: could not write %s\n", TAB5_WIFI_FILE);
       return 1;
     }
     printf("saved to %s (password encrypted in the file)\n  SSID:  %s\n  password: %s\n",
            TAB5_WIFI_FILE, ssid,
-           strcmp(senha, "-") == 0 ? "(rede aberta)" : "definida");
+           strcmp(password, "-") == 0 ? "(rede aberta)" : "definida");
     printf("para usar agora: wifi conectar \"%s\"\n", ssid);
     return 0;
   });
@@ -1017,18 +1017,18 @@ static int cmd_read(int argc, char** argv)
 {
   if (argc < 2) { printf("uso: ler <caminho> [linhas]\n"); return 1; }
   char buf[160];
-  const char* caminho = caminho_sd(argv[1], buf, sizeof(buf));
+  const char* path = sd_path(argv[1], buf, sizeof(buf));
   // Teto of lines: one satelites-*.csv of one dia inteiro tem milhares delas,
   // e despejar everything a 115200 baud prenderia o console por minutos. Quem quer
-  // mais pede o numero; quem quer o arquivo inteiro usa 'despejar'.
+  // but asks for the number; anyone who wants the entire file uses 'dump'.
   int teto = (argc >= 3) ? atoi(argv[2]) : 200;
   if (teto < 1) { teto = 1; }
 
-  return com_cartao([&]() -> int {
-    FILE* f = fopen(caminho, "r");
-    if (!f) { printf("erro: %s nao abriu\n", caminho); return 1; }
+  return with_card([&]() -> int {
+    FILE* f = fopen(path, "r");
+    if (!f) { printf("erro: %s nao abriu\n", path); return 1; }
 
-    printf("--- %s ---\n", caminho);
+    printf("--- %s ---\n", path);
     char line[160];
     int n = 0;
     while (n < teto && fgets(line, sizeof(line), f)) {
@@ -1046,23 +1046,23 @@ static int cmd_read(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// despejar <caminho>  - o arquivo INTEIRO, para ser capturado of outro lado
+// dump <path> - the ENTIRE file, to be captured from another side
 // ---------------------------------------------------------------------------
 // Irmao of "read", com tres diferencas que sao a razao of ele existir separado:
 //
-//   1. SEM TETO DE LINHAS. O "read" corta em 200 porque ele e para OLHAR - e
-//      olhar mais que isso in screen of terminal nao serve para nada. Este e para
-//      COPIAR: one energia.csv of uma descarga inteira tem umas 500 lines, e one
-//      arquivo cortado no middle nao serve para ajustar curva none.
+//   1. NO ROOF ROOMS. The "read" cuts at 200 because it is for LOOKING - and
+//      Looking more than that in the terminal screen is useless. This is for
+//      COPY: one energy.csv of an entire download has about 500 lines, and one
+//      file cut in the middle is not used to adjust curve none.
 //
 //   2. CALA O LOG ENQUANTO DESPEJA. Este console divide a serial com o
-//      ESP_LOG of todas as tarefas. Sem calar, uma line of "power" ou
+//      ESP_LOG of all tasks. Without remaining silent, a line of "power" or
 //      "mesh" cai NO MEIO of CSV, e quem esta capturando of outro lado recebe
-//      one arquivo contaminado. Restaurado no end, sempre - inclusive when o
-//      fopen falha.
+//      one contaminated file. Restored at the end, always - including when the
+//      fopen fails.
 //
 //   3. MARCADORES QUE O SCRIPT RECONHECE. O ">>>INICIO" e o ">>>FIM" com a
-//      contagem of lines dizem on capturador onde comeca, onde termina e se
+//      count of lines tell the capturer where it starts, where it ends and if
 //      chegou everything. Sem eles, o script of outro lado teria que adivinhar
 //      when stop of escutar - e adivinhar sempre erra in hora errada.
 static int cmd_despejar(int argc, char** argv)
@@ -1074,25 +1074,25 @@ static int cmd_despejar(int argc, char** argv)
     return 1;
   }
   char buf[160];
-  const char* caminho = caminho_sd(argv[1], buf, sizeof(buf));
+  const char* path = sd_path(argv[1], buf, sizeof(buf));
 
-  return com_cartao([&]() -> int {
-    FILE* f = fopen(caminho, "r");
-    if (!f) { printf("erro: %s nao abriu\n", caminho); return 1; }
+  return with_card([&]() -> int {
+    FILE* f = fopen(path, "r");
+    if (!f) { printf("erro: %s nao abriu\n", path); return 1; }
 
-    // Tamanho ANTES, para o outro lado poder conferir o que recebeu.
+    // Size BEFORE, so the other side can check what they received.
     long size = 0;
     if (fseek(f, 0, SEEK_END) == 0) { size = ftell(f); fseek(f, 0, SEEK_SET); }
 
     // A partir daqui, silencio - ver o reason 2 no cabecalho.
     esp_log_level_set("*", ESP_LOG_NONE);
 
-    printf(">>>INICIO %s %ld\n", caminho, size);
+    printf(">>>INICIO %s %ld\n", path, size);
     char line[256];
     long n = 0;
     while (fgets(line, sizeof(line), f)) {
       fputs(line, stdout);
-      // Uma pausa a cada 64 lines. Nao e educacao: o despejo of one arquivo
+      // A pause every 64 lines. It's not education: the dump of one file
       // grande e one loop closed nesta tarefa, e sem yield a CPU o watchdog of
       // tarefa ociosa reclama e a interface engasga.
       if ((++n % 64) == 0) { fflush(stdout); vTaskDelay(1); }
@@ -1109,23 +1109,23 @@ static int cmd_despejar(int argc, char** argv)
 // ---------------------------------------------------------------------------
 // lista [caminho]
 // ---------------------------------------------------------------------------
-static int cmd_lista(int argc, char** argv)
+static int cmd_list(int argc, char** argv)
 {
   char buf[160];
-  const char* caminho = (argc >= 2) ? caminho_sd(argv[1], buf, sizeof(buf)) : "/sdcard";
+  const char* path = (argc >= 2) ? sd_path(argv[1], buf, sizeof(buf)) : "/sdcard";
 
-  return com_cartao([&]() -> int {
-    DIR* d = opendir(caminho);
-    if (!d) { printf("erro: %s nao abriu\n", caminho); return 1; }
+  return with_card([&]() -> int {
+    DIR* d = opendir(path);
+    if (!d) { printf("erro: %s nao abriu\n", path); return 1; }
 
-    printf("--- %s ---\n", caminho);
+    printf("--- %s ---\n", path);
     struct dirent* e;
     int i = 0;
     while ((e = readdir(d)) != nullptr)
     {
       yield(i++);
       char complete[300];
-      snprintf(complete, sizeof(complete), "%s/%s", caminho, e->d_name);
+      snprintf(complete, sizeof(complete), "%s/%s", path, e->d_name);
       struct stat st;
       if (e->d_type == DT_DIR)            { printf("  [dir]  %s\n", e->d_name); }
       else if (stat(complete, &st) == 0)  { printf("  %6ld  %s\n", (long)st.st_size, e->d_name); }
@@ -1140,66 +1140,66 @@ static int cmd_lista(int argc, char** argv)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// erase <caminho>  - remove UM arquivo of cartao
+// erase <path> - removes ONE file from card
 // ---------------------------------------------------------------------------
 //
-// Existe para poder comecar uma gravacao of zero sem tirar o cartao. Apagar e
+// It exists to be able to start a recording from scratch without removing the card. Delete and
 // irreversivel, entao:
-//   - so aceita caminho dentro of /sdcard/, para one finger errado nao alcancar
+//   - only accepts path within /sdcard/, so the wrong finger won't reach it
 //     outra coisa;
-//   - one arquivo por vez, sem curinga: nada of "erase *".
+//   - one file at a time, no wildcard: nada of "erase *".
 static int cmd_erase(int argc, char** argv)
 {
   if (argc < 2) { printf("uso: apagar apps/<App>/<arquivo>\n"); return 1; }
   char buf[160];
-  const char* caminho = caminho_sd(argv[1], buf, sizeof(buf));
+  const char* path = sd_path(argv[1], buf, sizeof(buf));
 
-  if (strncmp(caminho, "/sdcard/", 8) != 0 || strstr(caminho, "..") != nullptr)
+  if (strncmp(path, "/sdcard/", 8) != 0 || strstr(path, "..") != nullptr)
   {
     printf("recusado: so apago dentro de /sdcard/ (e sem '..')\n");
     return 1;
   }
 
-  return com_cartao([&]() -> int {
+  return with_card([&]() -> int {
     struct stat st;
-    if (stat(caminho, &st) != 0) { printf("nao existe: %s\n", caminho); return 1; }
+    if (stat(path, &st) != 0) { printf("nao existe: %s\n", path); return 1; }
 
-    if (remove(caminho) != 0) { printf("nao consegui apagar %s\n", caminho); return 1; }
-    printf("apagado: %s (%ld bytes)\n", caminho, (long)st.st_size);
+    if (remove(path) != 0) { printf("nao consegui apagar %s\n", path); return 1; }
+    printf("apagado: %s (%ld bytes)\n", path, (long)st.st_size);
     return 0;
   });
 }
 
 // ---------------------------------------------------------------------------
-// i2c <sda> <scl>  - descobre quem responde num par of pins
+// i2c <sda> <scl> - find out who responds to a pair of pins
 // ---------------------------------------------------------------------------
 //
-// Existe para NAO adivinhar protocolo of hardware novo. O conector lateral of
-// Tab5 expoe G49, G50, G0, G1 e EXT 5V; se o keyboard falar I2C, o endereco dele
-// aparece aqui e a integracao vira trivial. Se nada responder em none
-// combinacao, e sinal of que nao e I2C - e ai a hipotese seguinte e UART.
+// There is no way to guess the protocol of new hardware. The side connector of
+// Tab5 exposes G49, G50, G0, G1 and EXT 5V; If the keyboard speaks I2C, its address
+// appears here and the integration becomes trivial. If nothing responds to none
+// combination, it is a signal that is not I2C - and then the next hypothesis is UART.
 //
-// Use o par nos DOIS sentidos: nao ha como saber of fora quem e SDA e quem e
-// SCL, e trocado nao responde nada.
+// Use the pair in BOTH senses: there is no way of knowing outside who is SDA and who is
+// SCL, and changed it doesn't respond at all.
 //
 //   i2c 49 50        i2c 50 49        i2c 0 1        i2c 1 0
 //
-// Rode a partir of screen inicial: o comando mexe no barramento externo, que e o
+// Run from the initial screen: the command affects the external bus, which is the
 // mesmo que o Azimutal toma emprestado como UART of GPS.
 static int cmd_i2c(int argc, char** argv)
 {
   if (argc < 3) { printf("uso: i2c <sda> <scl>   (ex: i2c 49 50)\n"); return 1; }
 
-  // O AVISO VIROU TRAVA. Ate aqui, "rode a partir of screen inicial" era so one
-  // comentario no fonte - o comando reconfigurava o barramento externo por
+  // THE WARNING HAS BECOME A LOCK. Until now, "run from initial screen" was just one
+  // comment in the source - the command reconfigured the external bus by
   // bottom of quem quer que o estivesse usando, sem perguntar. O Azimutal usa
-  // esse mesmo barramento como UART of GPS, e o keyboard of ExtPort1 tambem
-  // esta nele: rodar isto com qualquer one dos dois open arranca o
-  // barramento of tarefa dona no middle of uma transacao.
+  // this same bus as the UART of GPS, and the keyboard of ExtPort1 also
+  // is in it: running this with either one of the two open starts the
+  // bus of task owner in the middle of a transaction.
   //
-  // A CONSISTENCIA que valia a pena: uma regra of bancada documentada em
-  // comentario e uma regra que so vale enquanto alguem lembra of read o
-  // comentario. Fazendo o proprio comando checar, ela vale sempre.
+  // CONSISTENCY that was worth it: a bench rule documented in
+  // comment is a rule that only applies as long as someone remembers to read it
+  // comment. By checking the command itself, it is always valid.
   const char* app = system_app_current();
   if (app) {
     printf("nao da para varrer o I2C com '%s' aberto - ele pode estar usando\n"
@@ -1210,7 +1210,7 @@ static int cmd_i2c(int argc, char** argv)
   const int sda = atoi(argv[1]);
   const int scl = atoi(argv[2]);
 
-  // O barramento EXTERNO (I2C_NUM_1) e o unico que podemos reaproveitar. O
+  // The EXTERNAL bus (I2C_NUM_1) is the only one that we can reuse. THE
   // interno (I2C_NUM_0) carrega o INA226 e os expansores, e e propriedade of
   // tarefa of interface - encostar nele daqui seria a corrida que o sistema
   // inteiro evita.
@@ -1235,42 +1235,42 @@ static int cmd_i2c(int argc, char** argv)
   if (n == 0) { printf("  ninguem respondeu\n"); }
   else        { printf("  %d dispositivo(s)\n", n); }
 
-  // Devolve o barramento externo aos pins of Grove, como o M5.begin() deixou.
+  // Returns the external bus to the pins of Grove, as M5.begin() left it.
   M5.Ex_I2C.release();
   M5.Ex_I2C.begin();
   return 0;
 }
 
 // ---------------------------------------------------------------------------
-// SEGUNDO CONSUMIDOR DE MENTIRA (com one app so nao of para testar).
+// SECOND CONSUMER OF LIE (with one app just not able to test).
 // ---------------------------------------------------------------------------
-// O sistema so abre UM app por vez, entao nao of para provar que
-// tab5_gps_position()/tab5_gps_time()/tab5_imu_latest() aguentam DOIS
-// leitores on mesmo time so abrindo dois apps - nao existe "dois apps
+// The system only opens ONE app at a time, so there is no need to prove that
+// tab5_gps_position()/tab5_gps_time()/tab5_imu_latest() can handle TWO
+// readers on the same team just open two apps - there is no such thing as "two apps
 // abertos" ainda. Esta tarefa e one segundo leitor of verdade, independente
 // of qualquer app: martela as tres funcoes bem mais rapido que qualquer
-// screen desenha, enquanto voce abre o Azimutal ou o IMU normalmente. Prova
-// duas coisas: que a trava aguenta uso concorrente of verdade sem lock
+// screen draws, while you open Azimutal or IMU normally. Proof
+// two things: that the lock can withstand concurrent use without locking
 // nem derrubar o sistema, e (comparando os numeros daqui com os of screen) que
-// os dois leitores sempre veem o MESMO valor, nunca one "middle atualizado".
+// both readers always see the SAME value, never one "updated middle".
 static bool s_conc_active = false;
 static bool s_conc_stop = false;
 static uint32_t s_conc_leituras = 0;
 
 static void vTaskConcorrencia(void*)
 {
-  uint32_t ultimo_log = 0;
+  uint32_t last_log_ms = 0;
   while (!s_conc_stop) {
     nmea_position_t pos  = tab5_gps_position();
-    nmea_time_t   hora = tab5_gps_time();
+    nmea_time_t   gps_time = tab5_gps_time();
     tab5_imu_data_t imu;
     tab5_imu_latest(&imu);
     ++s_conc_leituras;
-    (void)hora;
+    (void)gps_time;
 
     const uint32_t now = tab5_now_ms();
-    if (now - ultimo_log >= 1000) {
-      ultimo_log = now;
+    if (now - last_log_ms >= 1000) {
+      last_log_ms = now;
       printf("[concorrencia] %lu leituras | gps valida=%d lat=%.5f lon=%.5f "
              "| imu valida=%d ax=%.2f ay=%.2f az=%.2f\n",
              (unsigned long)s_conc_leituras, (int)pos.valid, pos.lat, pos.lon,
@@ -1311,61 +1311,61 @@ static void cmd_concorrencia(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// TRES "APPS" DE MENTIRA, CADA UM NA SUA TAREFA
-// (teste mais rigoroso: os 3 apps aparecem no console pedindo o servico).
+// THREE FAKE "APPS", EACH WITH ITS OWN TASK
+// (more rigorous test: the 3 apps appear on the console asking for the service).
 // ---------------------------------------------------------------------------
 // A diferenca para "concorrencia" acima: aquele e UM leitor generico,
 // martelando o mais rapido possivel. Isto aqui e tres CONSUMIDORES
-// DIFERENTES, cada one com o default of acesso of one app of verdade -
-// cadencia propria, log com o proprio name - running on mesmo time, in
-// MESMA tarefa of interface que qualquer app real usaria (nao, so cada one in
-// SUA tarefa, independente das outras duas e of qualquer app open in
+// DIFFERENT, each with the default of access of one app of truth -
+// own cadence, log with own name - running on the same team, in
+// SAME interface task that any real app would use (no, just each one in
+// YOUR task, independent of the other two and of any app open in
 // screen). E o mais perto of "3 apps abertos on mesmo time" que of para
 // simulate sem o sistema realmente suportar isso ainda.
 //
-// App-Mapa   : le so GPS, a cada 200ms - como uma screen of position/mapa.
+// App-Map: just GPS, every 200ms - like a screen of position/map.
 // App-Nivel  : le so IMU, o mais rapido possivel - como one nivel-bolha.
-// App-Log    : le GPS E IMU juntos, a cada 1s - como one logger periodico.
-//              Este e o que mais interessa: prova que one consumidor lendo
-//              DOIS servicos em sequencia nao trava (as travas of GPS e IMU
-//              sao independentes, nunca uma dentro of outra - sem isso
+// App-Log: reads GPS AND IMU together, every 1s - like a periodic logger.
+//              This is what matters most: it proves that a consumer reading
+//              TWO services in sequence do not lock (the GPS and IMU locks
+//              are independent, never one inside the other - without this
 //              haveria risco of deadlock se one dia alguem invertesse a
 //              order em outro consumidor).
-static bool     s_sim_active = false;
-static bool     s_sim_stop = false;
-static uint32_t s_sim_leituras[3] = { 0, 0, 0 };
+static bool     s_sim_running = false;
+static bool     s_sim_stop_requested = false;
+static uint32_t s_sim_read_counts[3] = { 0, 0, 0 };
 
 static void vTaskSimMapa(void*)
 {
-  uint32_t ultimo_log = 0;
-  while (!s_sim_stop) {
+  uint32_t last_log_ms = 0;
+  while (!s_sim_stop_requested) {
     nmea_position_t pos = tab5_gps_position();
-    ++s_sim_leituras[0];
+    ++s_sim_read_counts[0];
 
     const uint32_t now = tab5_now_ms();
-    if (now - ultimo_log >= 1000) {
-      ultimo_log = now;
+    if (now - last_log_ms >= 1000) {
+      last_log_ms = now;
       printf("[app-mapa]  pedido #%-6lu -> gps valida=%d lat=%.5f lon=%.5f\n",
-             (unsigned long)s_sim_leituras[0], (int)pos.valid, pos.lat, pos.lon);
+             (unsigned long)s_sim_read_counts[0], (int)pos.valid, pos.lat, pos.lon);
     }
-    vTaskDelay(pdMS_TO_TICKS(200));   // cadencia of uma screen of position
+    vTaskDelay(pdMS_TO_TICKS(200));   // cadence of a screen of position
   }
   vTaskDelete(nullptr);
 }
 
 static void vTaskSimNivel(void*)
 {
-  uint32_t ultimo_log = 0;
-  while (!s_sim_stop) {
+  uint32_t last_log_ms = 0;
+  while (!s_sim_stop_requested) {
     tab5_imu_data_t d;
     tab5_imu_latest(&d);
-    ++s_sim_leituras[1];
+    ++s_sim_read_counts[1];
 
     const uint32_t now = tab5_now_ms();
-    if (now - ultimo_log >= 1000) {
-      ultimo_log = now;
+    if (now - last_log_ms >= 1000) {
+      last_log_ms = now;
       printf("[app-nivel] pedido #%-6lu -> imu valida=%d ax=%.2f ay=%.2f az=%.2f\n",
-             (unsigned long)s_sim_leituras[1], (int)d.valid, d.ax, d.ay, d.az);
+             (unsigned long)s_sim_read_counts[1], (int)d.valid, d.ax, d.ay, d.az);
     }
     vTaskDelay(1);   // o mais rapido possivel, como one nivel-bolha precisa
   }
@@ -1374,15 +1374,15 @@ static void vTaskSimNivel(void*)
 
 static void vTaskSimLog(void*)
 {
-  while (!s_sim_stop) {
+  while (!s_sim_stop_requested) {
     nmea_position_t pos = tab5_gps_position();
-    nmea_time_t   hora = tab5_gps_time();
+    nmea_time_t   gps_time = tab5_gps_time();
     tab5_imu_data_t imu;
     tab5_imu_latest(&imu);
-    ++s_sim_leituras[2];
+    ++s_sim_read_counts[2];
 
     printf("[app-log]   pedido #%-6lu -> gps(valida=%d) + hora(valida=%d) + imu(valida=%d, az=%.2f)\n",
-           (unsigned long)s_sim_leituras[2], (int)pos.valid, (int)hora.valid, (int)imu.valid, imu.az);
+           (unsigned long)s_sim_read_counts[2], (int)pos.valid, (int)gps_time.valid, (int)imu.valid, imu.az);
     vTaskDelay(pdMS_TO_TICKS(1000));   // cadencia of one logger periodico
   }
   vTaskDelete(nullptr);
@@ -1391,10 +1391,10 @@ static void vTaskSimLog(void*)
 static void cmd_simulacao(int argc, char** argv)
 {
   if (argc >= 2 && strcmp(argv[1], "iniciar") == 0) {
-    if (s_sim_active) { printf("ja esta rodando\n"); return; }
-    s_sim_active = true;
-    s_sim_stop = false;
-    s_sim_leituras[0] = s_sim_leituras[1] = s_sim_leituras[2] = 0;
+    if (s_sim_running) { printf("ja esta rodando\n"); return; }
+    s_sim_running = true;
+    s_sim_stop_requested = false;
+    s_sim_read_counts[0] = s_sim_read_counts[1] = s_sim_read_counts[2] = 0;
     xTaskCreatePinnedToCore(vTaskSimMapa,  "sim_mapa",  4096, nullptr, 2, nullptr, tskNO_AFFINITY);
     xTaskCreatePinnedToCore(vTaskSimNivel, "sim_nivel", 4096, nullptr, 2, nullptr, tskNO_AFFINITY);
     xTaskCreatePinnedToCore(vTaskSimLog,   "sim_log",   4096, nullptr, 2, nullptr, tskNO_AFFINITY);
@@ -1404,46 +1404,46 @@ static void cmd_simulacao(int argc, char** argv)
     return;
   }
   if (argc >= 2 && strcmp(argv[1], "parar") == 0) {
-    if (!s_sim_active) { printf("nao estava rodando\n"); return; }
-    s_sim_stop = true;
-    s_sim_active = false;
+    if (!s_sim_running) { printf("nao estava rodando\n"); return; }
+    s_sim_stop_requested = true;
+    s_sim_running = false;
     printf("pedido para parar os 3 - confirma nas proximas voltas de cada um\n");
     return;
   }
   printf("rodando: %s | leituras: mapa=%lu nivel=%lu log=%lu\n"
          "uso: simulacao iniciar | simulacao parar\n",
-         s_sim_active ? "sim" : "nao",
-         (unsigned long)s_sim_leituras[0], (unsigned long)s_sim_leituras[1], (unsigned long)s_sim_leituras[2]);
+         s_sim_running ? "sim" : "nao",
+         (unsigned long)s_sim_read_counts[0], (unsigned long)s_sim_read_counts[1], (unsigned long)s_sim_read_counts[2]);
 }
 
 // ---------------------------------------------------------------------------
-// 'foto' - PROVA DE QUE A CAMERA VIROU SERVICO, of MESMO jeito
+// 'photo' - PROOF THAT THE CAMERA BECAME A SERVICE, IN THE SAME WAY
 // que 'concorrencia'/'simulacao' acima provam GPS/IMU: liga a camera, tira
-// UMA foto e desliga of novo, inteiramente of FORA of app Camera - se isto
+// ONE photo and turn it off again, entirely OUT of the Camera app - if this
 // funcionar com o app Camera FECHADO, e funcionar of novo com ele ABERTO on
 // mesmo time (ver a contagem of referencia em tab5_camera.hpp), a
-// independencia entre servico e app esta provada em hardware, nao so no
+// Independence between service and app is proven in hardware, not just in
 // papel.
 //
-// A FOTO NAO DEPENDE DO TAMANHO PEDIDO AQUI: ela exit sempre com o frame
-// inteiro of sensor (TAB5_CAM_PHOTO_W x _A). O tamanho of tab5_camera_start
+// THE PHOTO DOES NOT DEPEND ON THE SIZE REQUESTED HERE: it always exits with the frame
+// integer of sensor (TAB5_CAM_PHOTO_W x _A). The size of tab5_camera_start
 // e so o of preview, que este comando nem usa - vai o menor 3:4 razoavel.
-static void cmd_foto(void)
+static void cmd_photo(void)
 {
-  const int LARGURA = 240, ALTURA = 320;
+  const int PREVIEW_WIDTH = 240, PREVIEW_HEIGHT = 320;
 
-  // sistema_camera_iniciar/stop, NAO tab5_camera_start/stop direto -
+  // system_camera_start/stop, NOT direct tab5_camera_start/stop -
   // achado on vivo: esta funcao roda in tarefa "console", e a
   // HAL of camera toca SCCB (I2C interno) para configurar o sensor. Chamar
-  // direto colidia com a leitura of 1s/1s que a tarefa of INTERFACE faz
-  // sozinha nesse mesmo barramento (energia/IMU/sensores/hora) - "Set
+  // direct collided with the reading of 1s/1s that the INTERFACE task does
+  // alone on this same bus (energy/IMU/sensors/time) - "Set
   // format regs fail" no log, sensor configurado pela metade. A ponte (ver
-  // o aviso grande em kernel/app.h) manda o request para a tarefa certa e
-  // espera. tab5_camera_pedir_captura()/captura_pronta() abaixo NAO tocam
+  // the big warning in kernel/app.h) sends the request to the right task and
+  // wait. tab5_camera_request_captura()/captura_pronta() below DOES NOT play
   // I2C nenhum (so leem/escrevem one mutex of RAM) - seguros of chamar
   // daqui sem ponte.
-  printf("ligando a camera (%dx%d)...\n", LARGURA, ALTURA);
-  if (!system_camera_start(LARGURA, ALTURA)) {
+  printf("ligando a camera (%dx%d)...\n", PREVIEW_WIDTH, PREVIEW_HEIGHT);
+  if (!system_camera_start(PREVIEW_WIDTH, PREVIEW_HEIGHT)) {
     printf("falhou - confira o log (sensor ausente? app Camera aberto numa\n"
            "resolucao diferente, ja que so existe uma por vez?)\n");
     return;
@@ -1451,11 +1451,11 @@ static void cmd_foto(void)
 
   // A camera so CAPTURA (one frame, por PPA, in tarefa dela); gravar e daqui,
   // of tarefa of console - ver services/tab5_bmp e tab5_camera_request_photo.
-  uint16_t* foto = tab5_camera_alloc_photo();
+  uint16_t* photo = tab5_camera_alloc_photo();
   bool ok = false;
-  if (!foto) {
+  if (!photo) {
     printf("sem PSRAM para a foto\n");
-  } else if (!tab5_camera_request_photo(foto)) {
+  } else if (!tab5_camera_request_photo(photo)) {
     printf("nao consegui pedir a foto (outra ainda pendente?)\n");
   } else {
     bool pronta = false;
@@ -1464,7 +1464,7 @@ static void cmd_foto(void)
       pronta = tab5_camera_photo_ready(&ok);
     }
     if (!pronta)  { printf("a camera nao entregou quadro em 5 s (confira o log)\n"); }
-    else if (ok)  { ok = tab5_bmp_salvar("Console", "console", foto, TAB5_CAM_PHOTO_W, TAB5_CAM_PHOTO_H);
+    else if (ok)  { ok = tab5_bmp_salvar("Console", "console", photo, TAB5_CAM_PHOTO_W, TAB5_CAM_PHOTO_H);
                     printf(ok ? "foto salva: /sdcard/apps/Console/console.bmp\n" : "a gravacao falhou (confira o log)\n"); }
     else          { printf("a captura falhou (confira o log)\n"); }
   }
@@ -1474,28 +1474,28 @@ static void cmd_foto(void)
   // referencia mantem o sensor of pe; se este comando era o unico
   // interessado, ele desliga of verdade now.
   system_camera_stop();   // espera a tarefa of camera - so depois o buffer pode exit
-  if (foto) { heap_caps_free(foto); }
+  if (photo) { heap_caps_free(photo); }
 }
 
 // 'camera' - O QUE O ISP ESTA FAZENDO COM A COR. Imprime o estado of IPA
-// proprio (hal/tab5_camera_ipa.c: ganhos of AWB, a matriz of calibracao e a
-// que foi on ISP, o verde que one branco saturado teria com cada uma) e mede one
+// itself (hal/tab5_camera_ipa.c: AWB gains, the calibration matrix and the
+// which was on ISP, the green that a saturated white would have with each one) and measures one
 // frame inteiro: media of centro, media das sombras, fracao of pixel
 // estourado e of pixel magenta. Com a lente tampada, a media of centro e o
-// preto que o sensor entrega - o teste direto of pedestal (tab5_camera.cpp,
+// black that the sensor delivers - the direct test of pedestal (tab5_camera.cpp,
 // zerar_pedestal). 'camera reg' fala com o sensor enquanto o app Camera esta
 // open, para experimentar one registrador on vivo.
 static void cmd_camera(int argc, char** argv)
 {
   if (argc >= 3 && strcmp(argv[1], "reg") == 0) {
     const long reg   = strtol(argv[2], nullptr, 16);
-    const int  valor = (argc >= 4) ? (int)strtol(argv[3], nullptr, 16) : -1;
-    uint8_t lido = 0;
-    if (!tab5_camera_reg((uint16_t)reg, valor, &lido)) {
+    const int  value = (argc >= 4) ? (int)strtol(argv[3], nullptr, 16) : -1;
+    uint8_t read_value = 0;
+    if (!tab5_camera_reg((uint16_t)reg, value, &read_value)) {
       printf("camera desligada (abra o app Camera) ou o SCCB falhou\n");
       return;
     }
-    printf("sensor 0x%04lx = 0x%02x\n", reg, lido);
+    printf("sensor 0x%04lx = 0x%02x\n", reg, read_value);
     return;
   }
 
@@ -1505,7 +1505,7 @@ static void cmd_camera(int argc, char** argv)
                     : "ISP sem WBG nem BLC (balanco na CCM, preto pelo sensor)");
 
   // Se o app Camera ja esta com ela, so observa: request of novo com outro
-  // tamanho seria recusado (uma resolucao por vez).
+  // size would be rejected (one resolution at a time).
   const bool ja_enabled = tab5_camera_active();
   if (!ja_enabled) {
     printf("ligando a camera e esperando o AE/AWB assentarem...\n");
@@ -1540,9 +1540,9 @@ static void cmd_camera(int argc, char** argv)
   uint8_t preto = 0;
   if (tab5_camera_reg(0x3908, -1, &preto)) { printf("alvo do preto    : 0x%02x (fabrica 0x41)\n", preto); }
 
-  uint16_t* foto = tab5_camera_alloc_photo();
+  uint16_t* photo = tab5_camera_alloc_photo();
   bool ok = false, pronta = false;
-  if (foto && tab5_camera_request_photo(foto)) {
+  if (photo && tab5_camera_request_photo(photo)) {
     for (int i = 0; i < 50 && !pronta; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); pronta = tab5_camera_photo_ready(&ok); }
   }
   if (pronta && ok) {
@@ -1551,12 +1551,12 @@ static void cmd_camera(int argc, char** argv)
     uint32_t n_c = 0, n_sombra = 0, n = 0, estouro = 0, magenta = 0;
     for (int y = 0; y < A; y += 2) {
       for (int x = 0; x < L; x += 2) {
-        const uint16_t p = foto[y * L + x];
+        const uint16_t p = photo[y * L + x];
         const int r = (p >> 11) << 3, g = ((p >> 5) & 0x3F) << 2, b = (p & 0x1F) << 3;
         ++n;
         if (r >= 248 && g >= 248 && b >= 248) { ++estouro; }
-        const int menor_rb = r < b ? r : b;
-        if (menor_rb >= 200 && g + 40 < menor_rb) { ++magenta; }
+        const int min_red_blue = r < b ? r : b;
+        if (min_red_blue >= 200 && g + 40 < min_red_blue) { ++magenta; }
         if (r + g + b < 96) { sombra[0] += r; sombra[1] += g; sombra[2] += b; ++n_sombra; }
         if (abs(x - L / 2) < 100 && abs(y - A / 2) < 100) { c[0] += r; c[1] += g; c[2] += b; ++n_c; }
       }
@@ -1573,26 +1573,26 @@ static void cmd_camera(int argc, char** argv)
   }
 
   if (!ja_enabled) { system_camera_stop(); }   // espera a tarefa: so depois o buffer exit
-  if (foto) { heap_caps_free(foto); }
+  if (photo) { heap_caps_free(photo); }
 }
 
 // ===========================================================================
-// OS COMANDOS, EM TABELA
+// THE COMMANDS, IN TABLE
 // ===========================================================================
-// Cada comando e uma line of tabela COMANDOS (mais abaixo): name, grupo, uma
+// Each command is a line of COMMANDS table (more below): name, group, a
 // phrase of summary, as formas of chamar e one paragrafo of para que serve. O
-// 'help' e gerado dela - e por isso nao tem como ficar desatualizado: comando
-// que nao esta in tabela nao roda, e o que esta aparece in ajuda.
+// 'help' is generated from it - and therefore it cannot be outdated: command
+// that is not in the table does not run, and that which is shown in help.
 //
-// A versao anterior era one if/else of 40 ramos e one text of ajuda escrito a
-// parte. Os dois andavam separados: comando sem line in ajuda, line no grupo
+// The previous version was one if/else of 40 branches and one text of help written to
+// part. The two walked separately: command without line in help, line in group
 // errado, subcomando que so existia no fonte.
 
-static void mostrar_uso(const char* name);   // depois of tabela
+static void show_usage(const char* name);   // after table
 
-static bool eh(const char* a, const char* b) { return strcasecmp(a, b) == 0; }
+static bool equals_ignore_case(const char* a, const char* b) { return strcasecmp(a, b) == 0; }
 
-// argv[of..] numa phrase so, com one espaco entre as palavras.
+// argv[of..] in a single sentence, with one space between the words.
 static void juntar(char* out, size_t n, int argc, char** argv, int of)
 {
   out[0] = 0;
@@ -1606,10 +1606,10 @@ static void juntar(char* out, size_t n, int argc, char** argv, int of)
 // SISTEMA
 // ---------------------------------------------------------------------------
 
-// Uma line por servico of sistema, no mesmo lugar. A primeira pergunta when
+// One line per system service, in the same place. The first question when
 // algo estranho acontece e "o que esta of pe now?" - e sem isto a resposta
 // exigia cacar line of log of tres tarefas diferentes.
-static void c_estado(int, char**)
+static void c_status(int, char**)
 {
   const esp_app_desc_t* app = esp_app_get_description();
   const uint32_t s = (uint32_t)(esp_timer_get_time() / 1000000);
@@ -1655,10 +1655,10 @@ static void c_estado(int, char**)
     printf("  mesh     : nao iniciado\n");
   }
 
-  int in_ram; uint32_t grav, falhas;
-  registro_estado(&in_ram, &grav, &falhas);
+  int in_ram; uint32_t grav, failures;
+  registro_estado(&in_ram, &grav, &failures);
   printf("  registro : %d na RAM, %lu gravadas, %lu falhas\n",
-         in_ram, (unsigned long)grav, (unsigned long)falhas);
+         in_ram, (unsigned long)grav, (unsigned long)failures);
 
   {
     size_t pend; uint32_t lgrav, lperd; char arq[24];
@@ -1673,10 +1673,10 @@ static void c_estado(int, char**)
          tab5_power_cpu_mhz(), m.volts, m.mA, m.pct);
 }
 
-static void c_tarefas(int argc, char** argv)
+static void c_tasks(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "memoria")) { cmd_memoria(); }   // forma antiga
-  else                                      { cmd_tarefas(); }
+  if (argc >= 2 && equals_ignore_case(argv[1], "memoria")) { cmd_memoria(); }   // forma antiga
+  else                                      { cmd_tasks(); }
 }
 
 static void c_memory(int argc, char** argv)
@@ -1686,33 +1686,33 @@ static void c_memory(int argc, char** argv)
     cmd_memoria();
     printf("\n  'mem extrato' e 'mem mapa' mostram para onde a RAM interna foi\n");
   }
-  else if (eh(o, "extrato")) { cmd_memory_extrato(); }
-  else if (eh(o, "mapa"))    { cmd_memory_mapa(); }
-  else if (eh(o, "marca"))   { cmd_memory_marca(); }
-  else if (eh(o, "delta"))   { cmd_memory_delta(); }
-  else if (eh(o, "tudo"))    { cmd_memoria(); printf("\n"); cmd_memory_extrato(); printf("\n"); cmd_memory_mapa(); }
-  else                       { mostrar_uso("mem"); }
+  else if (equals_ignore_case(o, "extrato")) { cmd_memory_extrato(); }
+  else if (equals_ignore_case(o, "mapa"))    { cmd_memory_mapa(); }
+  else if (equals_ignore_case(o, "marca"))   { cmd_memory_mark(); }
+  else if (equals_ignore_case(o, "delta"))   { cmd_memory_delta(); }
+  else if (equals_ignore_case(o, "tudo"))    { cmd_memoria(); printf("\n"); cmd_memory_extrato(); printf("\n"); cmd_memory_mapa(); }
+  else                       { show_usage("mem"); }
 }
 
-static void c_energia(int argc, char** argv)
+static void c_power(int argc, char** argv)
 {
-  if (argc < 2)                   { cmd_energia(); }
-  else if (eh(argv[1], "travas"))  { cmd_travas(argc >= 3 ? atoi(argv[2]) : 0); }
-  else if (eh(argv[1], "repouso")) { cmd_sleep_forcar(argc >= 3 ? atoi(argv[2]) : 0); }
-  else if (eh(argv[1], "teto"))    { cmd_teto_cpu(argc >= 3 ? atoi(argv[2]) : 0); }
-  else                             { mostrar_uso("energia"); }
+  if (argc < 2)                   { cmd_power(); }
+  else if (equals_ignore_case(argv[1], "travas"))  { cmd_travas(argc >= 3 ? atoi(argv[2]) : 0); }
+  else if (equals_ignore_case(argv[1], "repouso")) { cmd_sleep_forcar(argc >= 3 ? atoi(argv[2]) : 0); }
+  else if (equals_ignore_case(argv[1], "teto"))    { cmd_teto_cpu(argc >= 3 ? atoi(argv[2]) : 0); }
+  else                             { show_usage("energia"); }
 }
 
 // As partes of fundo dos apps (kernel/background.h). A parada requested daqui
-// acontece in interface (fundo_manter), como toda parada.
+// happens in interface (fundo_manter), like every stop.
 static void c_fundo(int argc, char** argv)
 {
-  if (argc >= 3 && eh(argv[1], "parar")) {
+  if (argc >= 3 && equals_ignore_case(argv[1], "parar")) {
     printf(system_fundo_stop_name(argv[2]) ? "pedido de parada enviado para '%s'\n"
                                              : "'%s' nao esta rodando\n", argv[2]);
     return;
   }
-  if (argc >= 2) { mostrar_uso("fundo"); return; }
+  if (argc >= 2) { show_usage("fundo"); return; }
   background_info_t l[FUNDO_MAX];
   const int n = system_fundo_listar(l, FUNDO_MAX);
   if (n == 0) { printf("nenhuma parte de fundo rodando\n"); }
@@ -1721,15 +1721,15 @@ static void c_fundo(int argc, char** argv)
   }
 }
 
-// Devolve (ou tira) o barulho of uma etiqueta em time of execucao. O sistema
+// Returns (or removes) the noise of a tag at execution time. The system
 // silencia "eh_sdio" e "sdmmc_io" no boot - eles inundam o console when o
 // enlace com o C6 morre. Silenciar sem deixar como reverter seria hide
 // informacao; com isto, o cru esta a one comando of distancia.
-static const char* const NIVEL_NOME[6] = { "nada", "erro", "aviso", "info", "debug", "verboso" };
+static const char* const LOG_LEVEL_NAMES[6] = { "nada", "erro", "aviso", "info", "debug", "verboso" };
 
 static int level_log(const char* s)
 {
-  for (int i = 0; i < 6; ++i) { if (eh(s, NIVEL_NOME[i])) { return i; } }
+  for (int i = 0; i < 6; ++i) { if (equals_ignore_case(s, LOG_LEVEL_NAMES[i])) { return i; } }
   char* end = nullptr;
   const long n = strtol(s, &end, 10);
   return (*s && end && *end == 0 && n >= 0 && n <= 5) ? (int)n : -1;
@@ -1737,10 +1737,10 @@ static int level_log(const char* s)
 
 static void c_log(int argc, char** argv)
 {
-  if (argc < 2) { mostrar_uso("log"); return; }
+  if (argc < 2) { show_usage("log"); return; }
   if (argc < 3) {
     const int n = (int)esp_log_level_get(argv[1]);
-    printf("'%s' esta em %s (%d)\n", argv[1], (n >= 0 && n <= 5) ? NIVEL_NOME[n] : "?", n);
+    printf("'%s' esta em %s (%d)\n", argv[1], (n >= 0 && n <= 5) ? LOG_LEVEL_NAMES[n] : "?", n);
     return;
   }
   const int n = level_log(argv[2]);
@@ -1749,20 +1749,20 @@ static void c_log(int argc, char** argv)
     return;
   }
   esp_log_level_set(argv[1], (esp_log_level_t)n);
-  printf("'%s' agora em %s (%d)\n", argv[1], NIVEL_NOME[n], n);
+  printf("'%s' agora em %s (%d)\n", argv[1], LOG_LEVEL_NAMES[n], n);
 }
 
 // BANCADA DO PENDRIVE: enable e return sem touch in screen. Ligar tira o
-// console of USB-C (o computador passa a ver o disco, nao a porta serial); ele
-// iteration when o computador ejeta. O que aconteceu stays no log of cartao.
+// console of USB-C (the computer now sees the disk, not the serial port); he
+// iteration when the computer ejects. What happened stays in the log of card.
 static void c_pendrive(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "ligar")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "ligar")) {
     printf(tab5_pendrive_start() ? "ligando - o console sai do USB-C ate o computador ejetar\n"
                                    : "nao ligou (ja havia sessao, ou recusado - veja 'pendrive')\n");
     return;
   }
-  if (argc >= 2 && eh(argv[1], "devolver")) { tab5_pendrive_return(); printf("devolvendo\n"); return; }
+  if (argc >= 2 && equals_ignore_case(argv[1], "devolver")) { tab5_pendrive_return(); printf("devolvendo\n"); return; }
   tab5_pendrive_estado_t e;
   tab5_pendrive_estado(&e);
   static const char* const FASE[] = { "parado", "preparando", "ativo", "devolvendo" };
@@ -1777,16 +1777,16 @@ static void c_pendrive(int argc, char** argv)
 
 // DIAGNOSTICO DA PISCADA AZUL, e interruptores para comparar sem regravar.
 //
-// PALAVRA RECONHECIDA OU NADA FEITO - e esta regra custou uma medicao. Uma
-// versao anterior era "se nao for 'on', desligue": qualquer segunda palavra que
-// nao casasse virava one priorizar_tela(false) SILENCIOSO, e uma medicao exited
+// WORD ACKNOWLEDGED OR NOTHING DONE - and this rule cost a medication. One
+// previous version was "if it's not 'on', turn it off": any second word that
+// not married, one would become prioritize_tela(false) SILENT, and a measurement exited
 // com a priority em "default" sem ninguem ter request. Comando of diagnostics
-// nao pode ter caminho destrutivo por omissao.
-// BANCADA: a screen como esta now, num .bmp of cartao (apps/Console).
+// cannot have a destructive path by default.
+// BENCH: the screen as it is now, in a .bmp of card (apps/Console).
 // readRect devolve o RGB565 in order of LovyanGFX (bytes trocados); o filtro
-// desfaz in copia que vai para o arquivo.
+// undo in copy that goes to the file.
 static void bmp_desinverter(uint16_t* l, int n) { for (int i = 0; i < n; ++i) { l[i] = (uint16_t)((l[i] << 8) | (l[i] >> 8)); } }
-static void screen_foto(const char* name)
+static void screen_photo(const char* name)
 {
   const int w = M5.Display.width(), h = M5.Display.height();
   uint16_t* px = (uint16_t*)heap_caps_malloc((size_t)w * h * 2, MALLOC_CAP_SPIRAM);
@@ -1800,7 +1800,7 @@ static void screen_foto(const char* name)
 // BANCADA: click e open app pela serial (ver sistema_simular_toque).
 static void c_simulate_touch(int argc, char** argv)
 {
-  if (argc < 3) { mostrar_uso("tocar"); return; }
+  if (argc < 3) { show_usage("tocar"); return; }
   system_simulate_touch(atoi(argv[1]), atoi(argv[2]));
   printf("toque em %s,%s\n", argv[1], argv[2]);
 }
@@ -1811,7 +1811,7 @@ static void c_open(int argc, char** argv)
     for (int i = 0; i < SISTEMA_NUM_APPS; ++i) { printf("  %s\n", SISTEMA_APPS[i]->name); }
     return;
   }
-  if (eh(argv[1], "home")) { system_simulate_open(nullptr); printf("voltando para a home\n"); return; }
+  if (equals_ignore_case(argv[1], "home")) { system_simulate_open(nullptr); printf("voltando para a home\n"); return; }
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
     if (strcasecmp(SISTEMA_APPS[i]->name, argv[1]) == 0) {
       system_simulate_open(SISTEMA_APPS[i]);
@@ -1833,7 +1833,7 @@ static const app_t* app_por_name(const char* name)
 
 static void c_order(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "padrao")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "padrao")) {
     system_home_order_default();
     printf("ordem de fabrica (apps.cpp) restaurada\n");
   } else if (argc >= 3) {
@@ -1844,7 +1844,7 @@ static void c_order(int argc, char** argv)
     system_home_move(app, pos - 1);
     printf("'%s' agora na posicao %d\n", app->name, pos);
   } else if (argc == 2) {
-    mostrar_uso("ordem");
+    show_usage("ordem");
     return;
   }
   for (int i = 0; i < SISTEMA_NUM_APPS; ++i) {
@@ -1857,21 +1857,21 @@ static void c_screen(int argc, char** argv)
 {
   if (argc >= 2) {
     const char* o = argv[1];
-    if (eh(o, "foto")) { screen_foto(argc >= 3 ? argv[2] : "tela"); return; }
-    if (eh(o, "medir")) { screen_medir_marcar(); return; }
-    if (eh(o, "banco")) { tab5_frame_benchmark(); return; }
-    if (eh(o, "rolar")) {
-      // Rolagem pelo DMA (of pagina of frente) ou pela CPU (dentro of of
+    if (equals_ignore_case(o, "foto")) { screen_photo(argc >= 3 ? argv[2] : "tela"); return; }
+    if (equals_ignore_case(o, "medir")) { screen_measure_reset(); return; }
+    if (equals_ignore_case(o, "banco")) { tab5_frame_benchmark(); return; }
+    if (equals_ignore_case(o, "rolar")) {
+      // Scrolling by the DMA (of front page) or by the CPU (inside of
       // tras). Rastro que some com 'cpu' esta no caminho of DMA.
       extern bool g_screen_rolar_cpu;
-      if (argc >= 3 && eh(argv[2], "cpu"))      { g_screen_rolar_cpu = true; }
-      else if (argc >= 3 && eh(argv[2], "dma")) { g_screen_rolar_cpu = false; }
+      if (argc >= 3 && equals_ignore_case(argv[2], "cpu"))      { g_screen_rolar_cpu = true; }
+      else if (argc >= 3 && equals_ignore_case(argv[2], "dma")) { g_screen_rolar_cpu = false; }
       else { printf("uso: tela rolar cpu|dma\n"); }
       printf("rolagem pela %s\n", g_screen_rolar_cpu ? "CPU" : "DMA (da frente)");
       return;
     }
-    if (eh(o, "relogio")) {
-      // MUDA O RELOGIO DE PIXEL EM EXECUCAO. E o unico ajuste que reduz a
+    if (equals_ignore_case(o, "relogio")) {
+      // CHANGES THE RUNNING PIXEL CLOCK. And the only adjustment that reduces
       // demanda of panel em vez of disputar melhor - ver tab5_power.cpp.
       if (argc < 3) { printf("uso: tela relogio <mhz>   (ex.: tela relogio 60)\n"); return; }
       const int mhz = atoi(argv[2]);
@@ -1888,18 +1888,18 @@ static void c_screen(int argc, char** argv)
       printf(ok ? "painel remontado e gravado - vale no proximo boot tambem\n"
                 : "nao subiu nesse relogio - voltei ao anterior\n");
     }
-    else if (eh(o, "prioridade") && argc >= 3 && (eh(argv[2], "alta") || eh(argv[2], "on"))) {
+    else if (equals_ignore_case(o, "prioridade") && argc >= 3 && (equals_ignore_case(argv[2], "alta") || equals_ignore_case(argv[2], "on"))) {
       tab5_bus_prioritize_screen(true);
     }
-    else if (eh(o, "prioridade") && argc >= 3 && (eh(argv[2], "padrao") || eh(argv[2], "off"))) {
+    else if (equals_ignore_case(o, "prioridade") && argc >= 3 && (equals_ignore_case(argv[2], "padrao") || equals_ignore_case(argv[2], "off"))) {
       tab5_bus_prioritize_screen(false);
     }
     // Formas antigas, mantidas: 'screen on' / 'screen off'.
-    else if (eh(o, "on")  || eh(o, "sim")) { tab5_bus_prioritize_screen(true); }
-    else if (eh(o, "off") || eh(o, "nao")) { tab5_bus_prioritize_screen(false); }
+    else if (equals_ignore_case(o, "on")  || equals_ignore_case(o, "sim")) { tab5_bus_prioritize_screen(true); }
+    else if (equals_ignore_case(o, "off") || equals_ignore_case(o, "nao")) { tab5_bus_prioritize_screen(false); }
     else {
       printf("nao conheco 'tela %s' - nada foi alterado.\n", o);
-      mostrar_uso("tela");
+      show_usage("tela");
       return;
     }
   }
@@ -1911,12 +1911,12 @@ static void c_screen(int argc, char** argv)
   {
     // Os detectores of hal/tab5_frame. Sem 'pior': read zera, e quem
     // acompanha o pior e o monitor, que vira evento.
-    uint32_t periodo_us = 0;
-    const uint32_t atrasos = tab5_frame_delays(nullptr, &periodo_us);
+    uint32_t period_us = 0;
+    const uint32_t atrasos = tab5_frame_delays(nullptr, &period_us);
     const uint32_t erros   = tab5_frame_dsi_errors(nullptr, nullptr);
     printf("  quadros varridos          : %lu (periodo %lu.%lu ms)\n",
            (unsigned long)tab5_frame_count(),
-           (unsigned long)(periodo_us / 1000), (unsigned long)(periodo_us % 1000 / 100));
+           (unsigned long)(period_us / 1000), (unsigned long)(period_us % 1000 / 100));
     printf("  underrun / atrasados / DSI: %lu / %lu / %lu\n",
            (unsigned long)tab5_frame_underruns(), (unsigned long)atrasos, (unsigned long)erros);
     int nucleo = -1; char t0[16], t1[16];
@@ -1925,7 +1925,7 @@ static void c_screen(int argc, char** argv)
     }
   }
 
-  // A CONTA NA TELA, e nao so no comentario of fonte. Sao estes numeros que
+  // THE ACCOUNT ON THE SCREEN, and not just in the comment of source. These are the numbers that
   // dizem se mexer no clock valeu: MB/s e o que o panel tira of PSRAM sem
   // stop, e e contra esse valor que todo o resto of sistema disputa.
   const int mhz = tab5_power_dpi_clock();
@@ -1938,15 +1938,15 @@ static void c_screen(int argc, char** argv)
     printf("  leitura continua da PSRAM : %.1f MB/s\n", fps * 720.0 * 1280.0 * 2.0 / 1e6);
   }
 
-  screen_medir_mostrar();
+  screen_measure_show();
   printf("\n  underrun > 0 = a piscada azul. 'help tela' lista as medidas e ajustes.\n");
 }
 
-// TESTE DO BACKLIGHT, sem gravar: achar o menor level que ainda acende e ver
+// BACKLIGHT TEST, without recording: find the lowest level that still lights up and see
 // se a frequencia of PWM muda o piso. Driver of LED com time minimum of enabled
-// nao obedece duty pequeno em frequencia alta (a 44,1 kHz o periodo e
+// does not obey small duty at high frequency (at 44.1 kHz the period is
 // 22,7 us) - abaixo of certo ponto o brilho para of cair.
-static void c_brilho(int argc, char** argv)
+static void c_brightness(int argc, char** argv)
 {
   if (argc < 2) {
     printf("brilho: %d (gravado %d)\n", (int)M5.Display.getBrightness(), (int)settings_brightness());
@@ -1966,47 +1966,47 @@ static void c_brilho(int argc, char** argv)
          b, (float)(((b * 257 + 64) >> 7)) * 100.0f / 512.0f);
 }
 
-// Abrir one app faz varias coisas of uma vez; cada opcao faz SO UMA, anotando a
-// hora, para olhar a screen e ver qual pisca.
+// Opening an app does several things at once; each option makes ONLY ONE, writing down the
+// time, to look at the screen and see which one blinks.
 static void c_piscada(int argc, char** argv)
 {
   const char* o = (argc >= 2) ? argv[1] : "";
   const unsigned long t = (unsigned long)(esp_timer_get_time() / 1000);
-  if (eh(o, "brilho")) {
+  if (equals_ignore_case(o, "brilho")) {
     printf("piscada: %lums - reescrevendo o MESMO brilho (%d)\n", t, (int)M5.Display.getBrightness());
     M5.Display.setBrightness(M5.Display.getBrightness());
-  } else if (eh(o, "c6")) {
+  } else if (equals_ignore_case(o, "c6")) {
     printf("piscada: %lums - reescrevendo WLAN_PWR_EN=0 no expansor\n", t);
     tab5_power_radio(false);
-  } else if (eh(o, "perfil")) {
+  } else if (equals_ignore_case(o, "perfil")) {
     printf("piscada: %lums - reaplicando o perfil inteiro (trilhos + brilho + pm)\n", t);
     system_reapply_profile();
-  } else if (eh(o, "pm")) {
+  } else if (equals_ignore_case(o, "pm")) {
     esp_pm_config_t c = { };
     esp_pm_get_configuration(&c);
     printf("piscada: %lums - esp_pm_configure(%d..%d MHz) de novo\n", t, c.min_freq_mhz, c.max_freq_mhz);
     esp_pm_configure(&c);
-  } else if (eh(o, "grove")) {
+  } else if (equals_ignore_case(o, "grove")) {
     printf("piscada: %lums - 5V do Grove OFF, 1s, ON (o C6L reinicia)\n", t);
     M5.Power.setExtOutput(false, m5::ext_PA);
     vTaskDelay(pdMS_TO_TICKS(1000));
     printf("piscada: %lums - 5V do Grove ON agora\n", (unsigned long)(esp_timer_get_time() / 1000));
     M5.Power.setExtOutput(true, m5::ext_PA);
-  } else if (eh(o, "quadro")) {
+  } else if (equals_ignore_case(o, "quadro")) {
     printf("piscada: %lums - redesenho completo pelo compositor\n", t);
     virtual_screen_invalidate_everything();
     system_request_redraw_complete();
   } else {
-    mostrar_uso("piscada");
+    show_usage("piscada");
   }
 }
 
-// Liga/desliga o diagnostics. Nao le o panel daqui: o I2C e of tarefa of
-// interface, e duas tarefas no mesmo barramento leem registrador trocado sem
-// dar erro. Aqui so se aciona a bandeira; quem imprime e quem mede.
+// Turns diagnostics on/off. Don't read the panel here: I2C is a task
+// interface, and two tasks on the same bus read the swapped register without
+// give error. Here you only activate the flag; who prints and who measures.
 static void c_touch(int argc, char** argv)
 {
-  const bool enable = !(argc >= 2 && eh(argv[1], "off"));
+  const bool enable = !(argc >= 2 && equals_ignore_case(argv[1], "off"));
   system_diag_touch(enable);
   printf(enable ? "toque cada botao e veja onde o dedo cai.\n"
                  "compare o 'app (x,y)' com a posicao esperada do botao.\n"
@@ -2015,7 +2015,7 @@ static void c_touch(int argc, char** argv)
 }
 
 // Onde a interface esta AGORA - funciona com a screen congelada: o console e
-// outra tarefa. Rode duas vezes: 'voltas' parado = laco parado nesse passo.
+// another task. Rotate twice: 'turns' stopped = loop stopped at this step.
 static void c_ui(int, char**)
 {
   system_diag_t d;
@@ -2049,8 +2049,8 @@ static void c_wifi(int argc, char** argv)
     return;
   }
   const char* o = argv[1];
-  if (eh(o, "redes")) {
-    // Exige a stack of pe: sem esp_hosted no ar nao ha radio a quem request.
+  if (equals_ignore_case(o, "redes")) {
+    // Requires the stack of pe: without esp_hosted on the air there is no radio to request.
     if (!tab5_wifi_stack_ready()) {
       printf("o WiFi ainda nao foi ligado neste boot - ligue em Ajustes e tente de novo\n");
       return;
@@ -2058,8 +2058,8 @@ static void c_wifi(int argc, char** argv)
     tab5_wifi_scan_console();
     return;
   }
-  if (eh(o, "conectar")) {
-    if (argc < 3) { mostrar_uso("wifi"); return; }
+  if (equals_ignore_case(o, "conectar")) {
+    if (argc < 3) { show_usage("wifi"); return; }
     if (!tab5_wifi_is_known(argv[2])) {
       printf("'%s' nao esta guardada - use: wifi gravar \"%s\" <senha>\n", argv[2], argv[2]);
       return;
@@ -2068,23 +2068,23 @@ static void c_wifi(int argc, char** argv)
     printf("trocando para '%s' - confira com 'wifi' em alguns segundos\n", argv[2]);
     return;
   }
-  if (eh(o, "esquecer")) {
-    if (argc < 3) { mostrar_uso("wifi"); return; }
+  if (equals_ignore_case(o, "esquecer")) {
+    if (argc < 3) { show_usage("wifi"); return; }
     const char* ssid = argv[2];
-    com_cartao([&]() -> int {
+    with_card([&]() -> int {
       const bool ok = tab5_wifi_forget(ssid);
       printf(ok ? "'%s' esquecida\n" : "'%s' nao estava guardada\n", ssid);
       return ok ? 0 : 1;
     });
     return;
   }
-  if (eh(o, "gravar")) {
-    if (argc < 3) { mostrar_uso("wifi"); return; }
-    wifi_gravar(argv[2], argc >= 4 ? argv[3] : nullptr);
+  if (equals_ignore_case(o, "gravar")) {
+    if (argc < 3) { show_usage("wifi"); return; }
+    wifi_save_credentials(argv[2], argc >= 4 ? argv[3] : nullptr);
     return;
   }
   // Forma curta, a original: 'wifi <ssid> [senha]'.
-  wifi_gravar(argv[1], argc >= 3 ? argv[2] : nullptr);
+  wifi_save_credentials(argv[1], argc >= 3 ? argv[2] : nullptr);
 }
 
 // Atalho antigo: 'redes' = 'wifi redes'.
@@ -2098,24 +2098,24 @@ static void c_redes(int, char**)
 // BLUETOOTH: estado of stack, of enlace of Mesh e quem foi visto.
 static void c_ble(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "varrer")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "varrer")) {
     printf(tab5_ble_scan(6000) ? "varrendo por 6 s... rode 'ble' depois\n"
                                  : "nao deu para varrer agora (%s)\n", tab5_ble_description());
     return;
   }
-  if (argc >= 2 && eh(argv[1], "desligar")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "desligar")) {
     system_bluetooth(false);
     printf("desligando - confira com 'ble' em alguns segundos\n");
     return;
   }
-  if (argc >= 2 && eh(argv[1], "ligar")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "ligar")) {
     // Ligar com o C6 disabled pede o trilho (I2C), que so a interface fala.
     if (!tab5_wifi_stack_ready()) { printf("o C6 ainda nao subiu neste boot - ligue em Ajustes\n"); return; }
     system_bluetooth(true);
     printf("ligando - confira com 'ble' em alguns segundos\n");
     return;
   }
-  if (argc >= 2) { mostrar_uso("ble"); return; }
+  if (argc >= 2) { show_usage("ble"); return; }
   printf("bluetooth: %s\n", tab5_ble_description());
   printf("mesh ble:  %s%s\n", mesh_ble_descricao(), mesh_ble_esperando_pin() ? " (esperando PIN)" : "");
   const int n = tab5_ble_seen_count();
@@ -2131,24 +2131,24 @@ static void c_ble(int argc, char** argv)
   }
 }
 
-// O estado real of ESP-NOW e of radio - sem depender of screen. O canal e
-// perguntado AO C6 now (nao o que o servico acha), que e o que decide se
-// dois aparelhos se ouvem.
+// The real state of ESP-NOW and of radio - without depending on screen. The channel and
+// asked C6 now (not what the service thinks), which is what decides whether
+// two devices hear each other.
 static void c_espnow(int argc, char** argv)
 {
-  if (argc >= 3 && eh(argv[1], "canal")) {
+  if (argc >= 3 && equals_ignore_case(argv[1], "canal")) {
     const int c = atoi(argv[2]);
     printf(tab5_espnow_set_canal((uint8_t)c) ? "pedido: canal %d\n" : "recusado (canal %d)\n", c);
     return;
   }
-  if (argc >= 3 && eh(argv[1], "enviar")) {
-    // A phrase inteira: antes so a primeira palavra ia, o resto sumia calado.
+  if (argc >= 3 && equals_ignore_case(argv[1], "enviar")) {
+    // The entire sentence: before only the first word went, the rest disappeared silently.
     char msg[200];
     juntar(msg, sizeof(msg), argc, argv, 2);
     printf(tab5_espnow_send(msg) ? "na fila: '%s'\n" : "recusado: '%s'\n", msg);
     return;
   }
-  if (argc >= 2) { mostrar_uso("espnow"); return; }
+  if (argc >= 2) { show_usage("espnow"); return; }
   uint8_t mac[6]; tab5_espnow_meu_mac(mac);
   uint8_t c = 0; wifi_second_chan_t sec;
   const bool leu = tab5_wifi_stack_ready() && esp_wifi_get_channel(&c, &sec) == ESP_OK;
@@ -2162,32 +2162,32 @@ static void c_espnow(int argc, char** argv)
          mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], tab5_espnow_n(), tab5_espnow_vistos());
 }
 
-// GRAVAR O C6 PELO ENLACE ESTA DESLIGADO. A OTA pelo proprio SDIO nao tem
-// iteration when a imagem nova nao fala - foi o que ja deixou o C6 mudo. Com o
+// RECORDING THE C6 THROUGH THE LINK IS OFF. OTA via SDIO itself does not have
+// iteration when the new image doesn't speak - that's what left the C6 silent. With the
 // M5Stack ESP32 Downloader, gravar e restaurar e FISICO e sempre tem iteration. As
-// funcoes antigas (cmd_c6_ota/cmd_c6_gravar) estao no historico of git.
+// old functions (cmd_c6_ota/cmd_c6_gravar) are in the history of git.
 // ---------------------------------------------------------------------------
 // GRAVAR O C6 PELO ENLACE (OTA pelo SDIO)
 // ---------------------------------------------------------------------------
-// So existe com o firmware of C6 of tabela nova (bootloader com rollback, dois
+// It only exists with the firmware of C6 of new table (bootloader with rollback, two
 // slots of 1,875 MB, GUARDA DE IMAGEM NOVA no c6/main/app_main.c). O caminho:
 //
 //   1. le apps/Sistema/tab5_c6.bin INTEIRO para a PSRAM e confere antes of
 //      touch no C6: e imagem of IDF, e para ESP32-C6, e e o projeto tab5_c6;
-//   2. begin (apaga o slot LIVRE) -> write em pedacos of 1536 -> end (o C6
+//   2. begin (deletes the FREE slot) -> write in pieces of 1536 -> end (the C6
 //      valida a imagem inteira) -> activate (troca o boot; reinicia em 2 s).
 //      Erro antes of activate: nada changed, o firmware current segue running;
 //   3. o P4 se reinicia 4 s depois. No boot ele reseta o C6 (2o boot of
 //      imagem nova - a guarda conta e tolera) e manda o VIVO, que a confirma.
 //
-// Se o VIVO nao vier (enlace nao fecha, imagem trava em laco), o proprio C6
+// If the VIVO does not come (link does not close, image gets stuck), the C6 itself
 // iteration para a imagem anterior: 120 s, ou no 5o boot sem confirmacao.
 #define C6_FW_APP     "Sistema"
-#define C6_FW_ARQUIVO "tab5_c6.bin"
+#define C6_FW_FILE "tab5_c6.bin"
 #define C6_PEDACO     1536          // EH_RPC_OTA_CHUNK_MAX
 #define C6_FW_MAX     0x1E0000      // slot of c6/partitions.csv
 
-static void cmd_c6_gravar(bool confirmado)
+static void cmd_c6_flash(bool confirmado)
 {
   if (!tab5_wifi_c6_link()) {
     printf("o enlace com o C6 nao esta de pe - ligue o WiFi primeiro.\n");
@@ -2202,11 +2202,11 @@ static void cmd_c6_gravar(bool confirmado)
            "O C6 reinicia e o P4 reinicia logo depois, sozinho. Se a imagem\n"
            "nova nao for confirmada, o C6 volta para a anterior sem ajuda.\n"
            "NAO desligue o aparelho ate o P4 voltar.\n",
-           C6_FW_APP, C6_FW_ARQUIVO);
+           C6_FW_APP, C6_FW_FILE);
     return;
   }
 
-  // RPC vivo? Sem ele, cada request of OTA esperaria o time esgotado.
+  // RPC alive? Without it, each OTA request would wait for the team to run out.
   eh_host_coprocessor_fwver_t v = { };
   if (eh_host_sys_get_cp_fw_version(&v) != ESP_OK) {
     printf("o C6 aceita o enlace mas nao responde a RPC - so pelo Downloader.\n");
@@ -2214,8 +2214,8 @@ static void cmd_c6_gravar(bool confirmado)
   }
 
   if (!tab5_sd_mount()) { printf("cartao nao montou (%s)\n", tab5_sd_description()); return; }
-  FILE* f = tab5_sd_open(C6_FW_APP, C6_FW_ARQUIVO, "rb");
-  if (!f) { printf("nao achei apps/%s/%s\n", C6_FW_APP, C6_FW_ARQUIVO); tab5_sd_unmount(); return; }
+  FILE* f = tab5_sd_open(C6_FW_APP, C6_FW_FILE, "rb");
+  if (!f) { printf("nao achei apps/%s/%s\n", C6_FW_APP, C6_FW_FILE); tab5_sd_unmount(); return; }
   fseek(f, 0, SEEK_END);
   const long total = ftell(f);
   fseek(f, 0, SEEK_SET);
@@ -2232,21 +2232,21 @@ static void cmd_c6_gravar(bool confirmado)
 
   // CONFERENCIA ANTES DE TOCAR NO C6. Cabecalho of IDF: 0xE9 no byte 0,
   // chip_id no 12 (0x000D = ESP32-C6). Logo depois of cabecalho (24 B) e of
-  // 1o segmento (8 B) vem o esp_app_desc_t: magic 0xABCD5432, versao no +16,
+  // 1st segment (8 B) comes esp_app_desc_t: magic 0xABCD5432, version no +16,
   // name of projeto no +48.
   const uint32_t magic_desc = (uint32_t)img[32] | ((uint32_t)img[33] << 8) |
                               ((uint32_t)img[34] << 16) | ((uint32_t)img[35] << 24);
-  char versao[33] = { 0 }, projeto[33] = { 0 };
-  if (total > 112) { memcpy(versao, img + 48, 32); memcpy(projeto, img + 80, 32); }
+  char version[33] = { 0 }, projeto[33] = { 0 };
+  if (total > 112) { memcpy(version, img + 48, 32); memcpy(projeto, img + 80, 32); }
   const unsigned chip = (unsigned)img[12] | ((unsigned)img[13] << 8);
   if (total <= 112 || img[0] != 0xE9 || chip != 0x000D || magic_desc != 0xABCD5432u
       || strcmp(projeto, "tab5_c6") != 0) {
     printf("%s nao e firmware do C6 deste projeto (magic 0x%02X, chip %u, projeto '%s')\n",
-           C6_FW_ARQUIVO, img[0], chip, projeto);
+           C6_FW_FILE, img[0], chip, projeto);
     heap_caps_free(img);
     return;
   }
-  printf("imagem %s, %ld bytes - gravando no slot livre do C6\n", versao, total);
+  printf("imagem %s, %ld bytes - gravando no slot livre do C6\n", version, total);
 
   esp_err_t r = eh_host_cp_ota_begin();
   if (r != ESP_OK) {
@@ -2255,19 +2255,19 @@ static void cmd_c6_gravar(bool confirmado)
     return;
   }
   int pct_ant = -1;
-  for (long feito = 0; feito < total; ) {
-    const uint32_t n = (uint32_t)((total - feito) > C6_PEDACO ? C6_PEDACO : (total - feito));
-    r = eh_host_cp_ota_write(img + feito, n);
+  for (long written = 0; written < total; ) {
+    const uint32_t n = (uint32_t)((total - written) > C6_PEDACO ? C6_PEDACO : (total - written));
+    r = eh_host_cp_ota_write(img + written, n);
     if (r != ESP_OK) {
       printf("\nwrite falhou em %ld/%ld: %s - ABORTADO, o firmware atual segue\n",
-             feito, total, esp_err_to_name(r));
+             written, total, esp_err_to_name(r));
       heap_caps_free(img);
       return;
     }
-    feito += n;
-    const int pct = (int)(feito * 100 / total);
+    written += n;
+    const int pct = (int)(written * 100 / total);
     if (pct / 10 != pct_ant) { printf("  %d%%\n", pct); pct_ant = pct / 10; }
-    yield((int)(feito / C6_PEDACO));
+    yield((int)(written / C6_PEDACO));
   }
   heap_caps_free(img);
 
@@ -2290,19 +2290,19 @@ static void cmd_c6_gravar(bool confirmado)
 
 static void c_c6(int argc, char** argv)
 {
-  if (argc >= 2 && (eh(argv[1], "ota") || eh(argv[1], "gravar"))) {
-    cmd_c6_gravar(argc >= 3 && eh(argv[2], "sim"));
+  if (argc >= 2 && (equals_ignore_case(argv[1], "ota") || equals_ignore_case(argv[1], "gravar"))) {
+    cmd_c6_flash(argc >= 3 && equals_ignore_case(argv[2], "sim"));
     return;
   }
   cmd_c6();
 }
 
 // ---------------------------------------------------------------------------
-// FAREJO (modo promiscuo no C6) - e a window para as capacidades of radio que
-// a gravacao of C6 trouxe. 'info' mostra o que este C6 sabe fazer (CSI, FTM,
+// FAREJO (promiscuous mode on C6) - and the window for the radio capabilities that
+// the recording of C6 brought. 'info' shows what this C6 can do (CSI, FTM,
 // 802.15.4): o bit so acende se o modulo foi compilado no firmware gravado.
 // ---------------------------------------------------------------------------
-static void farejo_estado(void)
+static void show_sniffer_status(void)
 {
   printf("C6 sabe farejar: %s   farejo ativo: %s\n",
          tab5_farejo_c6_suporta() ? "sim" : "NAO (firmware v<3 ou sem a flag)",
@@ -2321,7 +2321,7 @@ static void farejo_estado(void)
   if (n > 20) { printf("  ... e mais %d\n", n - 20); }
 }
 
-static void farejo_info(void)
+static void show_sniffer_info(void)
 {
   c6_info_t in;
   if (!tab5_farejo_info_c6(&in, 1500)) {
@@ -2360,19 +2360,19 @@ static void farejo_info(void)
 }
 
 
-static void c_farejo(int argc, char** argv)
+static void c_sniffer(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "info"))  { farejo_info();     return; }
-  if (argc >= 2 && eh(argv[1], "off"))   { tab5_farejo_disable(); printf("farejo desligado\n"); return; }
-  if (argc >= 2 && eh(argv[1], "limpar")){ tab5_farejo_limpar(); printf("tabela zerada\n"); return; }
-  if (argc >= 2 && eh(argv[1], "on")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "info"))  { show_sniffer_info(); return; }
+  if (argc >= 2 && equals_ignore_case(argv[1], "off"))   { tab5_farejo_disable(); printf("farejo desligado\n"); return; }
+  if (argc >= 2 && equals_ignore_case(argv[1], "limpar")){ tab5_farejo_limpar(); printf("tabela zerada\n"); return; }
+  if (argc >= 2 && equals_ignore_case(argv[1], "on")) {
     c6_farejo_cfg_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.filtro = 0;                              // os dois tipos
+    cfg.filtro = 0;                              // the two types
     cfg.canais = 0;                              // canal current (associado on roteador)
     cfg.lote_ms = (argc >= 3) ? (uint16_t)atoi(argv[2]) : 250;
     // Mascara of canais em hex opcional: 'farejo on <lote_ms> <mask>'. Com
-    // mais of one canal, SOLTE o roteador antes ('espnow canal 1' ja faz isso),
+    // more than one channel, RELEASE the router first ('espnow channel 1' already does this),
     // senao o C6 stays preso no canal of AP.
     if (argc >= 4) { cfg.canais = (uint16_t)strtoul(argv[3], nullptr, 16); }
     if (!tab5_farejo_enable(&cfg)) {
@@ -2383,33 +2383,33 @@ static void c_farejo(int argc, char** argv)
            (unsigned)cfg.lote_ms, (unsigned)cfg.canais);
     return;
   }
-  if (argc >= 2) { mostrar_uso("farejo"); return; }
-  farejo_estado();
+  if (argc >= 2) { show_usage("farejo"); return; }
+  show_sniffer_status();
 }
 
 // ---------------------------------------------------------------------------
-// RADIO - teste dos extras of C6 (CSI, FTM, 802.15.4)
+// RADIO - test of extras of C6 (CSI, FTM, 802.15.4)
 // ---------------------------------------------------------------------------
-// Liga cada extra por alguns segundos e conta o que iteration. Serve para provar a
-// gravacao of C6 (enable, receber e disable sem derrubar o C6 nem o WiFi) - o
-// que so se conserta com o aparelho open. Os contadores sao escritos in
-// tarefa of eventos of esp_hosted e lidos aqui: volateis, sem trava.
+// Turn on each extra for a few seconds and count what iteration. It serves to prove the
+// recording of C6 (enable, receive and disable without dropping the C6 or the WiFi) - the
+// which can only be fixed with the device open. Counters are written in
+// task of events of esp_hosted and read here: volatile, no lock.
 //
 // O CSI passa pelo servico tab5_csi (o mesmo que o Radar usa): o peer_data
 // guarda UM ouvinte por message, e registrar o CSI aqui roubaria o of servico.
 static volatile uint32_t s_rx_csi = 0, s_rx_154 = 0, s_rx_ftm = 0;
-static volatile int      s_rx_rssi = 0, s_rx_canal = 0, s_rx_len = 0;
+static volatile int      s_rx_rssi = 0, s_rx_channel = 0, s_rx_len = 0;
 static c6_ftm_rep_t      s_rx_ftm_rep;
 static bool              s_radio_registrado = false;
 // CSI por formato of frame (C6_CSI_FORMATO: 0 11b ... 7 HE TB) e os notices
 // que mudam a leitura dos bytes.
-static volatile uint32_t s_csi_fmt[16], s_csi_w0_ruim = 0, s_csi_cortado = 0, s_csi_len_max = 0;
+static volatile uint32_t s_csi_fmt[16], s_csi_bad_w0 = 0, s_csi_cortado = 0, s_csi_len_max = 0;
 
 static void radio_csi_rx(const c6_csi_cab_t* c, const uint8_t*, uint16_t)
 {
-  s_rx_rssi = c->rssi; s_rx_canal = c->channel; s_rx_len = c->len;
+  s_rx_rssi = c->rssi; s_rx_channel = c->channel; s_rx_len = c->len;
   s_csi_fmt[C6_CSI_FORMATO(c->flags)] = s_csi_fmt[C6_CSI_FORMATO(c->flags)] + 1;
-  if (c->flags & C6_CSI_F_W0_RUIM)  { s_csi_w0_ruim = s_csi_w0_ruim + 1; }
+  if (c->flags & C6_CSI_F_W0_RUIM)  { s_csi_bad_w0 = s_csi_bad_w0 + 1; }
   if (c->flags & C6_CSI_F_CORTADO)  { s_csi_cortado = s_csi_cortado + 1; }
   if (c->len > s_csi_len_max)       { s_csi_len_max = c->len; }
   s_rx_csi = s_rx_csi + 1;
@@ -2419,7 +2419,7 @@ static void radio_rx(uint32_t msg_id, const uint8_t* d, size_t n, void*)
 {
   if (msg_id == C6_MSG_154 && n >= sizeof(c6_154_cab_t)) {
     c6_154_cab_t c; memcpy(&c, d, sizeof(c));
-    s_rx_rssi = c.rssi; s_rx_canal = c.channel; s_rx_len = c.len;
+    s_rx_rssi = c.rssi; s_rx_channel = c.channel; s_rx_len = c.len;
     s_rx_154 = s_rx_154 + 1;
   } else if (msg_id == C6_MSG_FTM && n >= sizeof(c6_ftm_rep_t)) {
     memcpy(&s_rx_ftm_rep, d, sizeof(s_rx_ftm_rep));
@@ -2449,42 +2449,42 @@ static void radio_mandar(uint8_t sub, const void* cfg, size_t n)
   eh_host_peer_data_send(C6_MSG_HOST_RADIO, b, 1 + n);
 }
 
-// Liga, renova a cada 3 s (o C6 desliga sozinho em 10 s sem renovar), mostra
-// a contagem a cada segundo e desliga no end.
+// Turns on, renews every 3 s (the C6 turns off on its own in 10 s without renewing), shows
+// counts every second and turns off at the end.
 //
 // ping_meio: pinga o roteador in metade of window, com o recurso LIGADO - e o
-// teste que separa "associado" of "passando data".
-static void ping_roteador(const char* rotulo);
+// test that separates "associated" from "passing date".
+static void ping_roteador(const char* label);
 
 static void radio_window(uint8_t sub, const void* cfg_on, const void* cfg_off, size_t n,
-                         int segundos, volatile uint32_t* cont, bool ping_middle = false)
+                         int seconds, volatile uint32_t* cont, bool ping_middle = false)
 {
-  const uint32_t antes = *cont;
-  for (int s = 0; s < segundos; ++s) {
-    if (ping_middle && s > 0 && s == segundos / 2) { ping_roteador("  WiFi DURANTE"); }
+  const uint32_t before = *cont;
+  for (int s = 0; s < seconds; ++s) {
+    if (ping_middle && s > 0 && s == seconds / 2) { ping_roteador("  WiFi DURANTE"); }
     if (s % 3 == 0) { radio_mandar(sub, cfg_on, n); }
     vTaskDelay(pdMS_TO_TICKS(1000));
     printf("  %2d s: %lu recebidos   ultimo: canal %d  rssi %d  %d B\n", s + 1,
-           (unsigned long)(*cont - antes), s_rx_canal, s_rx_rssi, s_rx_len);
+           (unsigned long)(*cont - before), s_rx_channel, s_rx_rssi, s_rx_len);
   }
   radio_mandar(sub, cfg_off, n);
   printf("desligado. O que o C6 diz (ve tambem se o 'no ar' nao zerou):\n");
-  farejo_info();
+  show_sniffer_info();
 }
 
 static void c_radio(int argc, char** argv)
 {
-  if (argc < 2) { mostrar_uso("radio"); return; }
+  if (argc < 2) { show_usage("radio"); return; }
   if (!radio_prepare()) { return; }
   // csi [s] | 154 [canal] [s]
-  const bool z154 = eh(argv[1], "154");
+  const bool z154 = equals_ignore_case(argv[1], "154");
   const int  i_seg = z154 ? 3 : 2;
   int seg = (argc > i_seg) ? atoi(argv[i_seg]) : 10;
   if (seg < 1 || seg > 120) { seg = 10; }
 
-  if (eh(argv[1], "csi")) {
+  if (equals_ignore_case(argv[1], "csi")) {
     // Pelo servico tab5_csi: ele pede on C6 so o CSI of roteador, pinga o
-    // roteador a 20 Hz como fonte (o beacon of 2,4 GHz, a 1 Mbps, nao gera
+    // router at 20 Hz as source (the 2.4 GHz beacon, at 1 Mbps, does not generate
     // CSI) e mantem o receptor of C6 acordado. Aqui so se conta o que chega e
     // se mostra a measurement of movimento - parado, sem ninguem andando perto, a
     // razao stays perto of 1.
@@ -2492,23 +2492,23 @@ static void c_radio(int argc, char** argv)
            "Deixe o Tab5 apoiado: os 3 primeiros segundos aprendem o 'parado'.\n",
            seg, tab5_farejo_active() ? "LIGADO" : "desligado");
     memset((void*)s_csi_fmt, 0, sizeof(s_csi_fmt));
-    s_csi_w0_ruim = 0; s_csi_cortado = 0; s_csi_len_max = 0;
-    const uint32_t antes = s_rx_csi;
+    s_csi_bad_w0 = 0; s_csi_cortado = 0; s_csi_len_max = 0;
+    const uint32_t before = s_rx_csi;
     tab5_csi_ouvinte(radio_csi_rx);
     tab5_csi_enable(TAB5_CSI_CONSOLE);
-    static const char* const NIVEL[3] = { "parado", "leve", "FORTE" };
+    static const char* const MOTION_LEVEL_NAMES[3] = { "parado", "leve", "FORTE" };
     for (int i = 0; i < seg; ++i) {
       vTaskDelay(pdMS_TO_TICKS(1000));
       tab5_csi_estado_t e;
       tab5_csi_estado(&e);
-      printf("  %2d s: %lu recebidos  rssi %d  %d B   ", i + 1, (unsigned long)(s_rx_csi - antes),
+      printf("  %2d s: %lu recebidos  rssi %d  %d B   ", i + 1, (unsigned long)(s_rx_csi - before),
              s_rx_rssi, s_rx_len);
       switch (e.fase) {
         case TAB5_CSI_SEM_C6:          printf("C6 sem CSI\n"); break;
         case TAB5_CSI_SEM_ROTEADOR:    printf("sem roteador\n"); break;
         case TAB5_CSI_APRENDENDO:      printf("aprendendo o parado...\n"); break;
         case TAB5_CSI_APARELHO_MEXENDO:printf("Tab5 mexendo\n"); break;
-        case TAB5_CSI_MEDINDO:         printf("movimento: %s (x%.1f)\n", NIVEL[e.level], (double)e.razao); break;
+        case TAB5_CSI_MEDINDO:         printf("movimento: %s (x%.1f)\n", MOTION_LEVEL_NAMES[e.level], (double)e.razao); break;
         default:                       printf("\n"); break;
       }
     }
@@ -2520,10 +2520,10 @@ static void c_radio(int argc, char** argv)
       if (s_csi_fmt[f]) { printf("  %s %lu", f < 8 ? FMT[f] : "?", (unsigned long)s_csi_fmt[f]); }
     }
     printf("\nmaior record %lu B   1a palavra invalida em %lu   cortados %lu\n",
-           (unsigned long)s_csi_len_max, (unsigned long)s_csi_w0_ruim, (unsigned long)s_csi_cortado);
+           (unsigned long)s_csi_len_max, (unsigned long)s_csi_bad_w0, (unsigned long)s_csi_cortado);
     return;
   }
-  if (eh(argv[1], "154")) {
+  if (equals_ignore_case(argv[1], "154")) {
     c6_154_cfg_t on, off;
     memset(&on, 0, sizeof(on)); memset(&off, 0, sizeof(off));
     on.liga = 1;
@@ -2532,7 +2532,7 @@ static void c_radio(int argc, char** argv)
     on.promiscuo = 1;
     printf("802.15.4 no canal %u por %d s (so ouvindo; sem Zigbee/Thread por perto, 0 e normal):\n",
            (unsigned)on.channel, seg);
-    // O 802.15.4 divide a antena com o WiFi: o teste mede o WiFi antes, com
+    // 802.15.4 shares the antenna with WiFi: the test measures WiFi first, with
     // ele enabled e depois. Os tres em 4/4 = a coexistencia esta funcionando.
     ping_roteador("  WiFi ANTES");
     radio_window(C6_RX_154, &on, &off, sizeof(on), seg, &s_rx_154, true);
@@ -2540,7 +2540,7 @@ static void c_radio(int argc, char** argv)
     ping_roteador("  WiFi DEPOIS");
     return;
   }
-  if (eh(argv[1], "ftm")) {
+  if (equals_ignore_case(argv[1], "ftm")) {
     // Alvo: o roteador conectado (MAC e canal dele).
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) { printf("sem roteador conectado\n"); return; }
@@ -2552,10 +2552,10 @@ static void c_radio(int argc, char** argv)
     printf("FTM contra %02X:%02X:%02X:%02X:%02X:%02X (canal %u, FTM %s no anuncio)...\n",
            c.peer[0], c.peer[1], c.peer[2], c.peer[3], c.peer[4], c.peer[5], (unsigned)c.channel,
            ap.ftm_responder ? "SIM" : "nao");
-    const uint32_t antes = s_rx_ftm;
+    const uint32_t before = s_rx_ftm;
     radio_mandar(C6_RX_FTM, &c, sizeof(c));
-    for (int i = 0; i < 50 && s_rx_ftm == antes; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); }
-    if (s_rx_ftm == antes) { printf("sem resposta do C6 em 5 s\n"); return; }
+    for (int i = 0; i < 50 && s_rx_ftm == before; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); }
+    if (s_rx_ftm == before) { printf("sem resposta do C6 em 5 s\n"); return; }
     const c6_ftm_rep_t& r = s_rx_ftm_rep;
     if (r.status == 0) {
       printf("ok: distancia %lu cm, rtt %lu ns (%u quadros)\n",
@@ -2567,7 +2567,7 @@ static void c_radio(int argc, char** argv)
         printf("o C6 nao iniciou a sessao: %s\n", esp_err_to_name(e));
         if (e == ESP_ERR_NOT_SUPPORTED) {
           // esp_wifi/src/wifi_init.c apaga o bit of FTM initiator nos C6 v0.0
-          // e v0.1 (errata of silicio). Nao ha contorno honesto: forcar o bit
+          // and v0.1 (errata of silicio). There is no honest way around: forcing the bit
           // daria distancias erradas.
           printf("  o ESP32-C6 das revisoes v0.0/v0.1 nao faz FTM initiator (errata do chip;\n"
                  "  o proprio ESP-IDF desliga). 'farejo info' mostra a revisao deste C6.\n");
@@ -2582,30 +2582,30 @@ static void c_radio(int argc, char** argv)
     }
     return;
   }
-  mostrar_uso("radio");
+  show_usage("radio");
 }
 
 // ---------------------------------------------------------------------------
-// PING - separa "o WiFi nao passa data" of "a internet/servidor nao responde"
+// PING - separates "WiFi does not pass data" from "internet/server does not respond"
 // ---------------------------------------------------------------------------
 static volatile int s_ping_ok = 0, s_ping_perdidos = 0;
-static volatile uint32_t s_ping_ms_soma = 0;
+static volatile uint32_t s_ping_ms_total = 0;
 
 static void ping_ok(esp_ping_handle_t h, void*)
 {
   uint32_t ms = 0;
   esp_ping_get_profile(h, ESP_PING_PROF_TIMEGAP, &ms, sizeof(ms));
   s_ping_ok = s_ping_ok + 1;
-  s_ping_ms_soma = s_ping_ms_soma + ms;
+  s_ping_ms_total = s_ping_ms_total + ms;
 }
 static void ping_perdido(esp_ping_handle_t, void*) { s_ping_perdidos = s_ping_perdidos + 1; }
 
-static void ping_one(const char* rotulo, const ip_addr_t& alvo)
+static void ping_one(const char* label, const ip_addr_t& target)
 {
   s_ping_ok = 0; s_ping_perdidos = 0;
-  s_ping_ms_soma = 0;
+  s_ping_ms_total = 0;
   esp_ping_config_t cfg = ESP_PING_DEFAULT_CONFIG();
-  cfg.target_addr = alvo;
+  cfg.target_addr = target;
   cfg.count = 4;
   cfg.interval_ms = 300;
   cfg.timeout_ms = 1500;
@@ -2613,31 +2613,31 @@ static void ping_one(const char* rotulo, const ip_addr_t& alvo)
   cb.on_ping_success = ping_ok;
   cb.on_ping_timeout = ping_perdido;
   esp_ping_handle_t h = nullptr;
-  if (esp_ping_new_session(&cfg, &cb, &h) != ESP_OK) { printf("%s: nao deu para criar o ping\n", rotulo); return; }
+  if (esp_ping_new_session(&cfg, &cb, &h) != ESP_OK) { printf("%s: nao deu para criar o ping\n", label); return; }
   esp_ping_start(h);
   for (int i = 0; i < 80 && s_ping_ok + s_ping_perdidos < 4; ++i) { vTaskDelay(pdMS_TO_TICKS(100)); }
   esp_ping_stop(h);
   esp_ping_delete_session(h);
   if (s_ping_ok) {
-    printf("%-22s %d/4 ok   media %lu ms\n", rotulo, s_ping_ok,
-           (unsigned long)(s_ping_ms_soma / (uint32_t)s_ping_ok));
+    printf("%-22s %d/4 ok   media %lu ms\n", label, s_ping_ok,
+           (unsigned long)(s_ping_ms_total / (uint32_t)s_ping_ok));
   } else {
-    printf("%-22s 0/4 - SEM RESPOSTA\n", rotulo);
+    printf("%-22s 0/4 - SEM RESPOSTA\n", label);
   }
 }
 
-static void ping_roteador(const char* rotulo)
+static void ping_roteador(const char* label)
 {
   esp_netif_t* nif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
   esp_netif_ip_info_t ip;
   if (!nif || esp_netif_get_ip_info(nif, &ip) != ESP_OK || ip.gw.addr == 0) {
-    printf("%-22s sem IP - WiFi desconectado\n", rotulo);
+    printf("%-22s sem IP - WiFi desconectado\n", label);
     return;
   }
   ip_addr_t a = { };
   a.type = IPADDR_TYPE_V4;
   a.u_addr.ip4.addr = ip.gw.addr;
-  ping_one(rotulo, a);
+  ping_one(label, a);
 }
 
 static void c_ping(int argc, char** argv)
@@ -2675,7 +2675,7 @@ static void c_ping(int argc, char** argv)
 // ---------------------------------------------------------------------------
 
 // Lista compacta so com numero e name, para consultar antes of send.
-static void mesh_nos(void)
+static void mesh_nodes(void)
 {
   const int n = tab5_mesh_num_nos();
   printf("%d no(s) - use o numero ou o nome curto no 'mesh enviar para'\n", n);
@@ -2691,52 +2691,52 @@ static void mesh_nos(void)
 // argv[0] = "send". Chamado por 'mesh send ...' e pelo atalho 'send ...'.
 static void mesh_send(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "para")) {
-    // "send para <numero|name> <text>" - message DIRETA.
+  if (argc >= 2 && equals_ignore_case(argv[1], "para")) {
+    // "send to <number|name> <text>" - DIRECT message.
     //
     // Aceita o numero em hexadecimal (como o 'mesh nos' imprime) ou o name
-    // curto, porque decorar F115C354 nao e razoavel. O name curto e comparado
-    // sem diferenciar maiuscula: o Meshtastic usa maiusculas em alguns nos e
-    // nao em outros, e errar isso daria "no nao encontrado" sem explicacao.
-    if (argc < 4) { mostrar_uso("mesh"); return; }
-    uint32_t alvo = 0;
+    // short, because decorating F115C354 is not reasonable. The short and compared name
+    // case insensitive: Meshtastic uses capital letters in some nodes and
+    // not in others, and getting it wrong would result in "not found" without explanation.
+    if (argc < 4) { show_usage("mesh"); return; }
+    uint32_t target_node = 0;
     const char* quem = argv[2];
 
     char* end = nullptr;
     const unsigned long v = strtoul(quem, &end, 16);
-    if (end && *end == 0 && strlen(quem) >= 6) { alvo = (uint32_t)v; }
+    if (end && *end == 0 && strlen(quem) >= 6) { target_node = (uint32_t)v; }
 
-    if (alvo == 0) {
+    if (target_node == 0) {
       const int n = tab5_mesh_num_nos();
-      for (int i = 0; i < n && alvo == 0; ++i) {
+      for (int i = 0; i < n && target_node == 0; ++i) {
         mesh_no_t no;
         if (!tab5_mesh_no(i, &no)) { continue; }
-        if (strcasecmp(no.curto, quem) == 0) { alvo = no.num; }
+        if (strcasecmp(no.curto, quem) == 0) { target_node = no.num; }
       }
     }
-    if (alvo == 0) { printf("no '%s' nao encontrado - veja 'mesh nos'\n", quem); return; }
+    if (target_node == 0) { printf("no '%s' nao encontrado - veja 'mesh nos'\n", quem); return; }
 
     char msg[160];
     juntar(msg, sizeof(msg), argc, argv, 3);
-    printf(tab5_mesh_send(alvo, 0, msg)
-           ? "enviado para %08lX\n" : "falhou (enlace mudo?) %08lX\n", (unsigned long)alvo);
+    printf(tab5_mesh_send(target_node, 0, msg)
+           ? "enviado para %08lX\n" : "falhou (enlace mudo?) %08lX\n", (unsigned long)target_node);
     return;
   }
-  if (argc < 2) { mostrar_uso("mesh"); return; }
+  if (argc < 2) { show_usage("mesh"); return; }
   // "send <text>" difunde no canal 0 (LongFast).
   char msg[160];
   juntar(msg, sizeof(msg), argc, argv, 1);
   printf(tab5_mesh_send(0xFFFFFFFFu, 0, msg) ? "enviado\n" : "falhou (enlace mudo?)\n");
 }
 
-// DIAGNOSTICO DE TRUNCAMENTO of mensagens of Mesh. O text aqui exit CRU - sem
+// TRUNCATION DIAGNOSIS of Mesh messages. The text here exit CRU - without
 // quebra of line, sem recorte of bubble, sem fonte proporcional no middle - e
-// com o TAMANHO EM BYTES on lado, exatamente para separar "o dado que chegou
+// with the SIZE IN BYTES on the side, exactly to separate "the data that arrived
 // esta cortado" (bug of captura) of "a screen que desenha esta cortando" (bug of
 // drawing).
 //
-// JUNTA TODAS AS CONVERSAS (cada uma mora num arquivo proprio no cartao - ver
-// tab5_mesh_historico()) porque nao ha "a conversa open" aqui no console, so
+// GET ALL CONVERSATIONS TOGETHER (each one lives in its own file on the card - see
+// tab5_mesh_historico()) because there is no "open conversation" here in the console, just
 // in screen. Ordena por horario, mais recente first.
 static void mesh_msgs(int count)
 {
@@ -2758,10 +2758,10 @@ static void mesh_msgs(int count)
 
     // Insertion sort: comando manual, no maximum algumas centenas of items.
     for (int i = 1; i < n_todas; ++i) {
-      mesh_msg_t chave = todas[i];
+      mesh_msg_t key_message = todas[i];
       int j = i - 1;
-      while (j >= 0 && todas[j].when < chave.when) { todas[j + 1] = todas[j]; --j; }
-      todas[j + 1] = chave;
+      while (j >= 0 && todas[j].when < key_message.when) { todas[j + 1] = todas[j]; --j; }
+      todas[j + 1] = key_message;
     }
 
     const int mostrar = (count < n_todas) ? count : n_todas;
@@ -2779,7 +2779,7 @@ static void mesh_msgs(int count)
   if (buf)   { heap_caps_free(buf); }
 }
 
-// A ficha complete: enlace, saude, cada no e as mensagens.
+// The complete form: link, health, each node and messages.
 static void mesh_complete(void)
 {
   printf("enlace: %s\n", tab5_mesh_no_ar() ? "no ar" : "SEM QUADRO recente");
@@ -2792,10 +2792,10 @@ static void mesh_complete(void)
          sa.uso_canal, sa.airtime_tx, (unsigned long)sa.uptime_s,
          (unsigned)sa.nos_online, (unsigned)sa.nos_total);
 
-  // FICHA COMPLETA DE CADA NO, e nao a line resumida. Na screen o espaco manda;
-  // aqui nao ha essa pressao, e e aqui que se responde "com que aparelho eu
+  // COMPLETE FORM OF EACH NO, and not the summarized line. On the screen, space rules;
+  // here there is no such pressure, and this is where the answer is "what device do I use?"
   // estou falando". Nome longo e curto sao etiquetas que o dono troca when
-  // quer; id, MAC e modelo sao o aparelho.
+  // he wants; id, MAC and model are the device.
   const int n = tab5_mesh_num_nos();
   printf("\n%d no(s) (%lu despejo(s) da tabela desde o boot - ver achar_no):\n",
          n, (unsigned long)tab5_mesh_despejos());
@@ -2814,7 +2814,7 @@ static void mesh_complete(void)
 
     // MAC so when ele MANDOU. O field e marcado como obsoleto no protobuf e
     // firmware novo costuma omitir - imprimir 00:00:00:00:00:00 ali seria
-    // apresentar a ausencia como se fosse one endereco.
+    // present the absence as if it were an address.
     if (no.tem_mac) {
       printf("      mac %02X:%02X:%02X:%02X:%02X:%02X\n",
              no.mac[0], no.mac[1], no.mac[2], no.mac[3], no.mac[4], no.mac[5]);
@@ -2823,7 +2823,7 @@ static void mesh_complete(void)
     }
 
     // saltos == 255 e o sentinela of "desconhecido" (MESH_SALTOS_DESCONHECIDO)
-    // - imprimir o numero cru pareceria one dado real em vez of "ainda nao sei".
+    // - printing the raw number would look like real data instead of "I don't know yet".
     char saltos_txt[8];
     if (no.saltos == MESH_SALTOS_DESCONHECIDO) { snprintf(saltos_txt, sizeof(saltos_txt), "?"); }
     else { snprintf(saltos_txt, sizeof(saltos_txt), "%u", (unsigned)no.saltos); }
@@ -2839,8 +2839,8 @@ static void mesh_complete(void)
          "(%lu localstats), %lu texto | ultima variante de Telemetry: %d\n",
          (unsigned long)q, (unsigned long)pk, (unsigned long)ni, (unsigned long)tel,
          (unsigned long)ls, (unsigned long)tx, var);
-  // Termometro of qualidade of rota: ver tab5_mesh_routing_extra(). Alto NAO e
-  // erro - e "alguem ouviu" chegando mais facil que a confirmacao of radio.
+  // Route quality thermometer: see tab5_mesh_routing_extra(). High NO and
+  // error - and "someone heard" coming easier than radio confirmation.
   printf("routing extra apos confirmado: %lu (nao muda o estado, so o mostra)\n",
          (unsigned long)tab5_mesh_routing_extra());
 
@@ -2850,25 +2850,25 @@ static void mesh_complete(void)
     yield(i);
     mesh_msg_t ms;
     if (!tab5_mesh_msg(i, &ms)) { continue; }
-    // Estado of entrega so faz sentido nas NOSSAS: message recebida nao tem o
-    // que confirm. O reason of falha vem of Routing.Error of radio.
-    char marca[40] = "";
+    // Status of delivery only makes sense in OUR: message received does not have the
+    // which confirms. The reason of failure comes from Routing.Error of radio.
+    char status_mark[40] = "";
     switch (ms.send_state) {
-      case MESH_ENVIANDO:     snprintf(marca, sizeof(marca), " [enviando]"); break;
-      case MESH_ENTREGUE:     snprintf(marca, sizeof(marca), " [entregue]"); break;
-      case MESH_SEM_RESPOSTA: snprintf(marca, sizeof(marca), " [sem resposta]"); break;
-      case MESH_FALHOU:       snprintf(marca, sizeof(marca), " [FALHOU: %s]",
+      case MESH_ENVIANDO:     snprintf(status_mark, sizeof(status_mark), " [enviando]"); break;
+      case MESH_ENTREGUE:     snprintf(status_mark, sizeof(status_mark), " [entregue]"); break;
+      case MESH_SEM_RESPOSTA: snprintf(status_mark, sizeof(status_mark), " [sem resposta]"); break;
+      case MESH_FALHOU:       snprintf(status_mark, sizeof(status_mark), " [FALHOU: %s]",
                                        mesh_erro_name(ms.erro)); break;
       default: break;
     }
-    // ENLACE CRU DESTA MENSAGEM (via_mqtt/saltos of proprio MeshPacket, ANTES
-    // of fallback que a screen faz para o enlace of no - ver tab5_mesh_no_enlace).
+    // RAW LINK OF THIS MESSAGE (via_mqtt/saltos of own MeshPacket, BEFORE
+    // of fallback that the screen does for the link of no - see tab5_mesh_no_enlace).
     char enlace[24];
     if (ms.via_mqtt) { snprintf(enlace, sizeof(enlace), "mqtt"); }
     else if (ms.saltos == MESH_SALTOS_DESCONHECIDO) { snprintf(enlace, sizeof(enlace), "saltos ?"); }
     else { snprintf(enlace, sizeof(enlace), "%u salto(s)", (unsigned)ms.saltos); }
     printf("  de %08lX (snr %.1f, %s): %s%s\n",
-           (unsigned long)ms.of, ms.snr, enlace, ms.text, marca);
+           (unsigned long)ms.of, ms.snr, enlace, ms.text, status_mark);
   }
 }
 
@@ -2876,13 +2876,13 @@ static void c_mesh(int argc, char** argv)
 {
   if (argc < 2) { mesh_complete(); return; }
   const char* o = argv[1];
-  if (eh(o, "nos"))    { mesh_nos(); return; }
-  if (eh(o, "msgs"))   { mesh_msgs(argc >= 3 ? atoi(argv[2]) : 20); return; }
-  if (eh(o, "enviar")) { mesh_send(argc - 1, argv + 1); return; }
-  if (eh(o, "casa")) {
-    // POSICAO DE REFERENCIA para a conversa mostrar distancia/direcao ate uma
+  if (equals_ignore_case(o, "nos"))    { mesh_nodes(); return; }
+  if (equals_ignore_case(o, "msgs"))   { mesh_msgs(argc >= 3 ? atoi(argv[2]) : 20); return; }
+  if (equals_ignore_case(o, "enviar")) { mesh_send(argc - 1, argv + 1); return; }
+  if (equals_ignore_case(o, "casa")) {
+    // REFERENCE POSITION for the conversation to show distance/direction up to a
     // localizacao recebida - ver achar_coord() em app_mesh.cpp. Fica em
-    // settings.cpp (NVS), nao no Mesh: e of user, nao of servico.
+    // settings.cpp (NVS), not Mesh: and of user, not of service.
     if (argc < 4) {
       float lat, lon;
       if (settings_home(&lat, &lon)) { printf("casa: %.6f, %.6f\n", (double)lat, (double)lon); }
@@ -2899,12 +2899,12 @@ static void c_mesh(int argc, char** argv)
     }
     return;
   }
-  if (eh(o, "pausar")) {
-    // PARA DE FALAR COM O RADIO SEM DESLIGAR NADA - a UART para, o Grove e
+  if (equals_ignore_case(o, "pausar")) {
+    // STOP TALKING TO THE RADIO WITHOUT TURNING OFF ANYTHING - the UART stops, the Grove and
     // devolvido, mas o trilho of 5V continua enabled e o modulo continua no ar.
-    // Isola uma pergunta: a instabilidade vem of que o M5tabOS manda pela
+    // Isolates a question: the instability comes from what M5tabOS sends through the
     // serial, ou of POSICAO of modulo? Com isto ele stays onde estava, e so o
-    // trafego para.
+    // traffic to.
     if (tab5_mesh_stop()) {
       printf("servico da malha parado - Grove liberado, mas o 5V continua ligado\n"
              "e o modulo continua no ar (o BLE dele nao e afetado por isto).\n"
@@ -2914,16 +2914,16 @@ static void c_mesh(int argc, char** argv)
     }
     return;
   }
-  if (eh(o, "retomar")) {
+  if (equals_ignore_case(o, "retomar")) {
     tab5_mesh_start();
     printf("pedido de retomada enviado - rode 'mesh' em alguns segundos para conferir.\n");
     return;
   }
-  mostrar_uso("mesh");
+  show_usage("mesh");
 }
 
 // Atalhos antigos: 'nos' e 'send ...' sem o 'mesh' in frente.
-static void c_nos(int, char**)               { mesh_nos(); }
+static void c_nodes(int, char**)             { mesh_nodes(); }
 static void c_send(int argc, char** argv)  { mesh_send(argc, argv); }
 
 // ---------------------------------------------------------------------------
@@ -2932,10 +2932,10 @@ static void c_send(int argc, char** argv)  { mesh_send(argc, argv); }
 
 static void c_grove(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "trocar")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "trocar")) {
     // TROQUEI O MODULO NO CABO. Para o servico, devolve a porta, sonda of novo
-    // e sobe o que couber. Feito pelo sistema, in tarefa of interface - daqui
-    // nao of para mexer in UART of outra tarefa com seguranca.
+    // and go up as much as possible. Done by the system, in task of interface - from here
+    // It is not possible to safely touch the UART of another task.
     if (system_grove_redetect()) {
       printf("pedido feito - a interface sonda no proximo ciclo (uns 4s).\n"
              "rode 'grove' depois para ver o que achou.\n");
@@ -2947,19 +2947,19 @@ static void c_grove(int argc, char** argv)
   // 'grove cru <baud>', ou a forma antiga 'grove <baud>': despeja os bytes
   // crus, para OLHAR em vez of deduzir.
   const char* baud = nullptr;
-  if (argc >= 3 && eh(argv[1], "cru"))          { baud = argv[2]; }
+  if (argc >= 3 && equals_ignore_case(argv[1], "cru"))          { baud = argv[2]; }
   else if (argc >= 2 && atoi(argv[1]) > 0)      { baud = argv[1]; }
   if (baud) { tab5_grove_dump(atoi(baud), 2500); return; }
-  if (argc >= 2) { mostrar_uso("grove"); return; }
+  if (argc >= 2) { show_usage("grove"); return; }
 
-  // SO RELATA - nao sonda. Sondar daqui era one bug silencioso: a sonda escreve
-  // e le in UART, e com o servico Meshtastic of pe a porta e DELE. Duas
+  // ONLY REPORT - not probe. Probing from here was a silent bug: the probe writes
+  // and le in UART, and with the Meshtastic service of pe the port is DELE. Two
   // tarefas in mesma UART embaralham o fluxo e o enlace caia por causa of
   // comando que deveria so diagnosticar.
-  const grove_owner_t dono = tab5_grove_owner();
+  const grove_owner_t owner = tab5_grove_owner();
   printf("Grove: %s\n", grove_name(tab5_grove_type()));
   printf("  energia : %s\n", settings_grove() ? "ligada" : "desligada");
-  printf("  porta   : %s\n", (dono == GROVE_OWNER_NONE) ? "livre" : grove_owner_name(dono));
+  printf("  porta   : %s\n", (owner == GROVE_OWNER_NONE) ? "livre" : grove_owner_name(owner));
   if (system_grove_probing()) { printf("  sondagem em andamento...\n"); }
   printf("\ntrocou o modulo do cabo? use 'grove trocar'\n");
 }
@@ -2968,9 +2968,9 @@ static void c_grove(int argc, char** argv)
 // HELP
 // ---------------------------------------------------------------------------
 
-typedef enum { G_SISTEMA, G_TELA, G_CARTAO, G_REDE, G_MESH, G_BANCADA, G_TESTES, G_APPS, G_N, G_OCULTO } grupo_t;
+typedef enum { G_SYSTEM, G_SCREEN, G_CARD, G_NETWORK, G_MESH, G_BANCADA, G_TESTES, G_APPS, G_N, G_OCULTO } command_group_t;
 
-static const char* const GRUPO_TITULO[G_N] = {
+static const char* const GROUP_TITLES[G_N] = {
   "SYSTEM      what is running and what it costs",
   "SCREEN      panel, brightness, and touch",
   "CARD        files on the SD card",
@@ -2984,16 +2984,16 @@ static const char* const GRUPO_TITULO[G_N] = {
 typedef struct {
   const char* name;
   const char* apelidos;   // space-separated aliases; accepted but omitted from listings
-  grupo_t     grupo;
+  command_group_t group;
   const char* summary;     // one line in 'help'
-  const char* uso;        // one form per line: "form\twhat it does"
-  const char* detalhe;    // purpose and cautions - only in 'help <command>'
+  const char* usage;        // one form per line: "form\twhat it does"
+  const char* detail;    // purpose and cautions - only in 'help <command>'
   void (*fn)(int argc, char** argv);
   const char* exemplos;   // ready-to-copy lines: "line\twhat it does"
 } command_t;
 
 static void c_ajuda(int argc, char** argv);
-static void imprimir_colunas(const char* text, const char* prefixo);
+static void imprimir_colunas(const char* text, const char* prefix);
 
 // ---------------------------------------------------------------------------
 // APPLICATION COMMANDS - 'app <app> <command> ...' (app_comando_t, kernel/app.h)
@@ -3042,7 +3042,7 @@ static void c_app(int argc, char** argv)
   }
   const app_comando_t* c = nullptr;
   for (const app_comando_t* k = a->commands; argc >= 3 && k && k->name; ++k) {
-    if (eh(k->name, argv[2])) { c = k; }
+    if (equals_ignore_case(k->name, argv[2])) { c = k; }
   }
   if (!c) {
     if (argc >= 3) { printf("app %s has no command '%s'\n", a->name, argv[2]); }
@@ -3059,24 +3059,24 @@ static void c_app(int argc, char** argv)
 
 static const command_t COMANDOS[] = {
   // --- SISTEMA ---
-  { "estado", "servicos", G_SISTEMA,
+  { "estado", "servicos", G_SYSTEM,
     "panorama: versao, tempo ligado, RAM e uma linha por servico",
     "estado\tversao, app aberto, RAM, cartao, wifi, ble, mesh, energia",
     "A primeira pergunta quando algo esta estranho: o que esta de pe agora?\n"
     "Cada servico responde em uma linha; o detalhe de cada um esta no comando\n"
     "dele (wifi, mesh, energia...).",
-    c_estado,
+    c_status,
     "estado\tprimeiro passo antes de investigar qualquer problema" },
-  { "tarefas", "tarefa", G_SISTEMA,
+  { "tarefas", "tarefa", G_SYSTEM,
     "quem esta rodando: CPU%, prioridade e folga de pilha",
     "tarefas\tuma linha por tarefa do FreeRTOS, com o app dono",
     "Le a ultima foto do monitor (1 s) sem parar o sistema. CPU% e do aparelho:\n"
     "os dois nucleos somam 100%, entao um nucleo cheio aparece como 50%.\n"
     "Pilha livre abaixo de ~500 B e risco de estouro. Digitar no serial nao\n"
     "acorda a tela, entao da para medir o repouso de verdade.",
-    c_tarefas,
+    c_tasks,
     "tarefas\tquem esta gastando CPU agora" },
-  { "mem", "memoria", G_SISTEMA,
+  { "mem", "memoria", G_SYSTEM,
     "RAM interna e PSRAM: uso, pico e fragmentacao",
     "mem\tresumo: em uso, minimo ja visto, maior bloco\n"
     "mem extrato\tquanto cada etapa do boot consumiu\n"
@@ -3091,7 +3091,7 @@ static const command_t COMANDOS[] = {
     c_memory,
     "mem\tquanto de RAM sobra\n"
     "mem extrato\tqual servico consumiu RAM no boot" },
-  { "energia", "", G_SISTEMA,
+  { "energia", "", G_SYSTEM,
     "bateria, corrente, clock e os ultimos 30 min",
     "energia\ttensao, corrente, % e historico por minuto\n"
     "energia travas [seg]\tquem impede o light sleep (espera seg antes)\n"
@@ -3101,11 +3101,11 @@ static const command_t COMANDOS[] = {
     "le o INA226 direto. 'travas' so vale medido em repouso: use um tempo maior\n"
     "que o tempo de tela de Ajustes e nao toque na tela durante a espera.\n"
     "Clocks validos: " TAB5_CPU_STEPS ".",
-    c_energia,
+    c_power,
     "energia\tquanto a bateria esta gastando\n"
     "energia travas 40\tespera a tela apagar e mostra quem impede o sono\n"
     "energia teto " TAB5_CPU_HALF "\tCPU no maximo a " TAB5_CPU_HALF " MHz" },
-  { "fundo", "", G_SISTEMA,
+  { "fundo", "", G_SYSTEM,
     "partes de apps que seguem rodando com a janela fechada",
     "fundo\to que esta rodando e ha quanto tempo\n"
     "fundo parar <nome>\tpede para uma delas parar",
@@ -3113,7 +3113,7 @@ static const command_t COMANDOS[] = {
     "(ex.: o cronometro do Exemplo). A parada acontece na interface, no proximo ciclo.",
     c_fundo,
     "fundo parar Exemplo\tpara o cronometro do Exemplo" },
-  { "log", "", G_SISTEMA,
+  { "log", "", G_SYSTEM,
     "ve ou muda o nivel de log de um modulo",
     "log <etiqueta>\tmostra o nivel atual\n"
     "log <etiqueta> <nivel>\tnada erro aviso info debug verboso (ou 0-5)\n"
@@ -3125,7 +3125,7 @@ static const command_t COMANDOS[] = {
     "log eh_sdio debug\tver o log cru do enlace com o C6\n"
     "log mesh\tem que nivel esta o log do Mesh\n"
     "log * aviso\tso avisos e erros, de todos os modulos" },
-  { "pendrive", "", G_SISTEMA,
+  { "pendrive", "", G_SYSTEM,
     "liga o cartao como disco USB no computador, sem tocar na tela",
     "pendrive\testado da ultima sessao\n"
     "pendrive ligar\to cartao vai para o computador\n"
@@ -3137,7 +3137,7 @@ static const command_t COMANDOS[] = {
     "pendrive ligar\tmontar o cartao no computador" },
 
   // --- TELA ---
-  { "tela", "", G_TELA,
+  { "tela", "", G_SCREEN,
     "painel: quadros, piscada azul, relogio e prioridade",
     "tela\testado do painel e da janela de medida\n"
     "tela medir\tzera a janela; use o aparelho e rode 'tela'\n"
@@ -3153,16 +3153,16 @@ static const command_t COMANDOS[] = {
     "tela medir\tzera; use o aparelho; depois rode tela\n"
     "tela relogio 80\tvolta ao relogio de fabrica do painel\n"
     "tela prioridade padrao\tdesliga a prioridade para comparar" },
-  { "brilho", "", G_TELA,
+  { "brilho", "", G_SCREEN,
     "testa o backlight sem gravar",
     "brilho\tvalor atual e o gravado\n"
     "brilho <1-255> [hz]\taplica (e muda a frequencia do PWM)",
     "Para achar o menor brilho que ainda acende. Nao grava: Ajustes ou\n"
     "reiniciar voltam ao valor salvo. Se a tela sumir, 'brilho 80' a traz de volta.",
-    c_brilho,
+    c_brightness,
     "brilho 6\to menor brilho ainda acende?\n"
     "brilho 80\ttraz a tela de volta se ela sumir" },
-  { "piscada", "", G_TELA,
+  { "piscada", "", G_SCREEN,
     "dispara UMA causa possivel da piscada azul",
     "piscada brilho\treescreve o mesmo brilho\n"
     "piscada c6\treescreve o pino de energia do C6\n"
@@ -3174,7 +3174,7 @@ static const command_t COMANDOS[] = {
     "anota a hora. Olhe a tela e veja qual pisca.",
     c_piscada,
     "piscada perfil\treaplicar o perfil faz piscar?" },
-  { "toque", "", G_TELA,
+  { "toque", "", G_SCREEN,
     "mostra onde cada toque cai na tela",
     "toque\tliga: posicao crua e convertida de cada toque\n"
     "toque off\tdesliga",
@@ -3182,14 +3182,14 @@ static const command_t COMANDOS[] = {
     "a interface; o console so liga a bandeira.",
     c_touch,
     "toque\tdepois toque nos botoes e veja a posicao no log" },
-  { "tocar", "", G_TELA,
+  { "tocar", "", G_SCREEN,
     "clique simulado (bancada)",
     "tocar <x> <y>\tclica em x,y de tela, como o dedo",
     "Para testar uma tela pela serial. Acorda a tela se estiver em repouso\n"
     "(e esse primeiro pedido nao vira clique, como o dedo).",
     c_simulate_touch,
     "tocar 360 640\tclica no meio da tela" },
-  { "abrir", "", G_TELA,
+  { "abrir", "", G_SCREEN,
     "abre um app pela serial (bancada)",
     "abrir\tlista os apps\n"
     "abrir <nome>\tabre (fecha o que estiver aberto)\n"
@@ -3197,7 +3197,7 @@ static const command_t COMANDOS[] = {
     "Junto de 'tocar' e 'tela foto', testa uma tela sem tocar no aparelho.",
     c_open,
     "abrir Arquivos\tdepois 'tela foto'" },
-  { "ordem", "", G_TELA,
+  { "ordem", "", G_SCREEN,
     "ordem dos icones na tela inicial",
     "ordem\tlista os apps na ordem da home\n"
     "ordem <nome> <posicao>\tmove o app para a posicao (1 = primeiro)\n"
@@ -3207,7 +3207,7 @@ static const command_t COMANDOS[] = {
     "segure o icone na beirada lateral.",
     c_order,
     "ordem Exemplo 1\tExemplo vira o primeiro icone" },
-  { "ui", "", G_TELA,
+  { "ui", "", G_SCREEN,
     "onde a interface esta agora (tela travada?)",
     "ui\tetapa atual, voltas do laco, ultimo toque, saude do GT911",
     "Funciona com a tela travada, porque o console e outra tarefa. Rode duas\n"
@@ -3215,51 +3215,51 @@ static const command_t COMANDOS[] = {
     c_ui,
     "ui\trode duas vezes com a tela travada e compare" },
 
-  // --- CARTAO ---
-  { "cartao", "", G_CARTAO,
+  // --- CARD ---
+  { "cartao", "", G_CARD,
     "espaco livre e o conteudo de cada pasta de app",
     "cartao\tespaco, gravador do sistema e ate 10 arquivos por pasta",
     "O panorama do SD. Para uma pasta especifica, use 'lista'.",
-    [](int, char**) { cmd_cartao(); },
+    [](int, char**) { cmd_card(); },
     "cartao\tquanto espaco sobra no SD" },
-  { "lista", "", G_CARTAO,
+  { "lista", "", G_CARD,
     "lista uma pasta",
     "lista [caminho]\tpadrao /sdcard (ex.: lista apps/Sistema)",
     "Caminho relativo e lido a partir de /sdcard.",
-    [](int c, char** v) { cmd_lista(c, v); },
+    [](int c, char** v) { cmd_list(c, v); },
     "lista apps/Mesh\tarquivos do app Mesh" },
-  { "ler", "", G_CARTAO,
+  { "ler", "", G_CARD,
     "mostra um arquivo de texto",
     "ler <caminho> [linhas]\tate 200 linhas, ou quantas pedir",
     "Para olhar. Para copiar o arquivo inteiro para o Mac, use 'despejar'.\n"
     "Caminho relativo e lido a partir de /sdcard.",
     [](int c, char** v) { cmd_read(c, v); },
     "ler apps/Sistema/logs/log_2026-10-01.txt 50\tas 50 primeiras linhas do log do dia" },
-  { "despejar", "", G_CARTAO,
+  { "despejar", "", G_CARD,
     "manda o arquivo inteiro, para salvar no Mac",
     "despejar <caminho>\tsem limite, entre marcadores >>>INICIO/>>>FIM",
     "Cala o log durante o envio para nenhuma linha cair no meio do arquivo.\n"
     "No Mac, com o monitor fechado: ./tools/download.py <caminho>",
     [](int c, char** v) { cmd_despejar(c, v); },
     "despejar apps/Sistema/energia/energia-2026-10-01.csv\tcopia para o Mac (use tools/download.py)" },
-  { "apagar", "", G_CARTAO,
+  { "apagar", "", G_CARD,
     "apaga um arquivo do cartao",
     "apagar <caminho>\tum arquivo por vez, sem curinga",
     "Irreversivel. So aceita caminhos dentro de /sdcard e sem '..'.",
     [](int c, char** v) { cmd_erase(c, v); },
     "apagar apps/Console/console.bmp\tapaga a foto de teste" },
-  { "receber", "", G_CARTAO,
+  { "receber", "", G_CARD,
     "recebe um arquivo pela serial e grava no cartao",
     "receber <app> <arquivo> <bytes>\tgrava em /sdcard/apps/<app>/<arquivo>",
     "Depois do comando, mande o arquivo cru pela mesma porta, com o monitor\n"
     "fechado. Tudo de uma vez, do Mac:\n"
     "  { printf 'receber Sistema x.bin 1234\\r'; sleep 2; cat x.bin; } > /dev/cu.usbmodem*\n"
     "Confira o md5 impresso no fim com 'md5 -q x.bin'. Ate 6 MB.",
-    [](int c, char** v) { cmd_receber(c, v); },
+    [](int c, char** v) { cmd_receive(c, v); },
     "receber Sistema tab5_c6.bin 1397904\tdepois mande o arquivo pela porta" },
 
   // --- REDE ---
-  { "wifi", "", G_REDE,
+  { "wifi", "", G_NETWORK,
     "estado, redes em volta e redes guardadas",
     "wifi\testado: rede, IP, sinal\n"
     "wifi redes\tvarre e lista as redes visiveis\n"
@@ -3274,7 +3274,7 @@ static const command_t COMANDOS[] = {
     "wifi redes\tquais redes estao em volta\n"
     "wifi gravar \"Casa 2G\" minhasenha\tguarda uma rede com espaco no nome\n"
     "wifi conectar \"Casa 2G\"\ttroca para ela agora" },
-  { "ble", "", G_REDE,
+  { "ble", "", G_NETWORK,
     "Bluetooth: estado, enlace do Mesh e aparelhos vistos",
     "ble\testado e aparelhos vistos\n"
     "ble varrer\tprocura por 6 s (rode 'ble' depois)\n"
@@ -3284,7 +3284,7 @@ static const command_t COMANDOS[] = {
     "pelo Bluetooth.",
     c_ble,
     "ble varrer\tprocura; depois rode ble para ver a lista" },
-  { "espnow", "", G_REDE,
+  { "espnow", "", G_NETWORK,
     "ESP-NOW: estado, canal e envio de teste",
     "espnow\tfirmware do C6, canal real, MAC e contadores\n"
     "espnow canal <0-13>\t0 = segue o roteador; 1-13 = fixo\n"
@@ -3294,7 +3294,7 @@ static const command_t COMANDOS[] = {
     c_espnow,
     "espnow canal 1\tfixa no canal 1 (o mesmo do outro aparelho)\n"
     "espnow enviar ola Cardputer\tmensagem de teste" },
-  { "c6", "", G_REDE,
+  { "c6", "", G_NETWORK,
     "coprocessador C6: firmware, MAC e gravacao pelo enlace",
     "c6\tversao do firmware e MACs\n"
     "c6 gravar\tcomo gravar firmware novo no C6 pelo enlace (sem abrir)\n"
@@ -3303,7 +3303,7 @@ static const command_t COMANDOS[] = {
     "sozinho para a anterior se a nova nao for confirmada.",
     c_c6,
     "c6\tqual firmware esta no C6" },
-  { "farejo", "", G_REDE,
+  { "farejo", "", G_NETWORK,
     "modo promiscuo no C6: quem esta no ar em volta",
     "farejo\testado e os MACs ouvidos (RSSI, tipo, quadros)\n"
     "farejo on [lote_ms] [mask_hex]\tliga; mask = canais a saltar (solte o roteador)\n"
@@ -3313,12 +3313,12 @@ static const command_t COMANDOS[] = {
     "O C6 junta por MAC e manda em lotes - o P4 so recebe o resumo. Deixa o\n"
     "receptor ligado enquanto ativo; desliga sozinho se a tela que usa fechar.\n"
     "Saltar varios canais exige o WiFi solto do roteador ('espnow canal 1').",
-    c_farejo,
+    c_sniffer,
     "farejo info\teste C6 sabe CSI/FTM/802.15.4?\n"
     "farejo on\tcomeca a ouvir no canal atual\n"
     "farejo on 200 0x1452\tlote 200 ms, salta canais 1/6/11/13 (solte o roteador antes)" },
 
-  { "ping", "", G_REDE,
+  { "ping", "", G_NETWORK,
     "o WiFi passa dados? a internet responde?",
     "ping\troteador e 8.8.8.8, 4 pacotes cada\n"
     "ping <ip|nome>\tum alvo so",
@@ -3328,7 +3328,7 @@ static const command_t COMANDOS[] = {
     c_ping,
     "ping\tos dois de uma vez\n"
     "ping mqtt.meshtastic.org\to servidor do MQTT do Mesh" },
-  { "radio", "", G_REDE,
+  { "radio", "", G_NETWORK,
     "teste dos extras do C6: CSI, FTM, 802.15.4",
     "radio csi [s]\tliga o CSI por s segundos (10), so do roteador, pingando-o a 20 Hz como\n"
     "\tfonte; conta os records por formato (11g/HT/HE) e mostra a medida de movimento\n"
@@ -3401,7 +3401,7 @@ static const command_t COMANDOS[] = {
     "foto\tquadro inteiro em /sdcard/apps/Console/console.bmp",
     "Funciona com o app Camera fechado ou aberto - prova que a camera e um\n"
     "servico, independente do app.",
-    [](int, char**) { cmd_foto(); },
+    [](int, char**) { cmd_photo(); },
     "foto\tdepois: lista apps/Console" },
 
   // --- TESTES ---
@@ -3424,19 +3424,19 @@ static const command_t COMANDOS[] = {
     cmd_simulacao,
     "simulacao iniciar\tdepois abra apps de verdade e compare" },
 
-  // --- fora of lista: ajuda e atalhos antigos ---
+  // --- out of list: old help and shortcuts ---
   { "help",   "ajuda ?", G_OCULTO, "", "", "", c_ajuda },
   { "app",    "", G_OCULTO, "", "", "", c_app },
   { "redes",  "", G_OCULTO, "", "", "", c_redes },
-  { "nos",    "", G_OCULTO, "", "", "", c_nos },
+  { "nos",    "", G_OCULTO, "", "", "", c_nodes },
   { "enviar", "", G_OCULTO, "", "", "", c_send },
 };
 static const int N_COMANDOS = (int)(sizeof(COMANDOS) / sizeof(COMANDOS[0]));
 
-static bool casa_name(const command_t& c, const char* s)
+static bool matches_command_name(const command_t& c, const char* s)
 {
-  if (eh(c.name, s)) { return true; }
-  // Apelidos: palavras separadas por espaco.
+  if (equals_ignore_case(c.name, s)) { return true; }
+  // Nicknames: words separated by space.
   const size_t n = strlen(s);
   for (const char* a = c.apelidos; *a; ) {
     while (*a == ' ') { ++a; }
@@ -3448,13 +3448,13 @@ static bool casa_name(const command_t& c, const char* s)
   return false;
 }
 
-static const command_t* achar(const char* s)
+static const command_t* find_command(const char* s)
 {
-  for (int i = 0; i < N_COMANDOS; ++i) { if (casa_name(COMANDOS[i], s)) { return &COMANDOS[i]; } }
+  for (int i = 0; i < N_COMANDOS; ++i) { if (matches_command_name(COMANDOS[i], s)) { return &COMANDOS[i]; } }
   return nullptr;
 }
 
-// Texto of varias lines, cada uma com recuo.
+// Text of several lines, each with indentation.
 static void imprimir_recuado(const char* t, const char* recuo)
 {
   while (*t) {
@@ -3465,61 +3465,61 @@ static void imprimir_recuado(const char* t, const char* recuo)
   }
 }
 
-// Linhas "left\tdireita" em duas colunas. A left que nao cabe in
+// "left\tright" lines in two columns. The left that doesn't fit in
 // coluna stays sozinha, e a explicacao desce para a line of bottom, alinhada -
-// cortar one caminho of arquivo no middle estragaria o exemplo para copiar.
+// cutting one path of file in middle would ruin the example for copying.
 #define AJUDA_COLUNA 32
-static void imprimir_colunas(const char* text, const char* prefixo)
+static void imprimir_colunas(const char* text, const char* prefix)
 {
-  const int larg = AJUDA_COLUNA - (int)strlen(prefixo);
+  const int larg = AJUDA_COLUNA - (int)strlen(prefix);
   for (const char* t = text; t && *t; ) {
     const char* end = strchr(t, '\n');
     const int n = end ? (int)(end - t) : (int)strlen(t);
     const char* tab = (const char*)memchr(t, '\t', (size_t)n);
     if (!tab) {
-      printf("  %s%.*s\n", prefixo, n, t);
+      printf("  %s%.*s\n", prefix, n, t);
     } else {
       const int a = (int)(tab - t);
-      if (a <= larg) { printf("  %s%-*.*s %.*s\n", prefixo, larg, a, t, n - a - 1, tab + 1); }
-      else           { printf("  %s%.*s\n  %*s %.*s\n", prefixo, a, t, AJUDA_COLUNA, "", n - a - 1, tab + 1); }
+      if (a <= larg) { printf("  %s%-*.*s %.*s\n", prefix, larg, a, t, n - a - 1, tab + 1); }
+      else           { printf("  %s%.*s\n  %*s %.*s\n", prefix, a, t, AJUDA_COLUNA, "", n - a - 1, tab + 1); }
     }
     t += n + (end ? 1 : 0);
   }
 }
 
 // As formas of chamar e, logo abaixo, exemplos prontos para copiar.
-static void imprimir_uso(const command_t& c)
+static void print_usage(const command_t& c)
 {
-  imprimir_colunas(c.uso, "");
+  imprimir_colunas(c.usage, "");
   imprimir_colunas(c.exemplos, "ex: ");
 }
 
-static void mostrar_uso(const char* name)
+static void show_usage(const char* name)
 {
-  const command_t* c = achar(name);
+  const command_t* c = find_command(name);
   if (!c) { return; }
   printf("uso:\n");
-  imprimir_uso(*c);
+  print_usage(*c);
 }
 
 static void ajuda_comando(const command_t& c)
 {
   printf("%s - %s\n\n", c.name, c.summary);
-  imprimir_uso(c);
+  print_usage(c);
   printf("\n");
-  imprimir_recuado(c.detalhe, "  ");
+  imprimir_recuado(c.detail, "  ");
   if (c.apelidos[0]) { printf("  (tambem aceito como: %s)\n", c.apelidos); }
 }
 
 // Comando desconhecido: sugere os que comecam igual ou contains o que foi
-// digitado. Errar uma letra nao pode virar "leia a lista inteira".
+// typed. Getting a letter wrong cannot result in "read the entire list".
 static void sugerir(const char* s)
 {
   const size_t n = strlen(s);
   int achados = 0;
   for (int i = 0; i < N_COMANDOS; ++i) {
     const command_t& c = COMANDOS[i];
-    if (c.grupo == G_OCULTO) { continue; }
+    if (c.group == G_OCULTO) { continue; }
     const bool parecido = (n >= 2 && strncasecmp(c.name, s, 2) == 0) ||
                           (n >= 3 && strcasestr(c.name, s) != nullptr);
     if (parecido) { printf(achados++ ? ", %s" : "  talvez: %s", c.name); }
@@ -3530,7 +3530,7 @@ static void sugerir(const char* s)
 
 static void c_ajuda(int argc, char** argv)
 {
-  if (argc >= 2 && eh(argv[1], "app")) {
+  if (argc >= 2 && equals_ignore_case(argv[1], "app")) {
     const app_t* a = nullptr;
     for (int i = 0; argc >= 3 && i < SISTEMA_NUM_APPS; ++i) {
       if (name_of_app(SISTEMA_APPS[i]->name, argv[2])) { a = SISTEMA_APPS[i]; }
@@ -3538,9 +3538,9 @@ static void c_ajuda(int argc, char** argv)
     ajuda_apps(a);
     return;
   }
-  if (argc >= 2 && !eh(argv[1], "tudo")) {
-    const command_t* c = achar(argv[1]);
-    if (!c || c->grupo == G_OCULTO) {
+  if (argc >= 2 && !equals_ignore_case(argv[1], "tudo")) {
+    const command_t* c = find_command(argv[1]);
+    if (!c || c->group == G_OCULTO) {
       printf("nao ha comando '%s'\n", argv[1]);
       sugerir(argv[1]);
       return;
@@ -3550,21 +3550,21 @@ static void c_ajuda(int argc, char** argv)
   }
   const bool everything = (argc >= 2);
 
-  // Agrupado por ASSUNTO, com TODAS as formas of cada comando a vista. Uma
+  // Grouped by SUBJECT, with ALL forms of each command in view. One
   // line so por comando escondia justamente o que se procura ("como mando
   // message?" ficava atras of 'help mesh').
   printf("M5tabOS %s - console serial\n", esp_app_get_description()->version);
   for (int g = 0; g < G_N; ++g) {
-    printf("\n%s\n", GRUPO_TITULO[g]);
+    printf("\n%s\n", GROUP_TITLES[g]);
     if (g == G_APPS) { ajuda_apps(nullptr); continue; }
     bool first = true;
     for (int i = 0; i < N_COMANDOS; ++i) {
       const command_t& c = COMANDOS[i];
-      if (c.grupo != g) { continue; }
+      if (c.group != g) { continue; }
       if (!first) { printf("\n"); }   // one respiro entre commands of grupo
       first = false;
       if (everything) { ajuda_comando(c); }
-      else      { imprimir_uso(c); }
+      else      { print_usage(c); }
       yield(i);
     }
   }
@@ -3573,27 +3573,27 @@ static void c_ajuda(int argc, char** argv)
 }
 
 // ---------------------------------------------------------------------------
-// Leitor of line proprio, SEM linenoise
+// Own offline player, WITHOUT linenoise
 // ---------------------------------------------------------------------------
 //
-// A primeira versao usava esp_console_new_repl_uart(), e nao dava para digitar:
-// nada aparecia in screen. O reason esta no proprio linenoise, em
+// The first version used esp_console_new_repl_uart(), and you couldn't type:
+// nothing appeared on screen. The reason is in linenoise itself, in
 // components/console/linenoise/linenoise.c:1191 - no modo "terminal burro" ele
-// so imprime o prompt e NAO ecoa o que voce digita; o comentario la e explicito
+// it only prints the prompt and DOES NOT echo what you type; the comment is explicit
 // ("Only erase symbol echoed from stdin"), ou seja, ele conta com o eco local
-// of terminal. O idf.py monitor nao faz eco local, encaminha as teclas cruas.
-// Resultado: voce digita as cegas.
+// ofterminal. The idf.py monitor does not echo locally, it forwards raw keys.
+// Result: you type blindly.
 //
-// Alem disso, cair ou nao no modo burro depende of uma sondagem of terminal que
-// pode dar resultados diferentes em cada monitor. Preferi eliminar a variavel:
+// Furthermore, whether or not you fall into dumb mode depends on a terminal probe that
+// may give different results on each monitor. I preferred to eliminate the variable:
 // este loop le byte a byte e ECOA ELE MESMO, entao funciona igual em qualquer
 // terminal - idf.py monitor, screen, minicom, o que for.
 
 static void executar(char* line)
 {
-  // Quebra em palavras, respeitando aspas para senha com espaco.
+  // Break into words, respecting quotation marks for passwords with spaces.
   //
-  // 24 E NAO 8: o "mesh send para <no> <text>" ja gasta quatro posicoes, e
+  // 24 AND NOT 8: the "mesh send to <no> <text>" already uses four positions, and
   // com 8 o text era truncado em silencio in quinta palavra. 24 cobre a line
   // inteira: com 192 caracteres of entrada e o limit of 160 of MESH_TEXTO, o
   // text acaba antes das palavras. Custa 64 bytes of stack.
@@ -3618,7 +3618,7 @@ static void executar(char* line)
   }
   if (argc == 0) { return; }
 
-  const command_t* c = achar(argv[0]);
+  const command_t* c = find_command(argv[0]);
   if (!c) {
     printf("comando desconhecido: '%s'\n", argv[0]);
     sugerir(argv[0]);
@@ -3645,15 +3645,15 @@ static void vTaskConsole(void*)
     //     int c = fgetc(stdin);
     //     if (c == EOF) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
     //
-    // O fgetc sobre o VFS devolve EOF when nao ha byte, entao a tarefa
+    // fgetc on VFS returns EOF when there are no bytes, so the task
     // acordava 50 VEZES POR SEGUNDO, para sempre, mesmo em sleep e mesmo com
-    // ninguem conectado in serial. Cada iteration e uma troca of context e uma
-    // consulta on driver para descobrir que nao ha nada.
+    // no one connected in serial. Each iteration is an exchange of context and a
+    // query on driver to discover that there is nothing.
     //
     // O usb_serial_jtag_read_bytes com portMAX_DELAY dorme no semaphore of
-    // driver: zero acordadas enquanto nao chega key. E o mesmo caminho que o
+    // driver: zero awake until key arrives. And the same path as the
     // comando `receber` usa, e ele passa on largo of traducao of end of line
-    // of VFS - que aqui nao faz falta, porque o loop abaixo ja trata CR e LF.
+    // of VFS - which is not necessary here, because the loop below already handles CR and LF.
     uint8_t byte = 0;
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     if (usb_serial_jtag_read_bytes(&byte, 1, portMAX_DELAY) != 1) { continue; }
@@ -3662,9 +3662,9 @@ static void vTaskConsole(void*)
 #endif
     const int c = (int)byte;
 
-    // Diagnostico enquanto o console nao estiver confiavel: mostra o code of
-    // TODO byte que chega. Serve para distinguir dois problemas muito
-    // diferentes - "o monitor nao encaminha o keyboard" (nada aparece aqui) of
+    // Diagnosis while the console is not reliable: shows the code of
+    // EVERY byte that arrives. It serves to distinguish two very
+    // different - "the monitor does not forward the keyboard" (nothing appears here) of
     // "chega, mas o filtro descarta" (aparece o code e nada mais).
     ESP_LOGD(TAG, "rx: 0x%02x", (unsigned)c);
 
@@ -3695,16 +3695,16 @@ void console_start(void)
   // O driver TEM que ser o of mesmo periferico que o console primario, senao o
   // stdin stays preso num canal onde ninguem digita - foi exatamente o erro que
   // deixou o console mudo (ver o comentario no sdkconfig.defaults).
-  // Por isso a escolha e feita pela propria chave of console, e nao fixada.
+  // Therefore, the choice is made by the console key itself, and is not fixed.
   //
-  // Em ambos os casos: sem driver instalado a leitura of stdin NAO bloqueia (o
+  // In both cases: without a driver installed, reading of stdin DOES NOT block (the
   // fgetc devolveria EOF para sempre e o loop viraria espera ocupada), e e o
   // driver que permite read key a key em vez of line inteira.
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-  // ANEL DE RX GRANDE, e isto NAO e folga preventiva - e correcao.
+  // LARGE RX RING, and this is NOT preventive clearance - it is correction.
   //
   // O default of IDF e 256 bytes (USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT), e a
-  // ISR of driver faz assim (usb_serial_jtag.c:150):
+  // ISR of driver does it like this (usb_serial_jtag.c:150):
   //
   //     xRingbufferSendFromISR(rx_ring_buf, buf, rx_fifo_len, &xTaskWoken);
   //
@@ -3725,7 +3725,7 @@ void console_start(void)
   }
   usb_serial_jtag_vfs_use_driver();
   // Enter chega como CR; sem a conversao a line nunca terminaria. A saida vai
-  // como CRLF para nao exit em escadinha.
+  // like CRLF to not exit on stairs.
   usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
   usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
 #else
@@ -3741,27 +3741,27 @@ void console_start(void)
 
   // stdin sem buffer. O newlib bufferiza por line por default, e ai o fgetc
   // pode ficar esperando encher o buffer em vez of return a key in hora -
-  // o eco so apareceria depois of Enter, ou nao apareceria. Todo exemplo of
-  // console of IDF faz isto.
+  // the echo would only appear after Enter, or it would not appear at all. Every example of
+  // console of IDF does this.
   setvbuf(stdin, NULL, _IONBF, 0);
 
-  // 12KB, e nao 4096. O 4096 ESTOUROU - "send" derrubou o aparelho com
+  // 12KB, not 4096. 4096 BROKE - "send" crashed the device with
   // Stack protection fault, e o retrato of tarefas ja avisava: 372 B livres.
   //
   // Esta tarefa tem o pior caso of sistema inteiro, porque of one comando ela
   // alcanca QUALQUER subsistema. So no caminho of "send":
   //
   //   executar()          ~1,3KB of buffers of comando (sub, cam, complete...)
-  //   tab5_mesh_enviar()   656B - data[176]+pkt[224]+frame[256], todos vivos
+  //   tab5_mesh_enviar() 656B - data[176]+pkt[224]+frame[256], all alive
   //   guardar_msg()        -> FATFS, que e faminto of stack
-  //   printf com float     -> vfprintf of newlib, mais of 1KB sozinho
+  //   printf with float -> vfprintf of newlib, more than 1KB alone
   //
-  // O "cartao" e o "c6 ota" descem igualmente fundo. Dimensionar pelo caso
-  // tipico aqui e dimensionar para o dia em que nao se usa o comando dificil.
+  // The "card" and the "c6 ota" go down equally deep. Size by case
+  // Typical here is to scale for the day when the hard command is not used.
   //
-  // MEDIDO: dois dias of pilhas-*.csv com uso normal of console, pico of
-  // ~4,0KB (minimum livre 8320 of 12288). 8KB e o dobro of pico - folga para
-  // os commands fundos que nao aparecem todo dia - e devolve 4KB a RAM
+  // MEASURED: two days of batteries-*.csv with normal use of console, peak of
+  // ~4.0KB (minimum free 8320 of 12288). 8KB and double the pico - clearance for
+  // the deep commands that don't appear every day - and return 4KB to RAM
   // interna. Se one comando novo lower mais, o pilhas-*.csv mostra.
   xTaskCreatePinnedToCore(vTaskConsole, "console", 8192, nullptr, 1, nullptr, tskNO_AFFINITY);
   ESP_LOGI(TAG, "console no ar - digite 'help' no monitor");

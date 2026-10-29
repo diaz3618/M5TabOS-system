@@ -7,7 +7,7 @@
 // public getter: the DPI panel handle (_disp_panel_handle), line-pointer array
 // (_lines_buffer), buffer stored in _config_detail, and dimensions in _cfg.
 // Each file used to have ITS OWN subclass doing the same thing (PainelAberto in
-// one, PainelDSIAberto in the other): two copies of one trick, each exposing a
+// one, PanelDSIAberto in the other): two copies of one trick, each exposing a
 // different subset of the same fields. The risk is not theoretical. If M5GFX
 // rearranges Panel_DSI, the two can break at DIFFERENT times (one may compile
 // "by accident" after the other has stopped), hiding the problem behind a
@@ -15,7 +15,7 @@
 //
 // One point shared by both files: if it breaks, it does so at COMPILE TIME,
 // not silently at runtime. Both users fail together in the same way, and the
-// fix is made once.
+// fix is done once.
 //
 // This class is never instantiated. It exists only as a "key" for static_cast,
 // just like the two classes it replaces.

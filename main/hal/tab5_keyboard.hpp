@@ -1,42 +1,42 @@
-// Teclado Tab5 (M5Stack Tab5 Keyboard), no conector lateral ExtPort1.
+// Tab5 Keyboard (M5Stack Tab5 Keyboard), on the ExtPort1 side connector.
 //
-// Especificacao (docs.m5stack.com/en/tab5/Tab5_Keyboard e o fonte of
-// M5Unit-KEYBOARD): controlador STM32F030C8T6, matriz 14x5 (70 teclas),
-// I2C no address 0x6D.
+// Specification (docs.m5stack.com/en/tab5/Tab5_Keyboard is the source of
+// M5Unit-KEYBOARD): STM32F030C8T6 controller, 14x5 matrix (70 keys),
+// I2C at address 0x6D.
 //
-//   ExtPort1:  G0 = SDA | G1 = SCL | G50 = INT | EXT 5V | GND
-//              (o G49 of conector nao e usado pelo keyboard)
+// ExtPort1: G0 = SDA | G1 = SCL | G50 = INT | EXT 5V | GND
+// (the G49 of connector is not used by the keyboard)
 //
-// NAO usamos a biblioteca M5Unit-KEYBOARD: ela e of framework M5UnitUnified,
-// que traria one mundo of dependencias para read tres registradores. O protocolo
-// e simples e esta todo documentado aqui embaixo.
+// We DO NOT use the M5Unit-KEYBOARD library: it is from the M5UnitUnified framework,
+// which would bring one world of dependencies to read three registers. The protocol
+// is simple and is fully documented below.
 //
-// -------------------------------------------------------------------------
-// QUAL BARRAMENTO, E POR QUE
-// -------------------------------------------------------------------------
-// O P4 tem 2 controladores I2C of alta potencia e 1 of low. E ATENCAO A
-// NUMERACAO, que e o contrario of que a intuicao sugere e me custou uma
-// regressao seria:
+// ------------------------------------------------------------------------
+// WHICH BUS, AND WHY
+// ------------------------------------------------------------------------
+// The P4 has 2 high-power and 1 low-power I2C controllers. AND ATTENTION TO
+// NUMERATION, which is the opposite of what intuition suggests and cost me a
+// regression would be:
 //
-//   I2C_NUM_1 = barramento INTERNO (GPIO 32/31). Carrega o INA226, os
-//               expansores E O TOUCH (M5GFX.cpp: cfg.i2c_port = 1 para o
-//               GT911). M5Unified.cpp:2095 - "in_port = I2C_NUM_1". INTOCAVEL.
-//   I2C_NUM_0 = barramento EXTERNO, o Grove (54/53).
-//               M5Unified.cpp:2080 - "ex_port = I2C_NUM_0".
+// I2C_NUM_1 = INTERNAL bus (GPIO 32/31). Loads the INA226, the
+// expanders AND THE TOUCH (M5GFX.cpp: cfg.i2c_port = 1 for the
+// GT911). M5Unified.cpp:2095 - "in_port = I2C_NUM_1". UNTOUCHABLE.
+// I2C_NUM_0 = EXTERNAL bus, Grove (54/53).
+// M5Unified.cpp:2080 - "ex_port = I2C_NUM_0".
 //
-// Apontar o keyboard para a porta 1 achando que era a externa ja aconteceu. Resultado: o
-// aparelho entrou em sleep e NUNCA MAIS respondeu on touch, porque o
-// controlador of touch tinha perdido o barramento. Se one dia o touch, a battery
-// ou os expansores comecarem a falhar juntos, suspeite deste file first.
+// Pointing the keyboard at port 1 thinking it was the external one has already happened. Result: the
+// device went to sleep and NEVER responded on touch again, because the
+// controller of touch had lost the bus. If one day the touch, the battery
+// or the expanders start to fail together, suspect this file first.
 //
-// Reapontamos o EXTERNO para os pins of keyboard. Custa nada hoje: nada neste
-// sistema usa o Grove como I2C - o Azimutal o usa como UART of GPS. E resolve
-// of brinde o conflito que nos custou time, porque com o Ex_I2C fora of 53/54
-// ninguem mais reserva aqueles pins.
+// We repoint the EXTERNAL to the pins of keyboard. It costs nothing today: nothing in this
+// system uses Grove as I2C - Azimutal uses it as UART of GPS. And resolve
+// of toast the conflict that costs us time, because with Ex_I2C out of 53/54
+// no one reserves those pins anymore.
 //
-// Se one dia voce precisar of one Unit I2C no Grove, o keyboard migra para o
-// controlador LP (LP_I2C_NUM_0): os GPIO 0 e 1 estao dentro of faixa 0-15 que
-// e a unica LP/RTC no P4, entao e viavel - so nao era necessario now.
+// If one day you need one Unit I2C on the Grove, the keyboard migrates to the
+// LP controller (LP_I2C_NUM_0): GPIO 0 and 1 are within the range 0-15 that
+// is the only LP/RTC on the P4, so it is viable - it just isn't necessary now.
 
 #pragma once
 
@@ -44,89 +44,89 @@
 #include <stddef.h>
 #include "driver/i2c_types.h"
 
-#define TAB5_KEYBOARD_PORT      I2C_NUM_0   // o EXTERNO - ver o aviso acima
+#define TAB5_KEYBOARD_PORT      I2C_NUM_0   // EXTERNAL - see warning above
 #define TAB5_KEYBOARD_ADDRESS   0x6D
 #define TAB5_KEYBOARD_SDA        0      // ExtPort1 G0
 #define TAB5_KEYBOARD_SCL        1      // ExtPort1 G1
-#define TAB5_KEYBOARD_INT        50     // ExtPort1 G50: low a cada evento (acorda a screen, kernel/core)
+#define TAB5_KEYBOARD_INT        50     // ExtPort1 G50: low at each event (wakes up the screen, kernel/core)
 
-// TECLAS ESPECIAIS, ja traduzidas.
+// SPECIAL KEYS, already translated.
 //
-// O driver traduz cada key uma vez e entrega o evento ready (ver ao_teclar
-// em app.h): text para o que se digita, code para o resto. Cada app
-// reconhecer o keyboard por conta propria seria a mesma tabela copiada em todo
-// lugar, com o app novo esquecendo one caso.
-#define TAB5_KEY_NONE   0   // o evento e TEXTO
+// The driver translates each key once and delivers the ready event (see ao_teclar
+// in app.h): text for what you type, code for the rest. Each app
+// recognizing the keyboard on its own would be the same table copied throughout
+// place, with the new app forgetting one case.
+#define TAB5_KEY_NONE   0   // the event and TEXT
 #define TAB5_KEY_ENTER     1
-#define TAB5_KEY_BACKSPACE    2   // Backspace: apaga ANTES of cursor
+#define TAB5_KEY_BACKSPACE    2   // Backspace: deletes BEFORE cursor
 #define TAB5_KEY_ESC       3
 #define TAB5_KEY_TAB       4
-#define TAB5_KEY_LEFT  5   // setas
+#define TAB5_KEY_LEFT  5   // arrows
 #define TAB5_KEY_RIGHT   6
 #define TAB5_KEY_UP      7
 #define TAB5_KEY_DOWN     8
-#define TAB5_KEY_DELETE       9   // Del: apaga DEPOIS of cursor
+#define TAB5_KEY_DELETE       9   // Del: delete AFTER cursor
 
-// TECLA SEGURADA REPETE - os mesmos tempos nos dois teclados (o of touch,
-// kernel/virtual_keyboard, e o fisico): depois of REPETE_INICIO_MS segurada,
-// uma vez a cada REPETE_MS. No fisico repetem o erase (Backspace e Del) e
-// as setas; letra nao.
+// KEY HOLD REPEATS - the same times on both keyboards (of touch,
+// kernel/virtual_keyboard, and the physical one): after REPETE_INICIO_MS held,
+// once every REPETE_MS. In the physical one, they repeat the erase (Backspace and Del) and
+// the arrows; letter no.
 #define TAB5_KEY_REPEAT_START_MS  450
 #define TAB5_KEY_REPEAT_MS          70
 
-// Modificadores (field 'mod' of evento).
+// Modifiers (field 'mod' of event).
 #define TAB5_KEY_CTRL   0x01
 #define TAB5_KEY_SHIFT  0x02
 #define TAB5_KEY_ALT    0x04
 
-// Uma key, traduzida. 'text' e UTF-8 com terminador (pode ter 2 bytes:
-// letra acentuada composta pela key morta) e vem VAZIO when 'code' diz
-// o que e. Com Ctrl ou Alt segurados o text vem assim mesmo - who nao usa
-// atalho ignora (a conversa ignora).
+// A key, translated. 'text' and UTF-8 with terminator (can be 2 bytes:
+// accented letter composed of the dead key) and comes EMPTY when 'code' says
+// what is. With Ctrl or Alt held down the text appears like this - who doesn't use it
+// shortcut ignores (conversation ignores).
 typedef struct {
   char    text[8];
-  uint8_t code;   // TAB5_TECLA_*
+  uint8_t code;   // TAB5_KEY_*
   uint8_t mod;      // TAB5_KEY_CTRL/SHIFT/ALT
 } tab5_key_t;
 
-// Vontade of user (Ajustes), empurrada of fora - HAL nao pergunta a
-// nenhum service sozinho (ver o aviso grande sobre s_habilitado no .cpp).
-// Chamar ANTES of tab5_keyboard_init() no boot, e of novo sempre que o
-// Ajustes mudar o ajuste em time of execucao.
+// Will of user (Settings), pushed from outside - HAL does not ask
+// no service alone (see the big warning about s_enabled in the .cpp).
+// Call BEFORE of tab5_keyboard_init() at boot, and of new whenever the
+// Settings change the setting at run time.
 void tab5_keyboard_enable(bool on);
 
-// Reaponta o I2C externo e coloca o keyboard em mode HID. Devolve false se
-// ninguem responder em 0x6D - sem keyboard o sistema segue normal.
-// Chamar of tarefa of interface (e ela who manda no I2C).
+// Resets the external I2C and puts the keyboard in HID mode. Returns false if
+// no one responds at 0x6D - without keyboard the system continues normally.
+// Call of task of interface (and she's the one in charge of I2C).
 bool tab5_keyboard_init(void);
 
-// Ha keyboard encaixado now? (acompanha encaixar e tirar com o aparelho on)
+// Is the keyboard docked now? (comes with fitting and removing with the device on)
 bool tab5_keyboard_present(void);
 
-// Le UMA key, se houver, ja traduzida. false = none.
-// SO of tarefa of interface.
+// Read ONE key, if any, already translated. false = none.
+// OS of task of interface.
 bool tab5_keyboard_read(tab5_key_t* ev);
 
-// Ha uma key que repete (erase, seta) segurada now? Enquanto houver,
-// who le precisa read no ritmo of repeticao, nao no of digitacao.
+// Is there a key that repeats (erase, arrow) held now? As long as there is,
+// who needs to read at the rate of repetition, not at the rate of typing.
 bool tab5_keyboard_holding(void);
 
-// PARA ACORDAR DO REPOUSO: ha key esperando in queue? (uma transacao I2C,
-// nao consome nada). false sem keyboard.
+// TO WAKE UP FROM SLEEP: is there a key waiting in queue? (an I2C transaction,
+// consumes nothing). false without keyboard.
 bool tab5_keyboard_pending(void);
 
-// Joga fora a queue inteira e o que estava a storage (key morta, key
-// segurada). Para a key que ACORDOU a screen, que nao pode virar letra.
+// Throws away the entire queue and what was in the storage (dead key, key
+// insured). For the key that WAKES UP the screen, which cannot become a letter.
 void tab5_keyboard_discard(void);
 
-// PARA CAMPO SO-ASCII (password of Wi-Fi, name of no): desfaz a letra que a
-// key morta compos, devolvendo as duas teclas apertadas ("á" -> "'a"). Uma
-// password com apostrofo seguido of vogal nao pode virar letra acentuada e
-// sumir. Texto sem composicao exit igual.
+// FOR SO-ASCII FIELD (password of Wi-Fi, name of no): undoes the letter that the
+// dead key composed, returning the two pressed keys ("á" -> "'a"). One
+// password with an apostrophe followed by a vowel cannot become an accented letter and
+// disappear. Text without composition exit equal.
 void tab5_keyboard_ascii(const char* text, char* output, size_t size);
 
-// Brilho of luz of fundo of keyboard, 0..255.
+// Brightness of backlight of keyboard, 0..255.
 void tab5_keyboard_brightness(uint8_t v);
 
-// Versao of firmware of STM32 of keyboard (0 se nao leu).
+// Version of firmware of STM32 of keyboard (0 if you haven't read it).
 uint8_t tab5_keyboard_version(void);

@@ -1,21 +1,21 @@
-// Servico of GPS - leitura of UART e parse of NMEA no Grove, independente of
-// qual app esta in screen.
+// GPS service - reading of UART and parse of NMEA on Grove, independent of
+// which app is on screen.
 //
-// MESMO MOLDE of tab5_mesh: o KERNEL liga e desliga este service (Grove
-// hot-swap - ver kernel/core.cpp), nao o app. Antes, a leitura of
-// GPS vivia DENTRO of app Azimutal - UART instalada em ao_abrir(),
-// desinstalada em ao_fechar(). Funcionava, mas so o Azimutal enxergava a
-// position: nenhum outro app tinha como perguntar "onde estou" (o Mesh
-// precisou disso para localizacao on vivo, e foi o gatilho of mudanca).
+// SAME MOLD of tab5_mesh: the KERNEL turns this service on and off (Grove
+// hot-swap - see kernel/core.cpp), not the app. Before, reading
+// GPS lived INSIDE of app Azimutal - UART installed in ao_abrir(),
+// uninstalled in ao_close(). It worked, but only Azimutal saw the
+// position: no other app had the ability to ask "where am I" (Mesh
+// needed this for live localization, and it was the trigger of change).
 //
-// Agora who le a UART e faz o parse of RMC/GGA (hora e position of
-// RECEPTOR) e este service. O Azimutal continua owner of que so ele precisa -
-// o skyplot of constelacao (GSV) e o history gravado no cartao - e para
-// isso se inscreve para receber as sentencas cruas (ver tab5_gps_subscribe).
+// Now who reads the UART and parses RMC/GGA (time and position of
+// RECEIVER) and this service. Azimutal continues to own what he only needs -
+// the skyplot of constellation (GSV) is the history recorded on the card - and for
+// this subscribes to receive the raw sentences (see tab5_gps_subscribe).
 //
-// POSSE DO GROVE: exatamente a mesma arbitragem of sempre
-// (tab5_grove_acquire/release, GROVE_OWNER_GPS) - so que now who toma e o
-// service, no boot ou in troca of modulo, e nao mais o app on open.
+// GROVE POSSESSION: exactly the same arbitration as always
+// (tab5_grove_acquire/release, GROVE_OWNER_GPS) - so now who takes and what
+// service, no boot or in exchange of module, and no longer the app on open.
 
 #pragma once
 
@@ -25,44 +25,44 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Toma o Grove (GROVE_OWNER_GPS) e sobe a UART + a tarefa of leitura. Chamar
-// so com o Grove free_space e one GPS of verdade detectado - normalmente e o
-// kernel who decide isso (ver tab5_grove_detect() em kernel/core.cpp).
+// Take the Grove (GROVE_OWNER_GPS) and upload the UART + the reading task. Call
+// only with the Grove free_space and one GPS of truth detected - normally this is the
+// kernel who decides this (see tab5_grove_detect() in kernel/core.cpp).
 bool tab5_gps_start(void);
 
-// Desce a tarefa, fecha a UART e devolve o Grove. false = nao conseguiu
-// stop a time (mesma semantica of tab5_mesh_parar) - nada foi
-// desmontado nesse caso.
+// Download the task, close the UART and return the Grove. false = failed
+// stop a time (same semantics as tab5_mesh_parar) - nothing was
+// disassembled in this case.
 bool tab5_gps_stop(void);
 
 bool tab5_gps_service_active(void);
 
-// Ultima position known of RECEPTOR (nao dos satelites - isso e of
-// Azimutal). 'valid' stays false ate a primeira GGA chegar; 'qualidade' 0
-// quer dizer "o receptor fala, mas ainda sem fix".
+// Last known position of RECEIVER (not the satellites - this is of
+// Azimuth). 'valid' stays false until the first GGA arrives; 'quality' 0
+// means "the receiver fails, but still no fix".
 nmea_position_t tab5_gps_position(void);
 
-// Data/hora UTC of proprio GPS, e se ha FIX (field A of RMC).
+// UTC date/time of own GPS, and if there is FIX (field A of RMC).
 nmea_time_t tab5_gps_time(void);
 
-// Ha sentenca recente? (mesmo espirito of tab5_mesh_no_ar()).
+// Is there a recent sentence? (same spirit as tab5_mesh_no_ar()).
 bool tab5_gps_on_air(void);
 
-// Ha quantos ms nao chega NENHUMA sentenca - usado pela vigia of Grove em
-// kernel/core.cpp para saber when o modulo sumiu of cabo, of mesmo jeito que
-// tab5_mesh_silencio_ms() ja fazia para o radio.
+// How many months have there been NO sentences - used by the watchman of Grove in
+// kernel/core.cpp to know when the module disappeared from cable, in the same way as
+// tab5_mesh_silencio_ms() was already done for the radio.
 uint32_t tab5_gps_silence_ms(void);
 
-// ASSINATURA DE SENTENCAS CRUAS - para who precisa of algo alem of
-// position/hora (hoje, so o Azimutal, para GSV/skyplot).
+// SIGNATURE OF RAW SENTENCES - for those who need something besides
+// position/hour (today, only Azimuthal, for GSV/skyplot).
 //
-// UM ASSINANTE SO, of proposito: e o mesmo espirito of "who toma deve
-// release" of Grove - simplicidade sobre generalidade que ninguem pediu
-// ainda. Se one dia mais of one precisar, o jeito e virar uma lista pequena,
-// nao complicar isto now sem uso real.
+// A SOLE SUBSCRIBER, of purpose: and the same spirit of "who takes shall
+// release" of Grove - simplicity over generality that no one asked for
+// still. If more than one day is needed, the solution is to make a small list,
+// Don't complicate this now without real use.
 //
-// A queue recebe TODA sentenca valid (checksum ok), inclusive as que o
-// proprio service ja processou (RMC/GGA) - filtrar pelo prefixo e work
-// of who assina, como o Azimutal ja fazia antes desta mudanca.
+// The queue receives ALL valid sentences (checksum ok), including those that
+// own service has already processed (RMC/GGA) - filter by prefix and work
+// of who signs, as Azimutal already did before this change.
 bool tab5_gps_subscribe(QueueHandle_t queue);
 void tab5_gps_unsubscribe(void);

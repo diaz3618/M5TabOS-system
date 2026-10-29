@@ -2,7 +2,7 @@
 // of energia.
 //
 // -------------------------------------------------------------------------
-// ETAPA 1 of ARCHITECTURE.md - o MOTOR
+// ETAPA 1 of docs/ARCHITECTURE.md - o MOTOR
 // -------------------------------------------------------------------------
 // Ate aqui isto vivia dentro of kernel/sistema.cpp, junto of APARENCIA
 // (home, barra of status, roteamento of touch, calibracao) - 2457 lines
@@ -387,7 +387,7 @@ scroll_t s_rol;   // zero-init ja e VERTICAL/INICIO - extern em internal.hpp
 //
 // limite_do_app() (mais abaixo) consulta esta trava antes of everything.
 static bool s_rolagem_travada = false;
-void system_lock_rolagem(bool t) { s_rolagem_travada = t; }
+void system_lock_scroll(bool t) { s_rolagem_travada = t; }
 
 // DOIS niveis of "dirty", e a distincao entre eles e o que mata o flickering:
 //
@@ -469,7 +469,7 @@ void system_camera_stop(void) { tab5_camera_stop(); }
 
 // Os fingers of ultima sample (ver sistema_toques em app.h). So a tarefa of
 // interface escreve e so ela le (dentro of ao_tocar_nivel): sem trava.
-static system_touch_t s_touches[SISTEMA_TOQUES_MAX];
+static system_touch_t s_touches[SYSTEM_MAX_TOUCHES];
 static int             s_n_touches = 0;
 
 // O touch em progress ja foi tratado por level (sistema_consumir_toque, app.h).
@@ -662,14 +662,14 @@ static const uint32_t SPEAKER_OCIOSO_MS = 4000;
 static uint32_t       s_speaker_ocioso_since = 0;  // 0 = tocando ou disabled
 
 
-// QUEUE DE EVENTOS - ETAPA 2 of ARCHITECTURE.md, primeira fatia.
+// QUEUE DE EVENTOS - ETAPA 2 of docs/ARCHITECTURE.md, primeira fatia.
 //
 // Ate aqui o loop principal so sabia "vTaskDelay(periodo) e confira everything nao
 // vezes". Isso significa wake 12,5x/s (PERIODO_ZZZ=80ms) MESMO COM A TELA
 // APAGADA, so para perguntar "aconteceu algo?" - e quase sempre a resposta
 // era nao. Medido (comando "energia travas 40"): a trava of PM
 // "rtos0" of proprio esp_pm stays presa exatamente porque o core 0 nunca
-// stays ocioso por time suficiente para ela release - ver ARCHITECTURE.md,
+// stays ocioso por time suficiente para ela release - ver docs/ARCHITECTURE.md,
 // secao 2.2.1.
 //
 // A mudanca aqui e so em COMO o loop espera, nunca em O QUE ele decide: toda
@@ -810,7 +810,7 @@ static uint32_t periodo_of_app(void)
   // clock por top (ver desenhar_bloqueio).
   if (s_locked) { return BQ_ANIM_PERIODO_MS; }
   if (!app_vivo()) { return 0; }
-  return s_app->periodo_now ? s_app->periodo_now() : s_app->periodo_ms;
+  return s_app->current_redraw_period ? s_app->current_redraw_period() : s_app->redraw_period_ms;
 }
 
 void system_wake_interface(void)
@@ -1022,7 +1022,7 @@ static void atender_request_of_clock(void)
 // complete (que sincroniza s_rol.no_visor sozinho, no loop principal, via
 // rolagem_sincronizar()) trate o topo como o estado current - nao precisa
 // mexer em s_rol.no_visor aqui tambem.
-void system_reset_rolagem(void) { scroll_reset(&s_rol); s_dirty_layout = true; }
+void system_reset_scroll(void) { scroll_reset(&s_rol); s_dirty_layout = true; }
 
 const char* system_app_current(void) { return s_app ? s_app->name : nullptr; }
 bool system_in_interface(void) { return s_tarefa_interface && xTaskGetCurrentTaskHandle() == s_tarefa_interface; }
@@ -1079,7 +1079,7 @@ void system_apply_preferences(tab5_profile_t& p)
   // "necessario" = a stack ja subiu neste boot (tab5_wifi_stack_ready, HAL)
   // OU o user quer WiFi enabled (settings_wifi, servico) - a conta mora
   // AQUI, porque so o kernel pode read as duas sem inverter
-  // a dependencia (ver WRITING_APPS.md secao 8).
+  // a dependencia (ver docs/WRITING_APPS.md secao 8).
   p.radio    = p.radio    || tab5_wifi_stack_ready() || settings_wifi()
              || settings_bluetooth();   // o C6 e o radio of Bluetooth
   p.grove_5v = p.grove_5v || settings_grove();
@@ -1248,7 +1248,7 @@ static void draw_recusa(lgfx::LovyanGFX& d, const area_t& a)
 static void draw_content(bool limpar_area, bool complete_para_apps,
                                const area_t* recorte_app = nullptr)
 {
-  // A TELA VIRTUAL, nao o M5.Display (COMPOSITOR.md, etapa 3a): nada aqui
+  // A TELA VIRTUAL, nao o M5.Display (docs/COMPOSITOR.md, etapa 3a): nada aqui
   // escreve mais in pagina que o panel varre.
   auto& d = virtual_screen();
   area_t a = area_util();
@@ -1427,7 +1427,7 @@ void close_app(void)
              s_app->name, (t2 - t0) / 1000, (t1 - t0) / 1000, (t2 - t1) / 1000);
   }
   s_nav_travada     = false;  // rede of seguranca: app esquecido nao prende ninguem
-  system_manter_acordado(SISTEMA_ACORDADO_APP, false);   // idem: o request era of app
+  system_manter_acordado(SYSTEM_KEEP_AWAKE_APP, false);   // idem: o request era of app
   s_rolagem_travada = false;  // idem, para o next app nao nascer sem rolar
   scroll_reset(&s_rol);
   s_app = nullptr;
@@ -1782,7 +1782,7 @@ static void vTaskInterface(void *pvParameters)
   // depende of nada que os apps facam.
   tab5_bus_prioritize_screen(true);
 
-  // A TELA VIRTUAL (COMPOSITOR.md, etapa 3a). Antes of first drawing: a
+  // A TELA VIRTUAL (docs/COMPOSITOR.md, etapa 3a). Antes of first drawing: a
   // partir daqui, home, barras e apps desenham nela, e so o compositor
   // escreve nas paginas of panel.
   virtual_screen_start();
@@ -2230,7 +2230,7 @@ static void vTaskInterface(void *pvParameters)
         // livre) parecia o mesmo finger escorregando - a key anterior sumia.
         // Aqui: as 5 vagas, so as pressionadas, cada id uma vez.
         s_n_touches = 0;
-        for (int i = 0; i < (int)m5::Touch_Class::TOUCH_MAX_POINTS && s_n_touches < SISTEMA_TOQUES_MAX; ++i) {
+        for (int i = 0; i < (int)m5::Touch_Class::TOUCH_MAX_POINTS && s_n_touches < SYSTEM_MAX_TOUCHES; ++i) {
           const auto& dd = M5.Touch.getDetail(i);
           if (!dd.isPressed()) { continue; }
           bool repetido = false;
@@ -2397,7 +2397,7 @@ static void vTaskInterface(void *pvParameters)
         if (app_vivo() && s_app->on_sleep) {
           s_app->on_sleep();
         }
-        int piso = (s_app && s_app->piso_sleep_mhz > 0) ? s_app->piso_sleep_mhz : 40;
+        int piso = (s_app && s_app->sleep_clock_floor_mhz > 0) ? s_app->sleep_clock_floor_mhz : 40;
         if (background_piso_sleep() > piso) { piso = background_piso_sleep(); }   // o fundo segue running
         if (!tab5_power_sleep(piso)) {
           s_sleep_falhou = t;
@@ -2443,7 +2443,7 @@ static void vTaskInterface(void *pvParameters)
           if (app_vivo()) {
             const uint32_t dele = av & s_app->notices;
             if (dele) {
-              if (s_app->on_aviso) { s_app->on_aviso(dele); }
+              if (s_app->on_notice) { s_app->on_notice(dele); }
               else                 { s_dirty_data = true; }
             }
           } else if (!s_app) {
@@ -2615,7 +2615,7 @@ static void vTaskInterface(void *pvParameters)
         // (o clock of app entra abaixo, depois of piso of PERIODO_UI)
         if (s_speaker_ocioso_since) { menor(SPEAKER_OCIOSO_MS, s_speaker_ocioso_since); }
         if (tab5_keyboard_present()) { menor(keyboard_ms(), s_ultimo_keyboard); }   // keyboard fisico e consultado
-        { const uint32_t falta = orientation_prazo_ms(t); if (falta < prazo) { prazo = falta; } }   // vigia of giro (so com app que segue o IMU)
+        { const uint32_t falta = orientation_time_until_sample_ms(t); if (falta < prazo) { prazo = falta; } }   // vigia of giro (so com app que segue o IMU)
         if (prazo < PERIODO_UI) { prazo = PERIODO_UI; }
         s_isr_acorda = s_touch_isr_ok;
         periodo = prazo;
@@ -2631,7 +2631,7 @@ static void vTaskInterface(void *pvParameters)
       }
     }
 
-    // UM FRAME POR VOLTA (COMPOSITOR.md, regra 4). Tudo que esta iteration
+    // UM FRAME POR VOLTA (docs/COMPOSITOR.md, regra 4). Tudo que esta iteration
     // desenhou ja esta in pagina of tras (modo direto), e o rastreador anotou
     // onde. Aqui a troca e requested - sem wait: quem espera e o next
     // frame, on open. Volta sem drawing = nada a fazer.

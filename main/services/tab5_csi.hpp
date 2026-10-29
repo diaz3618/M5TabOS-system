@@ -21,7 +21,7 @@
 // SINGLE OWNER OF THE MESSAGE. P4 peer_data stores ONE listener per msg_id,
 // and registering a new one REPLACES the old one. This service therefore owns
 // C6_MSG_CSI; callers that need raw records (such as the console test) use
-// tab5_csi_ouvinte().
+// tab5_csi_listener().
 //
 // IDLE COST: zero—no task, ping, or C6 request. When enabled: one pool slot,
 // the 20 Hz ping, and the C6 receiver kept enabled.
@@ -44,7 +44,7 @@ typedef enum {
   TAB5_CSI_DESLIGADO = 0,
   TAB5_CSI_SEM_C6,          // C6 without our firmware, or without recorded CSI
   TAB5_CSI_SEM_ROTEADOR,    // no WiFi connection: there is nothing to measure
-  TAB5_CSI_APRENDENDO,      // medindo o "parado" deste lugar (primeiros segundos)
+  TAB5_CSI_APRENDENDO,      // measuring the "stillness" of this place (first seconds)
   TAB5_CSI_APARELHO_MEXENDO,
   TAB5_CSI_MEDINDO,
 } tab5_csi_fase_t;
@@ -53,7 +53,7 @@ typedef enum { TAB5_CSI_PARADO = 0, TAB5_CSI_LEVE, TAB5_CSI_FORTE } tab5_csi_lev
 
 typedef struct {
   tab5_csi_fase_t  fase;
-  tab5_csi_level_t level;      // vale em TAB5_CSI_MEDINDO
+  tab5_csi_level_t level;      // is valid in TAB5_CSI_MEDINDO
   float            razao;      // current deviation / still deviation (1 = still)
   uint16_t         por_s;      // CSI records in the last second
   int8_t           rssi;       // most recent record

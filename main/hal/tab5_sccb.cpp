@@ -1,27 +1,27 @@
-// O SCCB DA CAMERA PELA MESMA TRAVA DO RESTO DO I2C INTERNO.
+// THE CAMERA SCCB BY THE SAME LOCK AS THE REST OF THE INTERNAL I2C.
 //
-// O PROBLEMA. O barramento I2C interno (I2C_NUM_1: touch GT911, INA226, IMU,
-// RTC, expansores, sensor of camera) tem DOIS drivers em top of mesmo
-// controlador:
-//   - o of M5GFX/M5Unified, que mexe direto nos registradores e protege cada
-//     transacao com one mutex por porta (common.cpp, i2c_context_t::lock);
-//   - o of IDF (i2c_master), usado pelo SCCB of sensor of camera via esp_video.
-// O proprio M5GFX avisa que os dois lados "nao sao serializados entre si - a
-// aplicacao nao deve roda-los on mesmo time". E o esp_video roda: o controle
-// automatico of ganho/exposicao (IPA: AGC, AEN) escreve no sensor DURANTE a
-// captura, in tarefa dele, enquanto a interface le o touch. A "ponte of
-// camera" (kernel/core.cpp) so protegia o init/stop.
+// THE PROBLEM. The internal I2C bus (I2C_NUM_1: touch GT911, INA226, IMU,
+// RTC, expanders, camera sensor) has TWO drivers on top of the same
+// controller:
+// - the of M5GFX/M5Unified, which directly affects the registers and protects each
+// transaction with one mutex per port (common.cpp, i2c_context_t::lock);
+// - the of IDF (i2c_master), used by the SCCB of sensor of camera via esp_video.
+// M5GFX itself warns that the two sides "are not serialized to each other - the
+// application should not run them at the same time". And esp_video runs: the control
+// automatic of gain/exposure (IPA: AGC, AEN) writes to the sensor DURING
+// captures, in his task, while the interface reads the touch. The "bridge of
+// camera" (kernel/core.cpp) only protected init/stop.
 //
-// A SOLUCAO. O esp_video cria o channel of sensor chamando sccb_new_i2c_io()
-// (esp_video_init.c:255). O link desvia essa chamada para ca
-// (-Wl,--wrap=sccb_new_i2c_io, main/CMakeLists.txt) e entregamos one channel
-// SCCB cujas operacoes sao transacoes of M5GFX - que passam pela trava of
-// porta. A partir dai TODO o I2C interno e serializado por UMA trava so, of
-// qualquer tarefa, e nenhum componente of terceiros foi editado.
+// THE SOLUTION. esp_video creates the channel of sensor by calling sccb_new_i2c_io()
+// (esp_video_init.c:255). The link diverts this call to ca
+// (-Wl,--wrap=sccb_new_i2c_io, main/CMakeLists.txt) and we deliver one channel
+// SCCB whose operations are transactions of M5GFX - which go through the lock of
+// door. From then on, ALL internal I2C is serialized by ONE latch only, of
+// any task, and no third-party components were edited.
 //
-// Toda operacao SCCB se reduz a tres formas (ver sccb_i2c.c of componente):
-// write, escrever-e-read, read. Os bytes of registrador/value ja vem montados
-// no buffer por who chama; aqui so se transporta.
+// Every SCCB operation reduces to three forms (see sccb_i2c.c of component):
+// write, write-and-read, read. The bytes of register/value are already assembled
+// in buffer by who calls; Here you can only transport.
 
 #include <stdlib.h>
 #include <M5Unified.h>
@@ -33,7 +33,7 @@
 
 static const char* TAG = "sccb";
 
-static const int PORTA_INTERNA = 1;   // I2C_NUM_1 - ver o aviso of numeracao em tab5-sistema-apps
+static const int INTERNAL_I2C_PORT = 1;   // I2C_NUM_1 - see the warning of numbering in tab5-sistema-apps
 
 typedef struct {
   esp_sccb_io_t base;
@@ -47,7 +47,7 @@ static esp_err_t write(esp_sccb_io_t* io, const uint8_t* w, size_t n, int)
 {
   if (n > 255) { return ESP_ERR_INVALID_SIZE; }
   auto* s = of(io);
-  return lgfx::i2c::transactionWrite(PORTA_INTERNA, s->address, w, (uint8_t)n, s->freq).has_value()
+  return lgfx::i2c::transactionWrite(INTERNAL_I2C_PORT, s->address, w, (uint8_t)n, s->freq).has_value()
          ? ESP_OK : ESP_FAIL;
 }
 
@@ -55,7 +55,7 @@ static esp_err_t write_read(esp_sccb_io_t* io, const uint8_t* w, size_t wn, uint
 {
   if (wn > 255) { return ESP_ERR_INVALID_SIZE; }
   auto* s = of(io);
-  return lgfx::i2c::transactionWriteRead(PORTA_INTERNA, s->address, w, (uint8_t)wn, r, rn, s->freq).has_value()
+  return lgfx::i2c::transactionWriteRead(INTERNAL_I2C_PORT, s->address, w, (uint8_t)wn, r, rn, s->freq).has_value()
          ? ESP_OK : ESP_FAIL;
 }
 
@@ -63,7 +63,7 @@ static esp_err_t read(esp_sccb_io_t* io, uint8_t* r, size_t rn, int)
 {
   if (rn > 255) { return ESP_ERR_INVALID_SIZE; }
   auto* s = of(io);
-  return lgfx::i2c::transactionRead(PORTA_INTERNA, s->address, r, (uint8_t)rn, s->freq).has_value()
+  return lgfx::i2c::transactionRead(INTERNAL_I2C_PORT, s->address, r, (uint8_t)rn, s->freq).has_value()
          ? ESP_OK : ESP_FAIL;
 }
 
@@ -81,10 +81,10 @@ extern "C" esp_err_t __wrap_sccb_new_i2c_io(i2c_master_bus_handle_t bus, const s
 {
   if (!bus || !cfg || !io) { return ESP_ERR_INVALID_ARG; }
 
-  // So o barramento INTERNO e shared com o M5GFX. Qualquer outro segue
-  // o caminho normal of componente.
-  i2c_master_bus_handle_t interno = nullptr;
-  if (i2c_master_get_bus_handle((i2c_port_num_t)PORTA_INTERNA, &interno) != ESP_OK || bus != interno
+  // Only the INTERNAL bus is shared with the M5GFX. Anyone else follows
+  // the normal path of component.
+  i2c_master_bus_handle_t internal_bus = nullptr;
+  if (i2c_master_get_bus_handle((i2c_port_num_t)INTERNAL_I2C_PORT, &internal_bus) != ESP_OK || bus != internal_bus
    || cfg->dev_addr_length != I2C_ADDR_BIT_LEN_7) {
     return __real_sccb_new_i2c_io(bus, cfg, io);
   }

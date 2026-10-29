@@ -1,32 +1,32 @@
-// PROTOBUF DO MESHTASTIC - leitura e escrita, UM lugar so.
+// MESHTASTIC PROTOBUF - reading and writing, ONE place.
 //
-// -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE
-// -------------------------------------------------------------------------
-// O mesmo codec estava escrito TRES vezes: tab5_mesh.cpp (leitor proprio),
-// tab5_mesh_admin.cpp ("o mesmo drawing of tab5_mesh.cpp") e
-// tab5_mesh_mqtt.cpp ("mesmo caminho of tab5_mesh.cpp") - cada one com a sua
-// assinatura, e so one deles explicava a armadilha of limit (pb_restam,
-// abaixo). Pior, a ESCRITA of dois deles andava com ponteiro released e bytes
-// magicos ("*q++ = 0x22"): nenhum limit conferido, e o tamanho of buffer
-// era uma conta of cabeca ("BRUTO_MAX + 64 deve sobrar") - que estoura no
-// dia em que uma secao ganha mais one field negativo (10 bytes cada).
+// ------------------------------------------------------------------------
+// WHY DOES THIS EXIST
+// ------------------------------------------------------------------------
+// The same codec was written THREE times: tab5_mesh.cpp (own reader),
+// tab5_mesh_admin.cpp ("the same drawing of tab5_mesh.cpp") and
+// tab5_mesh_mqtt.cpp ("same path of tab5_mesh.cpp") - each one with its own
+// signature, and only one of them explained the of limit trap (pb_restam,
+// below). Worse, the WRITING of two of them was with a released pointer and bytes
+// magicos ("*q++ = 0x22"): no limit checked, and the size of buffer
+// was an account of head ("GROSS_MAX + 64 should be left") - which overflows in
+// day in which a section gains one more negative field (10 bytes each).
 //
-// Aqui o leitor nunca soma no ponteiro, e o escritor nunca passa of end:
-// estourar vira 'ok = false', e quem chama recusa o send_state em vez of
-// corromper a stack. As mensagens of Meshtastic que o Tab5 MONTA (o
-// envelope ToRadio/MeshPacket/Data e a Position) tambem moram aqui, porque
-// eram montadas byte a byte em tres funcoes quase iguais.
+// Here the reader never adds to the pointer, and the writer never goes past end:
+// overflow becomes 'ok = false', and the caller refuses send_state instead of
+// corrupt the stack. The Meshtastic messages that the Tab5 ASSEMBLES (the
+// ToRadio/MeshPacket/Data envelope and Position) also live here, because
+// were assembled byte by byte into three almost identical functions.
 //
-// Sem nada of ESP-IDF: compila no Mac (testes/rodar_mesh_pb.sh).
+// Without anything of ESP-IDF: compiles on Mac (tests/rodar_mesh_pb.sh).
 //
-// -------------------------------------------------------------------------
-// O FORMATO, em uma line
-// -------------------------------------------------------------------------
-// Cada field e <chave varint><valor>; chave = (numero << 3) | tipo, com tipo
-//   0 = varint | 1 = 64 bits | 2 = bytes/text/submensagem | 5 = 32 bits.
-// E por isso que of para read sem o .proto: todo field que nao interessa pode
-// ser PULADO sem saber o que ele significa.
+// ------------------------------------------------------------------------
+// THE FORMAT, in one line
+// ------------------------------------------------------------------------
+// Each field is <varint key><value>; key = (number << 3) | type, with type
+// 0 = varint | 1 = 64 bits | 2 = bytes/text/submessage | 5 = 32 bits.
+// That's why of is for read without the .proto: every field that doesn't matter can
+// be SKIPED without knowing what it means.
 
 #pragma once
 
@@ -36,23 +36,23 @@
 
 enum { PB_VARINT = 0, PB_FIXO64 = 1, PB_LEN = 2, PB_FIXO32 = 5 };
 
-// =========================================================================
-// LEITURA
+// ========================================================================
+// READING
 // =========================================================================
 typedef struct { const uint8_t* p; const uint8_t* end; } pb_leitor_t;
 
 static inline pb_leitor_t pb_leitor(const uint8_t* b, size_t n) { return { b, b + n }; }
 
-// QUANTOS BYTES AINDA HA. Nenhuma checagem of limit deste arquivo soma no
-// ponteiro, e isso nao e estilo - e a correcao of one crash.
+// HOW MANY BYTES ARE THERE STILL. No of limit checks on this file add up to the
+// pointer, and that's not style - it's the correction of one crash.
 //
-// "if (p + n > end)" parece seguro e nao e: 'n' vem of one varint LIDO DO
-// ENLACE e pode valer ate 2^64-1. Somado on ponteiro ele estoura, iteration para
-// one endereco bottom, a comparacao passa e a leitura seguinte exit of memoria
-// (LoadProhibited). Aconteceu: switch o C6L pelo GPS com o servico no ar
-// joga NMEA a 9600 baud numa UART of 115200 - ruido que, of vez em when,
-// contains "0x94 0xC3" e vira one varint aleatorio of 10 bytes.
-// Comparando pelo QUE RESTA, os dois lados sao tamanhos validos.
+// "if (p + n > end)" seems safe and is not: 'n' comes from one varint READ DO
+// ENLACE and can be worth up to 2^64-1. Added to pointer it overflows, iteration for
+// one address bottom, the comparison passes and the next reading exits of memory
+// (LoadProhibited). It happened: switch the C6L via GPS with the service in the air
+// plays NMEA at 9600 baud on a UART of 115200 - noise that, from time to time,
+// contains "0x94 0xC3" and becomes a random varint of 10 bytes.
+// Comparing from WHAT REMAINS, both sides are valid sizes.
 static inline size_t pb_restam(const pb_leitor_t* l)
 {
   return (l->p < l->end) ? (size_t)(l->end - l->p) : 0;
@@ -69,7 +69,7 @@ static inline bool pb_varint(pb_leitor_t* l, uint64_t* v)
   return false;
 }
 
-// Le a next chave e posiciona no valor. false = end of message (ou lixo).
+// Reads the next key and places it in the value. false = end of message (or garbage).
 static inline bool pb_next_field(pb_leitor_t* l, int* num, int* tipo)
 {
   uint64_t chave;
@@ -79,8 +79,8 @@ static inline bool pb_next_field(pb_leitor_t* l, int* num, int* tipo)
   return true;
 }
 
-// Pula o valor of field corrente - e o que permite ignorar com seguranca
-// everything que nao entendemos (no Meshtastic, a maior parte).
+// Skips the current field value - which allows you to safely ignore
+// everything we don't understand (on Meshtastic, most of it).
 static inline bool pb_pular(pb_leitor_t* l, int tipo)
 {
   uint64_t v;
@@ -96,8 +96,8 @@ static inline bool pb_pular(pb_leitor_t* l, int tipo)
   }
 }
 
-// Campo tipo 2 como one leitor proprio (submensagem, ou bytes crus em
-// dentro.p .. dentro.end). O leitor of fora avanca por top dele.
+// Type 2 field as its own reader (submessage, or raw bytes in
+// in.p .. in.end). The outside reader advances through its top.
 static inline bool pb_sub(pb_leitor_t* l, pb_leitor_t* dentro)
 {
   uint64_t n;
@@ -108,7 +108,7 @@ static inline bool pb_sub(pb_leitor_t* l, pb_leitor_t* dentro)
   return true;
 }
 
-// Campo tipo 2 como text terminado em zero, cortado em 'size' - 1.
+// Field type 2 as zero-terminated text, cut to 'size' - 1.
 static inline bool pb_text(pb_leitor_t* l, char* dst, size_t size)
 {
   pb_leitor_t t;
@@ -136,15 +136,15 @@ static inline bool pb_float(pb_leitor_t* l, float* v)
   return true;
 }
 
-// UM CAMPO INTEIRO of uma vez, com o trecho cru dele - para quem precisa
-// COPIAR campos adiante sem entende-los (a ponte MQTT reembala pacotes).
+// A WHOLE FIELD of once, with the raw excerpt from it - for those who need it
+// COPY fields forward without understanding them (MQTT bridge repackages packets).
 typedef struct {
-  const uint8_t* ini;      // chave + valor, para copiar cru
-  const uint8_t* val;      // o valor (tipo 2: os bytes; outros: o start)
+  const uint8_t* ini;      // key + value, for raw copy
+  const uint8_t* val;      // the value (type 2: the bytes; others: the start)
   size_t         n_val;
   size_t         n_total;
   int            num, type;
-  uint64_t       v;        // varint / fixed32 / fixed64 ja lidos
+  uint64_t       v;        // varint / fixed32 / fixed64 already read
 } pb_field_t;
 
 static inline bool pb_field(pb_leitor_t* l, pb_field_t* c)
@@ -172,8 +172,8 @@ static inline bool pb_field(pb_leitor_t* l, pb_field_t* c)
   return true;
 }
 
-// O field 'num' of uma message plana - a ULTIMA ocorrencia, como o nanopb
-// decodifica. false = ausente (o zero of proto3) ou message malformada.
+// The field 'num' of a flat message - the LAST occurrence, like nanopb
+// decodes. false = missing (the zero of proto3) or malformed message.
 static inline bool pb_achar(const uint8_t* b, size_t n, int num, int tipo, pb_field_t* saida)
 {
   pb_leitor_t l = pb_leitor(b, n);
@@ -203,17 +203,17 @@ static inline bool pb_achar_text(const uint8_t* b, size_t n, int num, char* dst,
   return true;
 }
 
-// =========================================================================
-// ESCRITA
-// =========================================================================
-// O escritor NUNCA passa of end: o que nao cabe derruba 'ok' e o resto das
-// escritas vira nada. Quem chama confere pb_tamanho() (0 = nao coube) uma
-// vez, no end, em vez of conferir cada field.
+// ========================================================================
+// WRITING
+// ========================================================================
+// The writer NEVER goes beyond the end: what doesn't fit drops 'ok' and the rest of the
+// writing becomes nothing. The caller checks pb_size() (0 = did not fit) one
+// instead, at the end, instead of checking each field.
 typedef struct { uint8_t* ini; uint8_t* p; uint8_t* end; bool ok; } pb_escritor_t;
 
 static inline pb_escritor_t pb_escritor(uint8_t* b, size_t n) { return { b, b, b + n, true }; }
 
-// Bytes escritos, ou 0 se algo nao coube.
+// Bytes written, or 0 if something didn't fit.
 static inline size_t pb_tamanho(const pb_escritor_t* w) { return w->ok ? (size_t)(w->p - w->ini) : 0; }
 
 static inline void pb_w_cru(pb_escritor_t* w, const void* d, size_t n)
@@ -239,10 +239,10 @@ static inline void pb_w_chave(pb_escritor_t* w, int num, int tipo)
 
 static inline void pb_w_num(pb_escritor_t* w, int num, uint64_t v) { pb_w_chave(w, num, PB_VARINT); pb_w_varint(w, v); }
 
-// int32 negativo vai estendido para 64 bits (10 bytes): e o que o protobuf manda.
+// negative int32 is extended to 64 bits (10 bytes): this is what protobuf says.
 static inline void pb_w_int32(pb_escritor_t* w, int num, int32_t v) { pb_w_num(w, num, (uint64_t)(int64_t)v); }
 
-// Little-endian explicito, nao memcpy of one uint32_t: o formato fixa a order.
+// Explicit little-endian, not memcpy of one uint32_t: the format fixes the order.
 static inline void pb_w_fixo32(pb_escritor_t* w, int num, uint32_t v)
 {
   const uint8_t b[4] = { (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
@@ -262,20 +262,20 @@ static inline void pb_w_text(pb_escritor_t* w, int num, const char* s, size_t ma
   pb_w_bytes(w, num, s, strnlen(s, max));
 }
 
-// Submensagem ja montada noutro escritor (o tamanho tem que vir antes of
-// content, entao a montagem e of dentro para fora). Interno que nao coube
-// contamina o of fora: o erro nao se perde pelo caminho.
+// Submessage already assembled in another writer (the size must come before
+// content, so the assembly is from inside out). Interior that didn't fit
+// contaminates the outside: the error is not lost along the way.
 static inline void pb_w_sub(pb_escritor_t* w, int num, const pb_escritor_t* dentro)
 {
   if (!dentro->ok) { w->ok = false; return; }
   pb_w_bytes(w, num, dentro->ini, (size_t)(dentro->p - dentro->ini));
 }
 
-// =========================================================================
-// MENSAGENS DO MESHTASTIC QUE O TAB5 MONTA
+// ====================================================================
+// MESHTASTIC MESSAGES THAT TAB5 ASSEMBLES
 // =========================================================================
 // Position{ 1: latitude_i sfixed32, 2: longitude_i sfixed32, 3: altitude
-// int32, 4: time fixed32 }. epoch 0 = sem hora valida (o field nao vai).
+// int32, 4: time fixed32 }. epoch 0 = no valid time (the field does not go).
 static inline void mesh_pb_position(pb_escritor_t* w, int32_t lat_e7, int32_t lon_e7,
                                    int32_t altitude_m, uint32_t epoch)
 {
@@ -287,23 +287,23 @@ static inline void mesh_pb_position(pb_escritor_t* w, int32_t lat_e7, int32_t lo
 
 #define MESH_PB_DIFUSAO 0xFFFFFFFFu
 
-// O que vai dentro of one ToRadio{ packet }. Campos com valor "nenhum" nao
-// sao escritos.
+// What goes inside one ToRadio{ packet }. Fields with a value of "none" do not
+// are written.
 typedef struct {
   uint32_t       para;       // MeshPacket.to (fixed32)
-  int            channel;    // MeshPacket.channel; -1 = nao write
+  int            channel;    // MeshPacket.channel; -1 = do not write
   uint32_t       porta;      // Data.portnum
   const uint8_t* carga;      // Data.payload
   size_t         n_carga;
-  uint32_t       id;         // MeshPacket.id (fixed32); 0 = deixar o no escolher
-  uint8_t        saltos;     // MeshPacket.hop_limit; 0 = nao write
+  uint32_t       id;         // MeshPacket.id (fixed32); 0 = let the no choose
+  uint8_t        saltos;     // MeshPacket.hop_limit; 0 = do not write
   bool           quer_ack;   // MeshPacket.want_ack
 } mesh_pb_envelope_t;
 
 // ToRadio{ 1: packet MeshPacket{ 2: to, 3: channel, 4: decoded Data{ 1:
-// portnum, 2: payload }, 6: id, 9: hop_limit, 10: want_ack } }. Sem 'from':
-// e o que o no entende como vindo of cliente conectado. Devolve o tamanho
-// em 'out', ou 0 se nao coube.
+// portnum, 2: payload }, 6: id, 9: hop_limit, 10: want_ack } }. Without 'from':
+// and what does not understand as coming from the connected client. Returns the size
+// in 'out', or 0 if it didn't fit.
 static inline size_t mesh_pb_to_radio(const mesh_pb_envelope_t* e, uint8_t* out, size_t size)
 {
   uint8_t b_data[256 + 16];   // payload of Meshtastic: 233 no maximum

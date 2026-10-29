@@ -27,7 +27,7 @@ void tab5_bus_prioritize_screen(bool enable)
   // ARQOS for the READ channel. Arbitration chooses who enters; QoS tells the
   // memory controller how much that request is worth.
   //
-  // Read only (arqos), not write: the panel only READS the framebuffer. Changing
+  // Read only (files), not write: the panel only READS the framebuffer. Changing
   // the write channel would not help the screen and would steal writer bandwidth.
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(0, 0, p);
   axi_icm_ll_set_dw_gdma_qos_arbiter_prio(1, 0, p);

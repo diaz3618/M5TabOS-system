@@ -1,46 +1,46 @@
-// O OBJETO DE DESENHO DO SISTEMA (name historico: "screen virtual").
+// THE SYSTEM DESIGN OBJECT (historical name: "virtual screen").
 //
-// Um LovyanGFX comum cujo panel e one RASTREADOR: anota cada rectangle que
-// qualquer primitiva of M5GFX tocou e o entrega on compositor
-// (comp_invalidar). Home, barras e todos os apps desenham aqui, sem saber of
-// nada disso.
+// A common LovyanGFX whose panel is one TRACKER: annotates each rectangle that
+// any primitive of M5GFX played and delivers it to composer
+// (comp_invalidar). Home, bars and all apps draw here, without knowing
+// none of that.
 //
-// MODO DIRETO (COMPOSITOR.md): o rastreador escreve in PAGINA DE TRAS of
-// panel. A primeira escrita of cada iteration abre o frame (comp_abrir: espera a
-// troca anterior e sincroniza), e so entao o pixel e escrito. Ate a etapa 3a
-// isto era one canvas of 1,84 MB in PSRAM que o compositor copiava para a
-// pagina a cada frame - a copia exited, e a memoria tambem.
+// DIRECT MODE (docs/COMPOSITOR.md): the tracker writes on BACK PAGE of
+// panel. The first write of each iteration opens the frame (comp_open: waits for
+// previous swap and synchronize), and only then the pixel is written. Until step 3a
+// this was one canvas of 1.84 MB in PSRAM that the composer copied to the
+// page every frame - the copy exited, and the memory too.
 //
-// O que continua valendo, sem mudar uma line of app:
-//   - nenhum drawing acontece in pagina que o panel esta varrendo;
-//   - as areas mudadas sao descobertas SOZINHAS.
-// O que changed: o content NAO sobrevive mais on sleep (as paginas morrem
-// com o panel). Ao wake, o core redesenha everything - como ja fazia.
+// What remains valid, without changing a line of app:
+// - no drawing happens on page that the panel is scanning;
+// - changed areas are discovered ALONE.
+// What changed: the content NO LONGER survives on sleep (the pages die
+// with the panel). When waking up, the core redesigns everything - as it already did.
 
 #pragma once
 
 #include <M5Unified.h>
 
-// Liga o objeto of drawing as paginas of panel e o torna o alvo of sistema
-// (tab5_screen_set_target). Chamar uma vez, of tarefa of interface.
+// Links the object of drawing to the pages of panel and makes it the target of the system
+// (tab5_screen_set_target). Call once, of task of interface.
 bool virtual_screen_start(void);
 
-// O alvo of drawing. Enquanto ele nao existir, e o M5.Display.
+// The target of drawing. While it doesn't exist, it's the M5.Display.
 lgfx::LovyanGFX& virtual_screen(void);
 
-// Copia a rotation of M5.Display (o Mesh abre em paisagem). O touch continua
-// sendo convertido pelo M5.Display; aqui so precisa draw igual.
+// Copies the rotation of M5.Display (the Mesh opens in landscape). The touch continues
+// being converted by M5.Display; here you just need to draw the same.
 void virtual_screen_follow_rotation(void);
 
-// O rectangle (x, y, w, h), em coordenadas of drawing, vai ser INTEIRO
-// sobrescrito por quem chamou, ainda neste frame - o que a pagina of tras
-// tinha of atrasado ali nao precisa vir of frente. E o que o fillRect ja diz
-// sozinho; serve para quem cobre com imagem (pushSprite) em vez of color.
+// The rectangle (x, y, w, h), in coordinates of drawing, will be INTEGER
+// overwritten by the caller, still in this frame - what the page behind
+// was late there, no need to come from the front. And what fillRect already says
+// alone; Suitable for those who cover with an image (pushSprite) instead of color.
 void virtual_screen_cover(int x, int y, int w, int h);
 
-// Pede a screen inteira no next frame (qualquer tarefa).
+// Requests the entire screen in the next frame (any task).
 void virtual_screen_invalidate_everything(void);
 
-// Devolve a surface of DMA (sistema_superficie) of app que fechou. Chamar
-// depois of ao_fechar() - quem escrevia nela (a camera) ja parou.
+// Returns the surface of DMA (system_surface) of the app that closed. Call
+// after ao_fechar() - whoever wrote on it (the camera) has already stopped.
 void virtual_screen_release_surface(void);

@@ -25,23 +25,23 @@ static SemaphoreHandle_t s_mtx = nullptr;
 static StaticSemaphore_t s_info_buf;
 static SemaphoreHandle_t s_info_sem = nullptr;
 
-static c6_farejo_cfg_t s_cfg;          // o request em vigor (sob s_mtx)
-static volatile bool   s_quer = false; // o P4 quer farejar
+static c6_farejo_cfg_t s_cfg;          // the request in effect (under s_mtx)
+static volatile bool   s_quer = false; // P4 wants to sniff
 // ENABLE AND DISABLE, WITHOUT A RACE (same as CSI). Previously, enabling right
 // after disable found 's_rodando' still set, did not restore s_quer to true,
 // and the exiting task disabled sniffing and FREED THE TABLE
-// depois of 'enable' ter respondido true. Agora disable PEDE a saida
-// (parada_t) e enable com uma execucao saindo espera ela confirm antes of
-// alocar a tabela e create a nova.
+// after 'enable' has responded true. Now disable ASK for exit
+// (parada_t) and enable with an execution leaving wait for it to confirm before
+// allocate the table and create the new one.
 static stop_t          s_parada = { };
 static SemaphoreHandle_t s_trava_cmd = nullptr;
 static pool_id_t       s_id = POOL_ID_EMPTY;
 
-static farejo_item_t* s_tab = nullptr; // PSRAM, so com o farejo enabled
+static farejo_item_t* s_tab = nullptr; // PSRAM, only with sniff enabled
 static int            s_n = 0;
 static volatile uint32_t s_lotes = 0, s_perdidos = 0;
 
-static volatile uint8_t s_proto = 0, s_caps = 0;   // 0 = ainda nao sabemos
+static volatile uint8_t s_proto = 0, s_caps = 0;   // 0 = we don't know yet
 static c6_info_t s_info;
 static volatile bool s_tem_info = false;
 static bool s_registrado = false;
@@ -54,10 +54,10 @@ static void start_travas(void)
   }
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // From the C6 - in the esp_hosted event task: aggregate and return.
-// ---------------------------------------------------------------------------
-static int achar_mac(const uint8_t mac[6])   // sob s_mtx
+// -------------------------------------------------------------------------------
+static int achar_mac(const uint8_t mac[6])   // under s_mtx
 {
   for (int i = 0; i < s_n; ++i) {
     if (memcmp(s_tab[i].mac, mac, 6) == 0) { return i; }
@@ -65,7 +65,7 @@ static int achar_mac(const uint8_t mac[6])   // sob s_mtx
   return -1;
 }
 
-static int vaga_para(const uint8_t mac[6])   // sob s_mtx; cheio: o mais antigo
+static int vaga_para(const uint8_t mac[6])   // under s_mtx; full: oldest
 {
   int j = achar_mac(mac);
   if (j >= 0) { return j; }
@@ -78,7 +78,7 @@ static int vaga_para(const uint8_t mac[6])   // sob s_mtx; cheio: o mais antigo
   return pior;
 }
 
-static tab5_listener_t<tab5_farejo_ouvinte_t> s_ouvinte;   // remover espera a chamada em voo
+static tab5_listener_t<tab5_farejo_ouvinte_t> s_ouvinte;   // remove call hold in flight
 
 static void juntar_lote(const uint8_t* d, size_t n)
 {
@@ -90,8 +90,8 @@ static void juntar_lote(const uint8_t* d, size_t n)
   if (k > cab.n) { k = cab.n; }
   const uint32_t now = tab5_now_ms();
 
-  // O lote chega when o periodo FECHA: o RSSI medio dele e of middle of
-  // periodo. (O caminho C6 -> P4 leva poucos ms; o periodo leva 100+.)
+  // The batch arrives when the period CLOSES: its average RSSI is of middle of
+  // period. (The path C6 -> P4 takes a few ms; the period takes 100+.)
   if (s_ouvinte.fn.load()) {
     uint16_t lote_ms = s_cfg.lote_ms ? s_cfg.lote_ms : 250;
     if (lote_ms < 50) { lote_ms = 50; }
@@ -107,7 +107,7 @@ static void juntar_lote(const uint8_t* d, size_t n)
   if (s_tab) {
     for (int i = 0; i < k; ++i) {
       c6_farejo_reg_t g;
-      memcpy(&g, reg + i * sizeof(g), sizeof(g));   // reg pode estar desalinhado
+      memcpy(&g, reg + i * sizeof(g), sizeof(g));   // reg may be misaligned
       int j = vaga_para(g.mac);
       farejo_item_t* it = &s_tab[j];
       memcpy(it->mac, g.mac, 6);
@@ -133,7 +133,7 @@ static void on_peer_data(uint32_t msg_id, const uint8_t* data, size_t n, void*)
       break;
     case C6_MSG_INFO:
       if (n >= C6_INFO_V1_TAM) {
-        // An older C6 sends the short INFO record (without diagnostics); the rest stays zero.
+        // An older C6 sends the short INFO record (without diagnostics); the rest remains zero.
         memset((void*)&s_info, 0, sizeof(c6_info_t));
         memcpy((void*)&s_info, data, n < sizeof(c6_info_t) ? n : sizeof(c6_info_t));
         s_proto = s_info.proto;
@@ -147,9 +147,9 @@ static void on_peer_data(uint32_t msg_id, const uint8_t* data, size_t n, void*)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Renovacao - vaga of pool, so enquanto enabled.
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// Renewal - vacancy of pool, only while enabled.
+// -------------------------------------------------------------------------------
 static void vTarefaRenova(void*)
 {
   while (!stop_requested(&s_parada)) {
@@ -160,7 +160,7 @@ static void vTarefaRenova(void*)
     cfg.liga = 1;
     eh_host_peer_data_send(C6_MSG_HOST_FAREJO, (const uint8_t*)&cfg, sizeof(cfg));
 
-    // Troca em pedacos para responder rapido a one disable.
+    // Swap in chunks to quickly respond to one disable.
     for (int i = 0; i < RENOVA_MS / 100 && !stop_requested(&s_parada); ++i) {
       vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -180,9 +180,9 @@ static void vTarefaRenova(void*)
   stop_confirm(&s_parada);   // LAST action: from here another enable may create one
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // API
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 static void registrar(void)
 {
   if (s_registrado) { return; }
@@ -245,7 +245,7 @@ bool tab5_farejo_enable(const c6_farejo_cfg_t* cfg)
       return false;
     }
   } else {
-    // Ja running: o next ciclo of renovacao manda a config nova.
+    // Already running: the next renewal cycle sends the new config.
     pool_wake(&s_id);
   }
   tab5_mutex_destravar(&s_trava_cmd);
@@ -258,8 +258,8 @@ void tab5_farejo_disable(void)
 {
   tab5_mutex_lock(&s_trava_cmd);
   s_quer = false;
-  // Pede a saida e nao espera (quem desliga e a screen): a tarefa exit in iteration
-  // seguinte, released a tabela e confirma.
+  // Asks for exit and doesn't wait (whoever hangs up is the screen): the exit in iteration task
+  // Next, release the table and confirm.
   if (stop_running(&s_parada)) { s_parada.request = true; pool_wake(&s_id); }
   tab5_mutex_destravar(&s_trava_cmd);
 }
@@ -315,7 +315,7 @@ bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms)
   if (!tab5_wifi_c6_is_ours() || !tab5_wifi_c6_link()) { return false; }
   registrar();
   s_tem_info = false;
-  if (s_info_sem) { xSemaphoreTake(s_info_sem, 0); }   // esvazia
+  if (s_info_sem) { xSemaphoreTake(s_info_sem, 0); }   // empties
   const uint8_t chave = C6_AJ_INFO;
   uint8_t request[2] = { C6_AJ_INFO, 0 };
   (void)chave;
@@ -329,7 +329,7 @@ bool tab5_farejo_info_c6(c6_info_t* out, uint32_t espera_ms)
 
 void tab5_farejo_anotar_pronto(const uint8_t* data, uint16_t n)
 {
-  // PRONTO v2: 6B MAC + 1B canal + 1B proto + 1B caps. Antigo: so 7 bytes.
+  // READY v2: 6B MAC + 1B channel + 1B proto + 1B caps. Old: only 7 bytes.
   if (n >= 9) { s_proto = data[7]; s_caps = data[8]; }
   else        { s_proto = 1; s_caps = C6_CAP_ESPNOW; }
 }

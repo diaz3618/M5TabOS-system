@@ -13,14 +13,14 @@ static const char *TAG = "trabalho";
 typedef struct {
   work_t fn;
   void*      arg;
-  uint32_t   geracao;   // of qual "vida" of app o request e
-  bool       released;     // dono dos proprios data: sobrevive on app (ver .hpp)
+  uint32_t   geracao;   // of which "life" of app or request and
+  bool       released;     // owner of own data: survive on app (see .hpp)
 } request_t;
 
 static QueueHandle_t     s_fila    = nullptr;
-static SemaphoreHandle_t s_running = nullptr;   // preso enquanto one work executa
-static volatile uint32_t s_geracao = 1;         // sobe a cada app closed
-static volatile uint32_t s_geracao_running = 0; // a of work (nao released) em execucao
+static SemaphoreHandle_t s_running = nullptr;   // stuck while one work runs
+static volatile uint32_t s_geracao = 1;         // goes up with each app closed
+static volatile uint32_t s_geracao_running = 0; // a of work (not released) running
 
 static void vTaskTrabalho(void*)
 {
@@ -28,8 +28,8 @@ static void vTaskTrabalho(void*)
   for (;;) {
     if (xQueueReceive(s_fila, &p, portMAX_DELAY) != pdTRUE) { continue; }
     if (p.released) {
-      // Roda sempre e fora of s_rodando: close o app nao espera por ele.
-      // O aviso so vai se o MESMO app ainda estiver open.
+      // Roda always and out of s_rodando: close the app does not wait for it.
+      // The warning only appears if the SAME app is still open.
       const int64_t t0 = esp_timer_get_time();
       p.fn(p.arg);
       ESP_LOGI(TAG, "tarefa em segundo plano concluida em %lld ms", (esp_timer_get_time() - t0) / 1000);
@@ -37,7 +37,7 @@ static void vTaskTrabalho(void*)
       continue;
     }
     xSemaphoreTake(s_running, portMAX_DELAY);
-    // Pedido of one app que ja fechou: os buffers dele podem nao existir mais.
+    // Request for an app that has already closed: its buffers may no longer exist.
     const bool vale = (p.geracao == s_geracao);
     s_geracao_running = p.geracao;
     if (vale) { p.fn(p.arg); }
@@ -68,19 +68,19 @@ static bool request(work_t fn, void* arg, bool released)
 bool system_work(work_t fn, void* arg)       { return request(fn, arg, false); }
 bool system_work_released(work_t fn, void* arg) { return request(fn, arg, true); }
 
-// O fechamento sobe s_geracao ANTES of wait s_rodando: o work em
-// execucao ve a diferenca in hora e pode exit no middle.
+// Closing goes up s_geracao BEFORE of wait s_rodando: the work in
+// execution sees the difference right away and can exit in the middle.
 bool system_work_cancelled(void) { return s_geracao_running != s_geracao; }
 
 void work_stop_of_app(void)
 {
   if (!s_fila) { return; }
-  // Primeiro invalidate: o que estiver in queue (ou chegar now) e descartado
-  // when o worker o tirar of la (geracao velha). A queue NAO e zerada:
-  // one work SOLTO la dentro e dono of memoria que so ele libera.
-  s_geracao = s_geracao + 1;   // escritor unico: a tarefa of interface
-  // Depois espera o que ja estava executando terminar - e o que torna o
-  // ao_fechar() seguro para liberar memoria.
+  // First invalidate: whatever is in queue (or arrives now) is discarded
+  // when the worker takes him out of there (old generation). The queue is NOT reset:
+  // one work LOOSE inside and owner of memory that only it releases.
+  s_geracao = s_geracao + 1;   // unique writer: the task of interface
+  // Then wait for what was already running to finish - and what makes the
+  // when_closing() safe to free memory.
   xSemaphoreTake(s_running, portMAX_DELAY);
   xSemaphoreGive(s_running);
 }

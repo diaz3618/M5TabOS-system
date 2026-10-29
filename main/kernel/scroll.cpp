@@ -17,10 +17,10 @@ void scroll_set(scroll_t* r, uint8_t eixo, uint8_t anchoring)
 void scroll_reset(scroll_t* r)
 {
   r->current = 0;
-  r->max = 0;   // consumidor que guarda 'max' entre passes (o Mesh) nao
-                // stays com one limit velho of uma screen/conversa anterior no
-                // instante entre isto e o next drawing recalcular; quem
-                // recalcula 'max' TODO ciclo (o kernel) nem chega a notar.
+  r->max = 0;   // consumer that stores 'max' between passes (the Mesh) does not
+                // stays with an old limit of a previous screen/conversation on
+                // instant between this and the next drawing recalculate; who
+                // recalculates 'max' EVERY cycle (the kernel) doesn't even notice.
   r->anchor = -1;
   r->press_start = -1;
   r->distance = 0;
@@ -28,33 +28,33 @@ void scroll_reset(scroll_t* r)
 
 bool scroll_drag(scroll_t* r, int coord, bool dentro)
 {
-  // SOLTA A ANCORA AO SAIR DA ZONA, nao so when o finger levanta of vez -
-  // default unificado in consolidacao (as tres listas of Mesh
-  // ja faziam assim; o kernel antes so soltava em '!tocando', tolerando o
-  // finger passear fora of area util sem largar a anchor - one finger que saisse
-  // e voltasse pulava a distancia toda of uma vez, porque a anchor ficava
-  // parada no ultimo ponto DENTRO. Soltar on exit evita esse salto, e e o
-  // comportamento que ja valia pra maioria das listas deste sistema.
+  // RELEASE THE ANCHOR WHEN LEAVING THE ZONE, not only when the finger lifts again -
+  // unified default in consolidation (the three lists of Mesh
+  // they already did it like that; the kernel previously only released on '!touching', tolerating the
+  // finger wander outside the useful area without letting go of the anchor - one finger that leaves
+  // and came back, I jumped the whole distance once, because the anchor was
+  // stop at the last point IN. Releasing on exit avoids this jump, and the
+  // behavior that already applies to most lists in this system.
   if (!dentro) { r->anchor = -1; return false; }
 
-  // Primeira sample dentro of zona: so anchor, nao ha 'ciclo anterior'
-  // para tirar delta nenhum - evitar isso e o que impede one salto on
-  // ENTRAR in zona (o finger pode ter vindo of longe fora dela).
+  // First sample within zone: only anchor, there is no 'previous cycle'
+  // to take no delta - avoid this and what prevents one from jumping on
+  // ENTER zone (the finger may have come from far outside it).
   if (r->anchor < 0) { r->anchor = coord; r->press_start = coord; r->distance = 0; return false; }
 
   const int dy = coord - r->anchor;
   if (dy == 0) { return false; }
   r->anchor = coord;
 
-  // AFASTAMENTO DA DESCIDA, e nao soma of caminho percorrido - one finger que
-  // treme (ou vai e iteration) parado nao pode ser lido como arrasto grande so
-  // por ter "andado" muito em vaivem. Mesma logica historica of kernel.
+  // CLEARANCE OF THE DESCENT, and not the sum of the path traveled - one finger that
+  // shakes (or goes and iteration) stopped cannot be read as large drag only
+  // for having "walked" a lot back and forth. Same historical kernel logic.
   const int longe = (coord > r->press_start) ? (coord - r->press_start) : (r->press_start - coord);
   if (longe > r->distance) { r->distance = longe; }
 
-  // SINAL: lista comum sobe/desce com o finger (finger pra top = content
-  // sobe, por isso subtrai); anchored no end faz o oposto (finger pra bottom
-  // revela content mais antigo, por isso soma).
+  // SIGNAL: common list goes up/down with the finger (finger to top = content
+  // goes up, so it subtracts); anchored at the end does the opposite (finger to bottom
+  // reveals older content, so it adds).
   int nova = (r->anchoring == ROLAGEM_INICIO) ? (r->current - dy) : (r->current + dy);
   if (nova < 0)      { nova = 0; }
   if (nova > r->max) { nova = r->max; }
@@ -77,8 +77,8 @@ bool scroll_limit(scroll_t* r, int total, int window)
   if (novo_max < 0) { novo_max = 0; }
   r->max = novo_max;
   if (r->current > r->max) {
-    // A lista encolheu (one item foi removido, uma conversa trocou) e a
-    // position current became alem of end - puxa of iteration.
+    // The list shrank (one item was removed, a conversation changed) and the
+    // position current became beyond end - pulls of iteration.
     r->current = r->max;
     return true;
   }
@@ -99,10 +99,10 @@ scroll_pass_t scroll_scroll(scroll_t* r, const area_t& window, uint16_t color)
       window.width, ad
     };
   }
-  // SEMPRE sincroniza, tenha deslocado ou nao: se nao moved, o chamador
-  // vai limpar/redesenhar a window inteira por conta propria (cada one of
-  // seu jeito - ver o aviso grande no .hpp), e depois disso a pagina
-  // visivel TAMBEM passa a refletir 'current', so que por outro caminho.
+  // ALWAYS synchronizes, whether moved or not: if not moved, the caller
+  // will clear/redraw the entire window on its own (each one of
+  // your way - see the big warning in the .hpp), and after that the page
+  // visible ALSO starts to reflect 'current', but in another way.
   r->no_visor = r->current;
   return p;
 }
@@ -111,9 +111,9 @@ void scroll_barra(lgfx::LovyanGFX& d, const scroll_t* r, const area_t& window,
                    uint16_t color_track, int margem)
 {
   if (r->max <= 0) { return; }
-  // Gate extra so para ancorada-no-fim: com current==0 o "end" ja esta a
-  // vista, a barrinha ali seria ruido (mesma regra que mensagens of Mesh
-  // ja tinha antes desta consolidacao).
+  // Extra gate only for anchored-to-end: with current==0 the "end" is already
+  // view, the little bar there would be noise (same rule as messages of Mesh
+  // already had it before this consolidation).
   if (r->anchoring == ROLAGEM_FIM && r->current <= 0) { return; }
 
   const int bx  = window.x + window.width - margem;

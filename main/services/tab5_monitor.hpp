@@ -6,20 +6,20 @@
 //
 // Now a service task (priority 1, below everything except IDLE) samples every
 // second without drawing anything, and stores:
-//   - the current snapshot: CPU per task, free stack, and memory;
-//   - PEAKS with their timestamps: highest CPU per task and for the system,
-//     lowest free RAM/PSRAM, smallest largest block, and lowest stack;
-//   - five minutes of history (CPU, RAM, PSRAM) for the graph;
-//   - EVENTS triggered by small thresholds (see tab5_monitor.cpp): memory
-//     below a limit, a new minimum, a sharp drop, fragmentation, nearly full
-//     stack, a task stuck at high CPU, and a new or vanished task.
+// - the current snapshot: CPU per task, free stack, and memory;
+// - PEAKS with their timestamps: highest CPU per task and for the system,
+// lowest free RAM/PSRAM, smallest largest block, and lowest stack;
+// - five minutes of history (CPU, RAM, PSRAM) for the graph;
+// - EVENTS triggered by small thresholds (see tab5_monitor.cpp): memory
+// below a limit, a new minimum, a sharp drop, fragmentation, nearly full
+// stack, a task stuck at high CPU, and a new or vanished task.
 //
-// Card records, in apps/Tarefas/:
-//   eventos-AAAA-MM-DD.csv  - one event per line, when it happens;
-//   resumo-AAAA-MM-DD.csv   - one line per MINUTE: worst CPU, lowest RAM,
-//                             lowest PSRAM, smallest largest block—how much
-//                             memory remained throughout the day.
-// Every event also goes to the log (tag "monitor"), which tab5_log records.
+// Card records, in apps/Tasks/:
+// events-YYYY-MM-DD.csv - one event per line, when it happens;
+// summary-YYYY-MM-DD.csv - one line per MINUTE: worst CPU, lowest RAM,
+// lowest PSRAM, smallest largest block—how much
+// memory remained throughout the day.
+// Every event also goes to the log ("monitor" tag), which tab5_log records.
 //
 // The Tasks app is only a window: it reads from here and measures nothing.
 
@@ -34,13 +34,13 @@
 // the system past 32 (esp_hosted alone creates seven), so samples were dropped
 // and Tasks displayed the last good snapshot: numbers detached from reality.
 #define MON_MAX_TAREFAS 64
-#define MON_HIST_N      300     // 5 min a 1 sample/s
+#define MON_HIST_N      300     // 5 min at 1 sample/s
 #define MON_EVENTOS_N   32
 #define MON_NOME        16
 
 typedef struct {
   char        name[MON_NOME];
-  UBaseType_t numero;         // xTaskNumber - identidade estavel
+  UBaseType_t numero;         // xTaskNumber - stable identity
   UBaseType_t priority;
   BaseType_t  core;           // tskNO_AFFINITY = any
   float       pct;            // CPU in the last second (both cores)
@@ -48,29 +48,29 @@ typedef struct {
   uint32_t    pct_pico_em;    // seconds of uptime at the peak
   uint32_t    stack_livre;    // bytes - the smallest remaining headroom (high water mark)
   uint8_t     type;           // owner_type_t: system, service, app, background
-  char        dono[MON_NOME]; // owner ("WiFi", "Camera", "Trilha"); empty = system
+  char        dono[MON_NOME]; // owner ("WiFi", "Camera", "Track"); empty = system
 } mon_tarefa_t;
 
 typedef struct {
   uint32_t livre, total;
   uint32_t maior_bloco;       // largest allocation possible NOW (fragmentation)
   uint32_t min_livre;         // lowest free amount seen by the monitor
-  uint32_t min_livre_em;      // uptime em s
+  uint32_t min_livre_em;      // uptime in s
   uint32_t min_bloco;         // lowest largest-block value seen
   uint32_t min_bloco_em;
 } mon_memory_t;
 
 typedef struct {
   uint32_t     uptime_s;
-  float        cpu;           // uso total (100 - IDLE)
+  float        cpu;           // total usage (100 - IDLE)
   float        cpu_pico;
   uint32_t     cpu_pico_em;
-  mon_memory_t    ram;           // interna
+  mon_memory_t    ram;           // internal
   mon_memory_t    psram;
   uint32_t     foto_us;       // duration of the last uxTaskGetSystemState (critical section)
   uint32_t     foto_pior_us;  // worst since boot - grows with stack outside L2MEM
   int          n;
-  mon_tarefa_t t[MON_MAX_TAREFAS];   // ordenadas por xTaskNumber
+  mon_tarefa_t t[MON_MAX_TAREFAS];   // sorted by xTaskNumber
 } mon_foto_t;
 
 typedef struct {
@@ -90,9 +90,9 @@ int tab5_monitor_historico(float* cpu, uint32_t* ram_livre, uint32_t* psram_livr
 
 // Events, newest to oldest. Returns the number copied.
 int tab5_monitor_eventos(mon_evento_t* out, int max);
-uint32_t tab5_monitor_total_eventos(void);   // contador que so sobe
+uint32_t tab5_monitor_total_eventos(void);   // counter that only goes up
 
-// Restart peak tracking (including memory minima).
+// Restart peak tracking (including minimum memory).
 void tab5_monitor_reset_picos(void);
 
 // INTERNAL RAM LEDGER - what consumed how much.
@@ -100,9 +100,9 @@ void tab5_monitor_reset_picos(void);
 // The monitor sees RAM fall but not WHY: "80 KB free" does not say whether it
 // was the panel, C6 SDIO, NimBLE, or a new task. Each marker records internal
 // free RAM and the difference from the previous marker, like a bank statement.
-// Markers are placed at boot (main.cpp, sistema_iniciar) and when each
+// Markers are placed at boot (main.cpp, starting_system) and when each
 // radio/service starts; the console's "memory" command prints the table, and
-// every marker also goes to the log (tag "memory").
+// every marker also goes to the log ("memory" tag).
 //
 // May be called from any task at any time, including before
 // tab5_monitor_start(). Allocates nothing. Do not call from an ISR.

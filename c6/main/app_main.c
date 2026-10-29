@@ -33,16 +33,16 @@
 #include "esp_mac.h"
 #include "nvs_flash.h"
 #include "esp_now.h"
-#include "espnow.h"            /* ONLY types from espressif/esp-now (see TWO DIALECTS) */
+#include "espnow.h" /* ONLY types from espressif/esp-now (see TWO DIALECTS) */
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_core_dump.h"
-#include <stdlib.h>   /* free the FTM report */
+#include <stdlib.h> /* free the FTM report */
 #if CONFIG_IEEE802154_ENABLED
 #include "esp_ieee802154.h"
-#include "esp_coexist.h"       /* esp_coex_wifi_i154_enable */
-#include "esp_coex_i154.h"     /* esp_coex_ieee802154_status_disable */
+#include "esp_coexist.h"   /* esp_coex_wifi_i154_enable */
+#include "esp_coex_i154.h" /* esp_coex_ieee802154_status_disable */
 #endif
 #include "esp_wifi.h"
 #include "esp_ota_ops.h"
@@ -54,7 +54,7 @@
 #include "freertos/semphr.h"
 
 #include "eh_cp_feat_peer_data.h"
-#include "tab5_c6.h"   /* shared contract with the P4 */
+#include "tab5_c6.h" /* shared contract with the P4 */
 
 static const char *TAG = "tab5c6";
 
@@ -68,13 +68,13 @@ static const char *TAG = "tab5c6";
  * (msg_id, bytes, length), so inventing serialization on top would be
  * pointless work: both sides are ours and are built together.
  */
-#define MSG_HOST_VIVO     C6_MSG_HOST_VIVO
-#define MSG_HOST_ENVIAR   C6_MSG_HOST_ENVIAR
-#define MSG_HOST_CANAL    C6_MSG_HOST_CANAL
-#define MSG_HOST_ESPNOW   C6_MSG_HOST_ESPNOW
-#define MSG_C6_PRONTO     C6_MSG_PRONTO
-#define MSG_C6_RECEBIDO   C6_MSG_RECEBIDO
-#define MSG_C6_ESTADO     C6_MSG_ESTADO
+#define MSG_HOST_VIVO C6_MSG_HOST_VIVO
+#define MSG_HOST_ENVIAR C6_MSG_HOST_ENVIAR
+#define MSG_HOST_CANAL C6_MSG_HOST_CANAL
+#define MSG_HOST_ESPNOW C6_MSG_HOST_ESPNOW
+#define MSG_C6_PRONTO C6_MSG_PRONTO
+#define MSG_C6_RECEBIDO C6_MSG_RECEBIDO
+#define MSG_C6_ESTADO C6_MSG_ESTADO
 
 /* What THIS firmware can do is reported in PRONTO and INFO. The three radio
  * extras set their bits only when COMPILED in (depending on c6/'s sdkconfig),
@@ -94,8 +94,7 @@ static const char *TAG = "tab5c6";
 #else
 #define CAP_154 0
 #endif
-#define CAPS (C6_CAP_ESPNOW | C6_CAP_FAREJO | C6_CAP_CRU | C6_CAP_INFO \
-              | CAP_CSI | CAP_FTM | CAP_154)
+#define CAPS (C6_CAP_ESPNOW | C6_CAP_FAREJO | C6_CAP_CRU | C6_CAP_INFO | CAP_CSI | CAP_FTM | CAP_154)
 
 /* What THIS chip can do beyond what was compiled. The FTM initiator does not
  * exist on C6 revisions v0.0/v0.1: esp_wifi_init itself (esp_wifi/src/wifi_init.c)
@@ -107,7 +106,10 @@ static uint8_t caps_reais(void)
     uint8_t c = CAPS;
     esp_chip_info_t ci;
     esp_chip_info(&ci);
-    if (ci.model == CHIP_ESP32C6 && ci.revision <= 1) { c &= (uint8_t)~C6_CAP_FTM; }
+    if (ci.model == CHIP_ESP32C6 && ci.revision <= 1)
+    {
+        c &= (uint8_t)~C6_CAP_FTM;
+    }
     return c;
 }
 
@@ -120,16 +122,16 @@ static uint8_t chip_rev_info(void)
     return (uint8_t)(0x80 | (((ci.revision / 100) & 0x7) << 4) | ((ci.revision % 100) & 0xF));
 }
 
-static const uint8_t DIFUSAO[ESP_NOW_ETH_ALEN] = { 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF };
+static const uint8_t DIFUSAO[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 /* Diagnostics for radio extras, returned in INFO: without the C6 serial log
  * (which requires the Downloader), this is the only way for the P4 to know where it stopped. */
-static volatile int16_t  s_csi_err = 0, s_z154_err = 0;
+static volatile int16_t s_csi_err = 0, s_z154_err = 0;
 static volatile uint32_t s_csi_cb = 0, s_csi_env = 0, s_z154_rx = 0;
-static volatile int16_t  s_csi_err2 = 0;
-static volatile bool     s_z154_lig = false;          /* 802.15.4 listening now */
-static bool              s_z154_habilitado __attribute__((unused)) = false;   /* esp_ieee802154_enable completed (once) */
-static volatile uint8_t  s_csi_etapa = 0, s_csi_modo = 0;
+static volatile int16_t s_csi_err2 = 0;
+static volatile bool s_z154_lig = false;                       /* 802.15.4 listening now */
+static bool s_z154_habilitado __attribute__((unused)) = false; /* esp_ieee802154_enable completed (once) */
+static volatile uint8_t s_csi_etapa = 0, s_csi_modo = 0;
 /* Radio extras are enabled by the RPC task and disabled by the watchdog
  * (esp_timer); this lock keeps both from touching the driver at the same time. */
 static SemaphoreHandle_t s_radio_mtx = NULL;
@@ -180,7 +182,10 @@ static volatile bool s_pendente = false;
 
 static void save_image_guard(uint8_t pend, uint8_t tent)
 {
-    if (!s_guarda) { return; }
+    if (!s_guarda)
+    {
+        return;
+    }
     nvs_set_u8(s_guarda, "pend", pend);
     nvs_set_u8(s_guarda, "tent", tent);
     nvs_commit(s_guarda);
@@ -189,7 +194,10 @@ static void save_image_guard(uint8_t pend, uint8_t tent)
 static void abandon_and_revert(void *arg)
 {
     (void)arg;
-    if (s_confirmado) { return; }
+    if (s_confirmado)
+    {
+        return;
+    }
 
     /* "THE OTHER slot" (next_update_partition), where the image that wrote
      * this one resides. NOT esp_ota_get_last_invalid_partition(): it finds only
@@ -203,19 +211,27 @@ static void abandon_and_revert(void *arg)
 
     ESP_LOGE(TAG, "new image unconfirmed by host - reverting");
 
-    for (int i = 0; i < 2; ++i) {
-        if (!cand[i]) { continue; }
+    for (int i = 0; i < 2; ++i)
+    {
+        if (!cand[i])
+        {
+            continue;
+        }
 
         esp_app_desc_t d;
-        if (esp_ota_get_partition_description(cand[i], &d) == ESP_OK) {
+        if (esp_ota_get_partition_description(cand[i], &d) == ESP_OK)
+        {
             ESP_LOGE(TAG, "trying '%s' (%s %s)", cand[i]->label,
                      d.project_name, d.version);
-        } else {
+        }
+        else
+        {
             ESP_LOGE(TAG, "'%s' has no valid image - skipping", cand[i]->label);
             continue;
         }
 
-        if (esp_ota_set_boot_partition(cand[i]) == ESP_OK) {
+        if (esp_ota_set_boot_partition(cand[i]) == ESP_OK)
+        {
             /* Clear the guard FIRST: the rollback image reads the same NVS, and
              * with "pend" set it would also consider itself new and roll back again. */
             save_image_guard(0, 0);
@@ -236,54 +252,76 @@ static void start_image_guard(void)
 {
     esp_ota_img_states_t st;
     const esp_partition_t *rodando = esp_ota_get_running_partition();
-    const bool chegou_por_ota = rodando
-        && esp_ota_get_state_partition(rodando, &st) == ESP_OK
-        && st == ESP_OTA_IMG_PENDING_VERIFY;
+    const bool chegou_por_ota = rodando && esp_ota_get_state_partition(rodando, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY;
 
     uint8_t pend = 0, tent = 0;
-    if (nvs_open("tab5c6", NVS_READWRITE, &s_guarda) != ESP_OK) {
+    if (nvs_open("tab5c6", NVS_READWRITE, &s_guarda) != ESP_OK)
+    {
         /* Without NVS there is no application guard: use bootloader rollback
          * and the classic grace period (VIVO marks the image valid). */
         s_guarda = 0;
         pend = chegou_por_ota ? 1 : 0;
-    } else {
-        if (chegou_por_ota) {
-            pend = 1; tent = 0;
-        } else {
+    }
+    else
+    {
+        if (chegou_por_ota)
+        {
+            pend = 1;
+            tent = 0;
+        }
+        else
+        {
             nvs_get_u8(s_guarda, "pend", &pend);
             nvs_get_u8(s_guarda, "tent", &tent);
         }
-        if (pend) { ++tent; }
+        if (pend)
+        {
+            ++tent;
+        }
         save_image_guard(pend, tent);
         /* With the guard stored, the bootloader has already done its part. */
-        if (chegou_por_ota) { esp_ota_mark_app_valid_cancel_rollback(); }
+        if (chegou_por_ota)
+        {
+            esp_ota_mark_app_valid_cancel_rollback();
+        }
     }
 
     s_pendente = pend != 0;
-    if (!s_pendente) {
+    if (!s_pendente)
+    {
         ESP_LOGI(TAG, "image confirmed: no grace period");
         return;
     }
-    if (tent > GUARDA_MAX_BOOTS) {
+    if (tent > GUARDA_MAX_BOOTS)
+    {
         ESP_LOGE(TAG, "new image: %u boots without confirmation", (unsigned)tent);
         abandon_and_revert(NULL);
         return;
     }
-    const esp_timer_create_args_t ta = { .callback = abandon_and_revert, .name = "grace_period" };
-    if (esp_timer_create(&ta, &s_carencia) == ESP_OK) {
+    const esp_timer_create_args_t ta = {.callback = abandon_and_revert, .name = "grace_period"};
+    if (esp_timer_create(&ta, &s_carencia) == ESP_OK)
+    {
         esp_timer_start_once(s_carencia, (uint64_t)PRAZO_HOST_MS * 1000);
         ESP_LOGW(TAG, "NEW image on trial (boot %u of %u): no host VIVO in %d s, "
-                      "returning to the previous image", (unsigned)tent, GUARDA_MAX_BOOTS + 1,
+                      "returning to the previous image",
+                 (unsigned)tent, GUARDA_MAX_BOOTS + 1,
                  PRAZO_HOST_MS / 1000);
     }
 }
 
 static void host_confirmed(void)
 {
-    if (s_confirmado) { return; }
+    if (s_confirmado)
+    {
+        return;
+    }
     s_confirmado = true;
-    if (s_carencia) { esp_timer_stop(s_carencia); }
-    if (s_pendente) {
+    if (s_carencia)
+    {
+        esp_timer_stop(s_carencia);
+    }
+    if (s_pendente)
+    {
         save_image_guard(0, 0);
         s_pendente = false;
         ESP_LOGI(TAG, "host confirmed the link - new image is permanent");
@@ -315,7 +353,7 @@ static void host_confirmed(void)
  * Item = msg_id (4 B) + body. Full means drop it (the host is not consuming;
  * blocking here would only make things worse; losing a record is better than
  * stopping the radio). */
-#define SAIDA_RING_BYTES  (12 * 1024)
+#define SAIDA_RING_BYTES (12 * 1024)
 
 static RingbufHandle_t s_saida = NULL;
 static volatile uint32_t s_saida_perdas = 0;
@@ -323,17 +361,24 @@ static volatile uint32_t s_saida_perdas = 0;
 /* In TWO parts (header + body), so callers do not need to join both in their
  * own buffer. Any task; NEVER from an ISR. */
 static bool queue_message_parts(uint32_t msg_id, const uint8_t *cab, size_t ncab,
-                        const uint8_t *body, size_t ncorpo)
+                                const uint8_t *body, size_t ncorpo)
 {
-    if (!s_saida) { return false; }
+    if (!s_saida)
+    {
+        return false;
+    }
     uint8_t *it = NULL;
-    if (xRingbufferSendAcquire(s_saida, (void **)&it, 4 + ncab + ncorpo, 0) != pdTRUE || !it) {
+    if (xRingbufferSendAcquire(s_saida, (void **)&it, 4 + ncab + ncorpo, 0) != pdTRUE || !it)
+    {
         s_saida_perdas++;
         return false;
     }
     memcpy(it, &msg_id, 4);
     memcpy(it + 4, cab, ncab);
-    if (ncorpo) { memcpy(it + 4 + ncab, body, ncorpo); }
+    if (ncorpo)
+    {
+        memcpy(it + 4 + ncab, body, ncorpo);
+    }
     xRingbufferSendComplete(s_saida, it);
     return true;
 }
@@ -346,11 +391,16 @@ static void queue_message(uint32_t msg_id, const uint8_t *data, size_t n)
 static void output_task(void *arg)
 {
     (void)arg;
-    for (;;) {
+    for (;;)
+    {
         size_t n = 0;
         uint8_t *it = (uint8_t *)xRingbufferReceive(s_saida, &n, portMAX_DELAY);
-        if (!it) { continue; }
-        if (n > 4) {
+        if (!it)
+        {
+            continue;
+        }
+        if (n > 4)
+        {
             uint32_t msg_id;
             memcpy(&msg_id, it, 4);
             eh_cp_feat_peer_data_send(msg_id, it + 4, n - 4);
@@ -379,10 +429,11 @@ static void output_task(void *arg)
  * otherwise treat it as raw text. SEND: use dialects heard in the last 10
  * minutes; if nothing has been heard yet, use both (to be discoverable). */
 
-typedef struct {                       /* = espnow_data_t from espnow.c */
-    uint8_t type    : 4;
+typedef struct
+{ /* = espnow_data_t from espnow.c */
+    uint8_t type : 4;
     uint8_t version : 2;
-    uint8_t         : 2;
+    uint8_t : 2;
     uint8_t size;
     espnow_frame_head_t frame_head;
     uint8_t dest_addr[6];
@@ -390,13 +441,13 @@ typedef struct {                       /* = espnow_data_t from espnow.c */
     uint8_t payload[0];
 } __attribute__((packed)) pacote_espressif_t;
 
-#define ESPRESSIF_VERSAO   2           /* component's ESPNOW_VERSION */
-#define ESPRESSIF_REPETE   3           /* copies with the same magic (receivers discard duplicates) */
+#define ESPRESSIF_VERSAO 2 /* component's ESPNOW_VERSION */
+#define ESPRESSIF_REPETE 3 /* copies with the same magic (receivers discard duplicates) */
 #define DIALETO_VALIDADE_US (10LL * 60 * 1000000)
 
-static uint8_t  s_meu_mac[ESP_NOW_ETH_ALEN];
-static uint16_t s_magicos[32];         /* latest 'magic' values: discard retransmissions */
-static int      s_magico_prox = 0, s_magicos_n = 0;
+static uint8_t s_meu_mac[ESP_NOW_ETH_ALEN];
+static uint16_t s_magicos[32]; /* latest 'magic' values: discard retransmissions */
+static int s_magico_prox = 0, s_magicos_n = 0;
 /* Two tasks touch the ring (WiFi receive and c6envio recording our own): the
  * lock is brief, with 32 comparisons. */
 static portMUX_TYPE s_magico_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -408,11 +459,18 @@ static bool magico_visto(uint16_t m)
     portENTER_CRITICAL(&s_magico_mux);
     /* Only FILLED entries: the ring starts at zero, and a legitimate magic 0
      * (the library chooses 0 through 65535) would otherwise be discarded as a duplicate. */
-    for (int i = 0; i < s_magicos_n && !visto; ++i) { visto = (s_magicos[i] == m); }
-    if (!visto) {
+    for (int i = 0; i < s_magicos_n && !visto; ++i)
+    {
+        visto = (s_magicos[i] == m);
+    }
+    if (!visto)
+    {
         s_magicos[s_magico_prox] = m;
         s_magico_prox = (s_magico_prox + 1) % 32;
-        if (s_magicos_n < 32) { ++s_magicos_n; }
+        if (s_magicos_n < 32)
+        {
+            ++s_magicos_n;
+        }
     }
     portEXIT_CRITICAL(&s_magico_mux);
     return visto;
@@ -421,14 +479,18 @@ static bool magico_visto(uint16_t m)
 /* A peer must be REGISTERED before any send, including broadcast. */
 static esp_err_t ensure_peer(const uint8_t mac[ESP_NOW_ETH_ALEN])
 {
-    if (esp_now_is_peer_exist(mac)) { return ESP_OK; }
-    esp_now_peer_info_t p = { 0 };
+    if (esp_now_is_peer_exist(mac))
+    {
+        return ESP_OK;
+    }
+    esp_now_peer_info_t p = {0};
     memcpy(p.peer_addr, mac, ESP_NOW_ETH_ALEN);
-    p.ifidx   = WIFI_IF_STA;
+    p.ifidx = WIFI_IF_STA;
     p.channel = 0;
     p.encrypt = false;
     esp_err_t r = esp_now_add_peer(&p);
-    if (r == ESP_ERR_ESPNOW_FULL) {
+    if (r == ESP_ERR_ESPNOW_FULL)
+    {
         /* TABLE FULL (ESP_NOW_MAX_TOTAL_PEER_NUM = 20). Each new unicast
          * destination occupies a slot forever; at number 21, every send to a
          * new MAC would fail until C6 reboots. Release unicasts (keep broadcast)
@@ -437,25 +499,33 @@ static esp_err_t ensure_peer(const uint8_t mac[ESP_NOW_ETH_ALEN])
         uint8_t erase[ESP_NOW_MAX_TOTAL_PEER_NUM][ESP_NOW_ETH_ALEN];
         int n = 0;
         esp_now_peer_info_t q;
-        for (bool start = true; n < ESP_NOW_MAX_TOTAL_PEER_NUM
-                                 && esp_now_fetch_peer(start, &q) == ESP_OK; start = false) {
-            if (memcmp(q.peer_addr, DIFUSAO, ESP_NOW_ETH_ALEN) != 0) {
+        for (bool start = true; n < ESP_NOW_MAX_TOTAL_PEER_NUM && esp_now_fetch_peer(start, &q) == ESP_OK; start = false)
+        {
+            if (memcmp(q.peer_addr, DIFUSAO, ESP_NOW_ETH_ALEN) != 0)
+            {
                 memcpy(erase[n++], q.peer_addr, ESP_NOW_ETH_ALEN);
             }
         }
-        for (int i = 0; i < n; ++i) { esp_now_del_peer(erase[i]); }
+        for (int i = 0; i < n; ++i)
+        {
+            esp_now_del_peer(erase[i]);
+        }
         r = esp_now_add_peer(&p);
     }
     return r;
 }
 
 /* In the WiFi task context: choose the dialect, copy, and return. */
-static volatile bool s_repassar_cru = false;   /* C6_AJ_CRU */
+static volatile bool s_repassar_cru = false; /* C6_AJ_CRU */
 
 static void on_receive(const esp_now_recv_info_t *info, const uint8_t *data, int n)
 {
-    if (!info || !data || n <= 0) { return; }
-    if (s_repassar_cru) {
+    if (!info || !data || n <= 0)
+    {
+        return;
+    }
+    if (s_repassar_cru)
+    {
         /* TRANSPARENT PIPE: the entire frame, uninterpreted, with RSSI. A new
          * format from another device becomes the P4's problem, without reflashing C6. */
         uint8_t cab[9];
@@ -465,7 +535,7 @@ static void on_receive(const esp_now_recv_info_t *info, const uint8_t *data, int
         cab[8] = (memcmp(info->des_addr, DIFUSAO, ESP_NOW_ETH_ALEN) == 0) ? 1 : 0;
         /* Up to 1470 B: ESP-NOW v2.0 (IDF 5.4+, newer C6/S3) exceeds 250. */
         queue_message_parts(C6_MSG_RECEBIDO_CRU, cab, sizeof(cab), data,
-                    (size_t)(n > ESP_NOW_MAX_DATA_LEN_V2 ? ESP_NOW_MAX_DATA_LEN_V2 : n));
+                            (size_t)(n > ESP_NOW_MAX_DATA_LEN_V2 ? ESP_NOW_MAX_DATA_LEN_V2 : n));
     }
     const uint8_t *texto = data;
     int tam = n;
@@ -473,24 +543,37 @@ static void on_receive(const esp_now_recv_info_t *info, const uint8_t *data, int
     uint8_t marca = (memcmp(info->des_addr, DIFUSAO, ESP_NOW_ETH_ALEN) == 0) ? 1 : 0;
 
     const pacote_espressif_t *p = (const pacote_espressif_t *)data;
-    if (n >= (int)sizeof(pacote_espressif_t) && p->version == ESPRESSIF_VERSAO
-            && p->type < ESPNOW_DATA_TYPE_MAX
-            && n == (int)(sizeof(pacote_espressif_t) + p->size)) {
+    if (n >= (int)sizeof(pacote_espressif_t) && p->version == ESPRESSIF_VERSAO && p->type < ESPNOW_DATA_TYPE_MAX && n == (int)(sizeof(pacote_espressif_t) + p->size))
+    {
         /* ESPRESSIF FORMAT. Only DATA is a message; the rest (ACK, control) is
          * their protocol. Encrypted packets cannot be read. A retransmission
          * with an already-delivered 'magic' is discarded. */
-        if (p->type != ESPNOW_DATA_TYPE_DATA || p->frame_head.security) { return; }
-        if (memcmp(p->src_addr, s_meu_mac, ESP_NOW_ETH_ALEN) == 0) { return; }
-        if (magico_visto(p->frame_head.magic)) { return; }
+        if (p->type != ESPNOW_DATA_TYPE_DATA || p->frame_head.security)
+        {
+            return;
+        }
+        if (memcmp(p->src_addr, s_meu_mac, ESP_NOW_ETH_ALEN) == 0)
+        {
+            return;
+        }
+        if (magico_visto(p->frame_head.magic))
+        {
+            return;
+        }
         texto = p->payload;
         tam = p->size;
-        de = p->src_addr;   /* author (may have been forwarded by another device) */
-        marca |= 2;         /* bit 1: arrived in Espressif format */
+        de = p->src_addr; /* author (may have been forwarded by another device) */
+        marca |= 2;       /* bit 1: arrived in Espressif format */
         s_ouviu_espressif_us = esp_timer_get_time();
-    } else {
+    }
+    else
+    {
         s_ouviu_cru_us = esp_timer_get_time();
     }
-    if (tam <= 0) { return; }
+    if (tam <= 0)
+    {
+        return;
+    }
 
     uint8_t cab[7];
     memcpy(cab, de, ESP_NOW_ETH_ALEN);
@@ -501,18 +584,20 @@ static void on_receive(const esp_now_recv_info_t *info, const uint8_t *data, int
 
 static void on_send(const esp_now_send_info_t *info, esp_now_send_status_t st)
 {
-    (void)info; (void)st;   /* status comes from esp_now_send's return (see send_task) */
+    (void)info;
+    (void)st; /* status comes from esp_now_send's return (see send_task) */
 }
 
 /* SEND IN A DEDICATED TASK: Espressif-format copies need a delay between them,
  * and the request arrives in the peer_data callback, which cannot wait. */
-typedef struct {
-    uint8_t  mac[ESP_NOW_ETH_ALEN];
+typedef struct
+{
+    uint8_t mac[ESP_NOW_ETH_ALEN];
     uint16_t n;
-    bool     cru;              /* C6_MSG_HOST_CRU: once, raw, no header, no ESTADO */
+    bool cru; /* C6_MSG_HOST_CRU: once, raw, no header, no ESTADO */
     /* Sized for v2.0 (1470): raw mode can send a large frame to v2.0 peers;
      * text (both dialects) remains capped at 250. */
-    uint8_t  texto[ESP_NOW_MAX_DATA_LEN_V2];
+    uint8_t texto[ESP_NOW_MAX_DATA_LEN_V2];
 } envio_t;
 static QueueHandle_t s_envio = NULL;
 
@@ -521,38 +606,58 @@ static void send_task(void *arg)
     (void)arg;
     static envio_t e;
     static uint8_t frame[ESP_NOW_MAX_DATA_LEN];
-    for (;;) {
-        if (xQueueReceive(s_envio, &e, portMAX_DELAY) != pdTRUE) { continue; }
+    for (;;)
+    {
+        if (xQueueReceive(s_envio, &e, portMAX_DELAY) != pdTRUE)
+        {
+            continue;
+        }
         bool ok = (ensure_peer(e.mac) == ESP_OK);
-        if (e.cru) {
-            if (ok) { esp_now_send(e.mac, e.texto, e.n); }
+        if (e.cru)
+        {
+            if (ok)
+            {
+                esp_now_send(e.mac, e.texto, e.n);
+            }
             continue;
         }
 
         const int64_t now = esp_timer_get_time();
         bool espressif = s_ouviu_espressif_us && (now - s_ouviu_espressif_us) < DIALETO_VALIDADE_US;
-        bool cru       = s_ouviu_cru_us       && (now - s_ouviu_cru_us)       < DIALETO_VALIDADE_US;
-        if (!espressif && !cru) { espressif = cru = true; }   /* nothing heard: use both */
+        bool cru = s_ouviu_cru_us && (now - s_ouviu_cru_us) < DIALETO_VALIDADE_US;
+        if (!espressif && !cru)
+        {
+            espressif = cru = true;
+        } /* nothing heard: use both */
 
         bool algum = false;
-        if (ok && cru) {
+        if (ok && cru)
+        {
             algum |= (esp_now_send(e.mac, e.texto, e.n) == ESP_OK);
         }
-        if (ok && espressif) {
+        if (ok && espressif)
+        {
             /* Header + text within the SAME 250-byte limit (ESP-NOW v1.0,
              * used by ESP32/S3 devices). */
             const size_t cab = sizeof(pacote_espressif_t);
             size_t t = e.n;
-            if (cab + t > ESP_NOW_MAX_DATA_LEN) { t = ESP_NOW_MAX_DATA_LEN - cab; }
+            if (cab + t > ESP_NOW_MAX_DATA_LEN)
+            {
+                t = ESP_NOW_MAX_DATA_LEN - cab;
+            }
             memset(frame, 0, cab);
             pacote_espressif_t *p = (pacote_espressif_t *)frame;
             p->version = ESPRESSIF_VERSAO;
             p->type = ESPNOW_DATA_TYPE_DATA;
             p->size = (uint8_t)t;
             uint16_t m = (uint16_t)esp_random();
-            if (m == 0) { m = 1; }
+            if (m == 0)
+            {
+                m = 1;
+            }
             p->frame_head.magic = m;
-            uint8_t canal = 0; wifi_second_chan_t sec;
+            uint8_t canal = 0;
+            wifi_second_chan_t sec;
             esp_wifi_get_channel(&canal, &sec);
             p->frame_head.channel = canal;
             p->frame_head.broadcast = (memcmp(e.mac, DIFUSAO, ESP_NOW_ETH_ALEN) == 0);
@@ -560,8 +665,9 @@ static void send_task(void *arg)
             memcpy(p->dest_addr, e.mac, ESP_NOW_ETH_ALEN);
             memcpy(p->src_addr, s_meu_mac, ESP_NOW_ETH_ALEN);
             memcpy(p->payload, e.texto, t);
-            magico_visto(m);   /* do not treat our own forwarded echo as a message */
-            for (int k = 0; k < ESPRESSIF_REPETE; ++k) {
+            magico_visto(m); /* do not treat our own forwarded echo as a message */
+            for (int k = 0; k < ESPRESSIF_REPETE; ++k)
+            {
                 algum |= (esp_now_send(e.mac, frame, cab + t) == ESP_OK);
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
@@ -586,13 +692,16 @@ static void enable_espnow(void)
      * this check, s_espnow_no_ar would remain true with ESP-NOW dead underneath,
      * and all traffic would silently disappear until C6 rebooted. */
     uint32_t ver;
-    if (s_espnow_no_ar && esp_now_get_version(&ver) != ESP_OK) {
+    if (s_espnow_no_ar && esp_now_get_version(&ver) != ESP_OK)
+    {
         ESP_LOGW(TAG, "ESP-NOW went down underneath (WiFi restarted) - re-enabling");
         s_espnow_no_ar = false;
     }
-    if (!s_espnow_no_ar) {
+    if (!s_espnow_no_ar)
+    {
         const esp_err_t r = esp_now_init();
-        if (r != ESP_OK) {
+        if (r != ESP_OK)
+        {
             ESP_LOGW(TAG, "esp_now_init: %s - is WiFi really up?", esp_err_to_name(r));
             return;
         }
@@ -600,14 +709,19 @@ static void enable_espnow(void)
         esp_now_register_send_cb(on_send);
         ensure_peer(DIFUSAO);
         esp_wifi_get_mac(WIFI_IF_STA, s_meu_mac);
-        if (!s_envio) {
+        if (!s_envio)
+        {
             s_envio = xQueueCreate(4, sizeof(envio_t));
-            if (s_envio) { xTaskCreate(send_task, "c6send", 4096, NULL, 4, NULL); }
+            if (s_envio)
+            {
+                xTaskCreate(send_task, "c6send", 4096, NULL, 4, NULL);
+            }
         }
         s_espnow_no_ar = true;
     }
     /* Always send PRONTO (the host repeats the request until it sees this). */
-    uint8_t canal = 0; wifi_second_chan_t sec;
+    uint8_t canal = 0;
+    wifi_second_chan_t sec;
     esp_wifi_get_channel(&canal, &sec);
     uint8_t msg[ESP_NOW_ETH_ALEN + 3];
     memcpy(msg, s_meu_mac, ESP_NOW_ETH_ALEN);
@@ -638,17 +752,19 @@ static void enable_espnow(void)
  * (3/4 full, so searches stop after few comparisons). Beyond 96, count it as
  * lost—the P4 sees that in the batch and can shorten the period.
  */
-#define FJ_VAGAS   128
-#define FJ_MAX      96
+#define FJ_VAGAS 128
+#define FJ_MAX 96
 
-typedef struct {
+typedef struct
+{
     uint8_t mac[6];
-    int8_t  ult, max;
-    int16_t soma;       /* 255 x -128 fits */
+    int8_t ult, max;
+    int16_t soma; /* 255 x -128 fits */
     uint8_t n, tipos, canal, usado;
-} fj_ent_t;             /* 16 B */
+} fj_ent_t; /* 16 B */
 
-typedef struct {
+typedef struct
+{
     fj_ent_t e[FJ_VAGAS];
     uint16_t usados, perdidos;
     uint32_t quadros;
@@ -660,48 +776,63 @@ static portMUX_TYPE s_fj_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* Read by the callback for each frame: simple copies of the active s_cfg. */
 static volatile int8_t s_fj_rssi_min = -128;
-static volatile bool   s_fj_tem_alvo = false;
-static uint8_t         s_fj_alvo[6];
+static volatile bool s_fj_tem_alvo = false;
+static uint8_t s_fj_alvo[6];
 static volatile uint32_t s_fj_quadros_total = 0;
 
 /* Host request -> sniffer (under s_fj_mux). */
 static c6_farejo_cfg_t s_fj_pedido;
-static bool            s_fj_tem_pedido = false;
-static int64_t         s_fj_validade_us = 0;
+static bool s_fj_tem_pedido = false;
+static int64_t s_fj_validade_us = 0;
 
 static volatile bool s_farejando = false;
-static TaskHandle_t  s_fj_tarefa = NULL;
+static TaskHandle_t s_fj_tarefa = NULL;
 /* Where the radio returns when the sniffer stops: the channel used when it
  * started, or the one the host requested AFTERWARD (C6_MSG_HOST_CANAL during
  * sniffing). Without this, disabling the sniffer would undo ESP-NOW's requested
  * "fixed channel" midway through operation. */
 static volatile uint8_t s_canal_volta = 0;
 
-static void radio_watchdog(int64_t now);   /* radio extras, below */
+static void radio_watchdog(int64_t now); /* radio extras, below */
 
 static void on_sniff(void *buf, wifi_promiscuous_pkt_type_t tipo)
 {
     const wifi_promiscuous_pkt_t *pk = (const wifi_promiscuous_pkt_t *)buf;
-    if (!pk || pk->rx_ctrl.sig_len < 16) { return; }   /* no addr2 */
+    if (!pk || pk->rx_ctrl.sig_len < 16)
+    {
+        return;
+    } /* no addr2 */
     const int8_t rssi = (int8_t)pk->rx_ctrl.rssi;
-    if (rssi < s_fj_rssi_min) { return; }
+    if (rssi < s_fj_rssi_min)
+    {
+        return;
+    }
 
     const uint8_t *q = pk->payload;
     const uint8_t sub = q[0] >> 4;
     uint8_t t;
-    if (tipo == WIFI_PKT_MGMT) {
+    if (tipo == WIFI_PKT_MGMT)
+    {
         t = (sub == 8 || sub == 5) ? C6_FT_BEACON
-          : (sub == 4)             ? C6_FT_PROCURA
-          :                          C6_FT_GERENCIA;
-    } else if (tipo == WIFI_PKT_DATA) {
+            : (sub == 4)           ? C6_FT_PROCURA
+                                   : C6_FT_GERENCIA;
+    }
+    else if (tipo == WIFI_PKT_DATA)
+    {
         const uint8_t ds = q[1] & 0x03;
-        t = C6_FT_DADOS | (ds == 1 ? C6_FT_PARA_AP : ds == 2 ? C6_FT_DO_AP : 0);
-    } else {
+        t = C6_FT_DADOS | (ds == 1 ? C6_FT_PARA_AP : ds == 2 ? C6_FT_DO_AP
+                                                             : 0);
+    }
+    else
+    {
         return;
     }
 
-    const uint8_t *ta = q + 10;   /* addr2 = transmitter, in management and data frames */
-    if (s_fj_tem_alvo && memcmp(ta, s_fj_alvo, 6) != 0) { return; }
+    const uint8_t *ta = q + 10; /* addr2 = transmitter, in management and data frames */
+    if (s_fj_tem_alvo && memcmp(ta, s_fj_alvo, 6) != 0)
+    {
+        return;
+    }
     const uint8_t canal = (uint8_t)pk->rx_ctrl.channel;
 
     /* The last 3 bytes vary between devices; the first 3 identify the manufacturer. */
@@ -710,10 +841,16 @@ static void on_sniff(void *buf, wifi_promiscuous_pkt_type_t tipo)
     portENTER_CRITICAL(&s_fj_mux);
     fj_tab_t *tb = &s_fj[s_fj_ativa];
     tb->frames++;
-    for (int k = 0; k < FJ_VAGAS; ++k, h = (h + 1) & (FJ_VAGAS - 1)) {
+    for (int k = 0; k < FJ_VAGAS; ++k, h = (h + 1) & (FJ_VAGAS - 1))
+    {
         fj_ent_t *e = &tb->e[h];
-        if (!e->usado) {
-            if (tb->usados >= FJ_MAX) { tb->perdidos++; break; }
+        if (!e->usado)
+        {
+            if (tb->usados >= FJ_MAX)
+            {
+                tb->perdidos++;
+                break;
+            }
             memcpy(e->mac, ta, 6);
             e->usado = 1;
             e->ult = e->max = rssi;
@@ -724,10 +861,18 @@ static void on_sniff(void *buf, wifi_promiscuous_pkt_type_t tipo)
             tb->usados++;
             break;
         }
-        if (memcmp(e->mac, ta, 6) == 0) {
+        if (memcmp(e->mac, ta, 6) == 0)
+        {
             e->ult = rssi;
-            if (rssi > e->max) { e->max = rssi; }
-            if (e->n < 255) { e->soma += rssi; e->n++; }
+            if (rssi > e->max)
+            {
+                e->max = rssi;
+            }
+            if (e->n < 255)
+            {
+                e->soma += rssi;
+                e->n++;
+            }
             e->tipos |= t;
             e->channel = canal;
             break;
@@ -747,15 +892,21 @@ static void close_batch(void)
     s_fj_ativa ^= 1;
     portEXIT_CRITICAL(&s_fj_mux);
 
-    if (tb->usados) {
-        uint8_t canal = 0; wifi_second_chan_t sec;
+    if (tb->usados)
+    {
+        uint8_t canal = 0;
+        wifi_second_chan_t sec;
         esp_wifi_get_channel(&canal, &sec);
         c6_farejo_lote_t *cab = (c6_farejo_lote_t *)msg;
         c6_farejo_reg_t *r = (c6_farejo_reg_t *)(msg + sizeof(*cab));
         int n = 0;
-        for (int i = 0; i < FJ_VAGAS; ++i) {
+        for (int i = 0; i < FJ_VAGAS; ++i)
+        {
             const fj_ent_t *e = &tb->e[i];
-            if (!e->usado) { continue; }
+            if (!e->usado)
+            {
+                continue;
+            }
             memcpy(r[n].mac, e->mac, 6);
             r[n].rssi_ult = e->ult;
             r[n].rssi_max = e->max;
@@ -763,16 +914,20 @@ static void close_batch(void)
             r[n].n = e->n;
             r[n].tipos = e->tipos;
             r[n].channel = e->channel;
-            if (++n == C6_FAREJO_LOTE_MAX) {
-                cab->channel = canal; cab->n = (uint8_t)n;
+            if (++n == C6_FAREJO_LOTE_MAX)
+            {
+                cab->channel = canal;
+                cab->n = (uint8_t)n;
                 cab->perdidos = tb->perdidos;
                 cab->frames = tb->frames > 0xFFFF ? 0xFFFF : (uint16_t)tb->frames;
                 eh_cp_feat_peer_data_send(C6_MSG_FAREJO, msg, sizeof(*cab) + n * sizeof(*r));
                 n = 0;
             }
         }
-        if (n) {
-            cab->channel = canal; cab->n = (uint8_t)n;
+        if (n)
+        {
+            cab->channel = canal;
+            cab->n = (uint8_t)n;
             cab->perdidos = tb->perdidos;
             cab->frames = tb->frames > 0xFFFF ? 0xFFFF : (uint16_t)tb->frames;
             eh_cp_feat_peer_data_send(C6_MSG_FAREJO, msg, sizeof(*cab) + n * sizeof(*r));
@@ -791,19 +946,25 @@ static bool is_associated(void)
 static void sniffer_task(void *arg)
 {
     (void)arg;
-    c6_farejo_cfg_t cfg = { 0 };   /* current RAW request: only used for comparison */
+    c6_farejo_cfg_t cfg = {0}; /* current RAW request: only used for comparison */
     uint16_t lote_ms = 250, perm_ms = 200, mascara = 0;
     bool saltou = false;
     int64_t prox_lote = 0, prox_salto = 0;
     int canal_idx = 0;
 
-    for (;;) {
+    for (;;)
+    {
         /* 1. New host request? */
         c6_farejo_cfg_t novo;
         bool tem = false;
         int64_t validade;
         portENTER_CRITICAL(&s_fj_mux);
-        if (s_fj_tem_pedido) { novo = s_fj_pedido; s_fj_tem_pedido = false; tem = true; }
+        if (s_fj_tem_pedido)
+        {
+            novo = s_fj_pedido;
+            s_fj_tem_pedido = false;
+            tem = true;
+        }
         validade = s_fj_validade_us;
         portEXIT_CRITICAL(&s_fj_mux);
 
@@ -812,14 +973,23 @@ static void sniffer_task(void *arg)
          * watchdog's esp_timer only wakes it (see radio_watchdog_cb). */
         radio_watchdog(now);
         bool stop = s_farejando && now > validade;
-        if (stop) { ESP_LOGW(TAG, "sniffer: host did not renew - disabling"); }
+        if (stop)
+        {
+            ESP_LOGW(TAG, "sniffer: host did not renew - disabling");
+        }
 
-        if (tem && !novo.liga) { stop = s_farejando; tem = false; }
+        if (tem && !novo.liga)
+        {
+            stop = s_farejando;
+            tem = false;
+        }
 
-        if (stop) {
+        if (stop)
+        {
             esp_wifi_set_promiscuous(false);
             s_farejando = false;
-            if (saltou && s_canal_volta && !is_associated()) {
+            if (saltou && s_canal_volta && !is_associated())
+            {
                 esp_wifi_set_channel(s_canal_volta, WIFI_SECOND_CHAN_NONE);
             }
             saltou = false;
@@ -829,38 +999,50 @@ static void sniffer_task(void *arg)
             ESP_LOGI(TAG, "sniffer disabled");
         }
 
-        if (tem) {
+        if (tem)
+        {
             const bool changed = !s_farejando || memcmp(&novo, &cfg, sizeof(cfg)) != 0;
-            if (changed) {
+            if (changed)
+            {
                 cfg = novo;
                 lote_ms = cfg.lote_ms ? cfg.lote_ms : 250;
-                if (lote_ms < 50) { lote_ms = 50; }
+                if (lote_ms < 50)
+                {
+                    lote_ms = 50;
+                }
                 perm_ms = cfg.permanencia_ms ? cfg.permanencia_ms : 200;
-                if (perm_ms < 50) { perm_ms = 50; }
-                mascara = cfg.canais & 0x3FFE;   /* channels 1..13 */
+                if (perm_ms < 50)
+                {
+                    perm_ms = 50;
+                }
+                mascara = cfg.canais & 0x3FFE; /* channels 1..13 */
                 s_fj_rssi_min = cfg.rssi_min ? cfg.rssi_min : -128;
-                static const uint8_t zero[6] = { 0 };
+                static const uint8_t zero[6] = {0};
                 memcpy(s_fj_alvo, cfg.alvo, 6);
                 s_fj_tem_alvo = memcmp(cfg.alvo, zero, 6) != 0;
 
                 const uint8_t f = cfg.filtro ? cfg.filtro : (C6_FJ_MGMT | C6_FJ_DADOS);
-                wifi_promiscuous_filter_t filtro = { .filter_mask =
-                    ((f & C6_FJ_MGMT)  ? WIFI_PROMIS_FILTER_MASK_MGMT : 0) |
-                    ((f & C6_FJ_DADOS) ? WIFI_PROMIS_FILTER_MASK_DATA : 0) };
+                wifi_promiscuous_filter_t filtro = {.filter_mask =
+                                                        ((f & C6_FJ_MGMT) ? WIFI_PROMIS_FILTER_MASK_MGMT : 0) |
+                                                        ((f & C6_FJ_DADOS) ? WIFI_PROMIS_FILTER_MASK_DATA : 0)};
                 esp_wifi_set_promiscuous_filter(&filtro);
             }
-            if (!s_farejando) {
+            if (!s_farejando)
+            {
                 wifi_second_chan_t sec;
                 uint8_t canal_antes = 0;
                 esp_wifi_get_channel(&canal_antes, &sec);
                 s_canal_volta = canal_antes;
                 esp_wifi_set_promiscuous_rx_cb(on_sniff);
                 const esp_err_t r = esp_wifi_set_promiscuous(true);
-                if (r != ESP_OK) {
+                if (r != ESP_OK)
+                {
                     /* WiFi may be stopped, for example. The host renews in
                      * seconds and we try again—never abort. */
                     ESP_LOGW(TAG, "sniffer: promiscuous mode rejected (%s)", esp_err_to_name(r));
-                } else {
+                }
+                else
+                {
                     s_farejando = true;
                     prox_lote = now + (int64_t)lote_ms * 1000;
                     prox_salto = now;
@@ -868,34 +1050,46 @@ static void sniffer_task(void *arg)
                     ESP_LOGI(TAG, "sniffer enabled: channel %u, mask 0x%04x, batch %u ms",
                              (unsigned)s_canal_volta, (unsigned)mascara, (unsigned)lote_ms);
                 }
-            } else {
+            }
+            else
+            {
                 /* Renewal: WiFi may have been stopped and restarted, and
                  * esp_wifi_stop disables promiscuous mode underneath. */
                 bool enabled = false;
-                if (esp_wifi_get_promiscuous(&enabled) == ESP_OK && !enabled) {
+                if (esp_wifi_get_promiscuous(&enabled) == ESP_OK && !enabled)
+                {
                     esp_wifi_set_promiscuous_rx_cb(on_sniff);
                     esp_wifi_set_promiscuous(true);
                 }
             }
         }
 
-        if (!s_farejando) {
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* stopped: zero CPU */
+        if (!s_farejando)
+        {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY); /* stopped: zero CPU */
             continue;
         }
 
         /* 2. Channel hopping—only when free of the router. */
         const bool um_so = mascara && !(mascara & (mascara - 1));
-        if (mascara && now >= prox_salto) {
-            if (!is_associated()) {
+        if (mascara && now >= prox_salto)
+        {
+            if (!is_associated())
+            {
                 int c = 0;
-                for (int k = 0; k < 14 && !c; ++k) {
+                for (int k = 0; k < 14 && !c; ++k)
+                {
                     canal_idx = canal_idx % 13 + 1;
-                    if (mascara & (1u << canal_idx)) { c = canal_idx; }
+                    if (mascara & (1u << canal_idx))
+                    {
+                        c = canal_idx;
+                    }
                 }
-                uint8_t current = 0; wifi_second_chan_t sec;
+                uint8_t current = 0;
+                wifi_second_chan_t sec;
                 esp_wifi_get_channel(&current, &sec);
-                if (c && c != current) {
+                if (c && c != current)
+                {
                     esp_wifi_set_channel((uint8_t)c, WIFI_SECOND_CHAN_NONE);
                     saltou = true;
                 }
@@ -906,18 +1100,31 @@ static void sniffer_task(void *arg)
         }
 
         /* 3. Batch. */
-        if (now >= prox_lote) {
+        if (now >= prox_lote)
+        {
             close_batch();
             prox_lote += (int64_t)lote_ms * 1000;
-            if (prox_lote <= now) { prox_lote = now + (int64_t)lote_ms * 1000; }
+            if (prox_lote <= now)
+            {
+                prox_lote = now + (int64_t)lote_ms * 1000;
+            }
         }
 
         /* 4. Sleep until the next event—or a host request. */
         int64_t prox = prox_lote;
-        if (mascara && prox_salto < prox) { prox = prox_salto; }
-        if (validade < prox) { prox = validade + 1000; }
+        if (mascara && prox_salto < prox)
+        {
+            prox = prox_salto;
+        }
+        if (validade < prox)
+        {
+            prox = validade + 1000;
+        }
         int64_t esp = (prox - esp_timer_get_time()) / 1000;
-        if (esp < 1) { esp = 1; }
+        if (esp < 1)
+        {
+            esp = 1;
+        }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(esp));
     }
 }
@@ -925,20 +1132,24 @@ static void sniffer_task(void *arg)
 /* Called in the RPC task: only record the request and wake the sniffer. */
 static void request_sniffer(const uint8_t *data, size_t n)
 {
-    c6_farejo_cfg_t c = { 0 };
+    c6_farejo_cfg_t c = {0};
     memcpy(&c, data, n < sizeof(c) ? n : sizeof(c));
     portENTER_CRITICAL(&s_fj_mux);
     s_fj_pedido = c;
     s_fj_tem_pedido = true;
     s_fj_validade_us = esp_timer_get_time() + (int64_t)C6_FAREJO_VALIDADE_MS * 1000;
     portEXIT_CRITICAL(&s_fj_mux);
-    if (s_fj_tarefa) { xTaskNotifyGive(s_fj_tarefa); }
+    if (s_fj_tarefa)
+    {
+        xTaskNotifyGive(s_fj_tarefa);
+    }
 }
 
 static void send_info(void)
 {
-    c6_info_t i = { 0 };
-    uint8_t canal = 0; wifi_second_chan_t sec;
+    c6_info_t i = {0};
+    uint8_t canal = 0;
+    wifi_second_chan_t sec;
     esp_wifi_get_channel(&canal, &sec);
     i.proto = C6_PROTO_VERSAO;
     i.caps = caps_reais();
@@ -958,8 +1169,7 @@ static void send_info(void)
     i.csi_etapa = s_csi_etapa;
     i.csi_modo = s_csi_modo;
     i.saida_perdas = s_saida_perdas;
-    i.flags = (esp_core_dump_image_check() == ESP_OK ? C6_INFO_F_COREDUMP : 0)
-            | (s_pendente ? C6_INFO_F_EM_PROVA : 0);
+    i.flags = (esp_core_dump_image_check() == ESP_OK ? C6_INFO_F_COREDUMP : 0) | (s_pendente ? C6_INFO_F_EM_PROVA : 0);
 #if CONFIG_IEEE802154_ENABLED
     i.z154_estado = s_z154_lig ? 1 : (s_z154_habilitado ? 2 : 0);
 #endif
@@ -981,21 +1191,30 @@ static void send_info(void)
 
 /* ---- CSI ---- */
 #if CONFIG_ESP_WIFI_CSI_ENABLED
-static volatile bool     s_csi_lig = false;
-static volatile int64_t  s_csi_validade = 0, s_csi_prox_us = 0;
+static volatile bool s_csi_lig = false;
+static volatile int64_t s_csi_validade = 0, s_csi_prox_us = 0;
 static volatile uint16_t s_csi_intervalo_ms = 100;
-static volatile int8_t   s_csi_rssi_min = -128;
-static volatile bool     s_csi_so_alvo = false;
-static uint8_t           s_csi_alvo[6];
+static volatile int8_t s_csi_rssi_min = -128;
+static volatile bool s_csi_so_alvo = false;
+static uint8_t s_csi_alvo[6];
 
 static void on_csi(void *ctx, wifi_csi_info_t *info)
 {
     (void)ctx;
     s_csi_cb++;
-    if (!info || !info->buf || info->len <= 0) { return; }
+    if (!info || !info->buf || info->len <= 0)
+    {
+        return;
+    }
     const int8_t rssi = (int8_t)info->rx_ctrl.rssi;
-    if (rssi < s_csi_rssi_min) { return; }
-    if (s_csi_so_alvo && memcmp(info->mac, s_csi_alvo, 6) != 0) { return; }
+    if (rssi < s_csi_rssi_min)
+    {
+        return;
+    }
+    if (s_csi_so_alvo && memcmp(info->mac, s_csi_alvo, 6) != 0)
+    {
+        return;
+    }
     const int64_t now = esp_timer_get_time();
     /* CADENCE RATE, not "interval since the last one". When the source and
      * limit have the same rate (10 Hz ping, 100 ms limit), variable air delay
@@ -1003,7 +1222,10 @@ static void on_csi(void *ctx, wifi_csi_info_t *info)
      * a test produced 64 records out of 110. Cadence advances in fixed steps
      * and accepts the first frame of each step; after a long delay, restart at now. */
     const int64_t passo = (int64_t)s_csi_intervalo_ms * 1000;
-    if (now < s_csi_prox_us) { return; }
+    if (now < s_csi_prox_us)
+    {
+        return;
+    }
     s_csi_prox_us = (now - s_csi_prox_us > passo) ? now + passo : s_csi_prox_us + passo;
 
     c6_csi_cab_t cab;
@@ -1016,15 +1238,16 @@ static void on_csi(void *ctx, wifi_csi_info_t *info)
      * different set of subcarriers), whether 40 MHz is used, and whether the
      * first word is valid. On C6 it may be invalid due to a hardware limit;
      * readers unaware of this would interpret two garbage subcarriers. */
-    cab.flags = (uint8_t)((info->rx_ctrl.cur_bb_format & 0x0F) << 4)
-              | (info->rx_ctrl.second ? C6_CSI_F_HT40 : 0)
-              | (info->first_word_invalid ? C6_CSI_F_W0_RUIM : 0)
-              | (len > C6_CSI_MAX ? C6_CSI_F_CORTADO : 0);
-    if (len > C6_CSI_MAX) { len = C6_CSI_MAX; }
+    cab.flags = (uint8_t)((info->rx_ctrl.cur_bb_format & 0x0F) << 4) | (info->rx_ctrl.second ? C6_CSI_F_HT40 : 0) | (info->first_word_invalid ? C6_CSI_F_W0_RUIM : 0) | (len > C6_CSI_MAX ? C6_CSI_F_CORTADO : 0);
+    if (len > C6_CSI_MAX)
+    {
+        len = C6_CSI_MAX;
+    }
     cab.len = (uint16_t)len;
     cab.t_us = (uint32_t)now;
     if (queue_message_parts(C6_MSG_CSI, (const uint8_t *)&cab, sizeof(cab),
-                    (const uint8_t *)info->buf, (size_t)len)) {
+                            (const uint8_t *)info->buf, (size_t)len))
+    {
         s_csi_env++;
     }
 }
@@ -1046,25 +1269,44 @@ static esp_err_t csi_aplicar(uint8_t *etapa)
 {
     /* Start with the driver's configuration; untouched fields remain as it expects. */
     wifi_csi_config_t cfg;
-    if (esp_wifi_get_csi_config(&cfg) != ESP_OK) { memset(&cfg, 0, sizeof(cfg)); }
+    if (esp_wifi_get_csi_config(&cfg) != ESP_OK)
+    {
+        memset(&cfg, 0, sizeof(cfg));
+    }
     cfg.enable = 1;
-    cfg.acquire_csi_legacy = 1;    /* L-LTF: beacons and 11b/g frames—every device */
-    cfg.acquire_csi_ht20 = 1;      /* HT-LTF: 802.11n */
+    cfg.acquire_csi_legacy = 1; /* L-LTF: beacons and 11b/g frames—every device */
+    cfg.acquire_csi_ht20 = 1;   /* HT-LTF: 802.11n */
     cfg.acquire_csi_ht40 = 1;
-    cfg.acquire_csi_su = 1;        /* HE-LTF: 802.11ax SU, sent by a WiFi 6 router to C6 */
-    cfg.acquire_csi_he_stbc = 2;   /* as in Espressif's esp-csi for C6 */
+    cfg.acquire_csi_su = 1;      /* HE-LTF: 802.11ax SU, sent by a WiFi 6 router to C6 */
+    cfg.acquire_csi_he_stbc = 2; /* as in Espressif's esp-csi for C6 */
     esp_err_t r;
-    *etapa = 1; r = esp_wifi_set_csi_config(&cfg);        if (r != ESP_OK) { return r; }
-    *etapa = 2; r = esp_wifi_set_csi_rx_cb(on_csi, NULL); if (r != ESP_OK) { return r; }
-    *etapa = 3; r = esp_wifi_set_csi(true);               if (r != ESP_OK) { return r; }
-    *etapa = 0; return ESP_OK;
+    *etapa = 1;
+    r = esp_wifi_set_csi_config(&cfg);
+    if (r != ESP_OK)
+    {
+        return r;
+    }
+    *etapa = 2;
+    r = esp_wifi_set_csi_rx_cb(on_csi, NULL);
+    if (r != ESP_OK)
+    {
+        return r;
+    }
+    *etapa = 3;
+    r = esp_wifi_set_csi(true);
+    if (r != ESP_OK)
+    {
+        return r;
+    }
+    *etapa = 0;
+    return ESP_OK;
 }
 
 static void enable_csi(const c6_csi_cfg_t *c)
 {
     s_csi_intervalo_ms = c->min_intervalo_ms ? c->min_intervalo_ms : 100;
     s_csi_rssi_min = c->rssi_min ? c->rssi_min : -128;
-    static const uint8_t zero[6] = { 0 };
+    static const uint8_t zero[6] = {0};
     s_csi_so_alvo = c->so_alvo && memcmp(c->alvo, zero, 6) != 0;
     memcpy(s_csi_alvo, c->alvo, 6);
     s_csi_validade = esp_timer_get_time() + (int64_t)C6_RADIO_VALIDADE_MS * 1000;
@@ -1074,15 +1316,20 @@ static void enable_csi(const c6_csi_cfg_t *c)
      * trap handled by the sniffer during its renewal. */
     uint8_t etapa = 0;
     const esp_err_t r = csi_aplicar(&etapa);
-    s_csi_err = s_csi_err2 = (int16_t)r;   /* latest attempt; P4 reads this in INFO */
+    s_csi_err = s_csi_err2 = (int16_t)r; /* latest attempt; P4 reads this in INFO */
     s_csi_etapa = etapa;
-    if (r == ESP_OK) {
-        if (!s_csi_lig) {
+    if (r == ESP_OK)
+    {
+        if (!s_csi_lig)
+        {
             ESP_LOGI(TAG, "CSI enabled (interval %u ms)", (unsigned)s_csi_intervalo_ms);
         }
         s_csi_lig = true;
-    } else {
-        if (!s_csi_lig) {
+    }
+    else
+    {
+        if (!s_csi_lig)
+        {
             ESP_LOGW(TAG, "CSI rejected: %s (step %u)%s", esp_err_to_name(r), (unsigned)etapa,
                      r == ESP_FAIL ? " - host initialized WiFi with csi_enable 0" : "");
         }
@@ -1092,12 +1339,21 @@ static void enable_csi(const c6_csi_cfg_t *c)
 }
 static void disable_csi(void)
 {
-    if (s_csi_lig) { esp_wifi_set_csi(false); s_csi_lig = false; ESP_LOGI(TAG, "CSI disabled"); }
+    if (s_csi_lig)
+    {
+        esp_wifi_set_csi(false);
+        s_csi_lig = false;
+        ESP_LOGI(TAG, "CSI disabled");
+    }
     s_csi_modo = 0;
 }
 static void csi_watchdog(int64_t now)
 {
-    if (s_csi_lig && now > s_csi_validade) { ESP_LOGW(TAG, "CSI: host did not renew"); disable_csi(); }
+    if (s_csi_lig && now > s_csi_validade)
+    {
+        ESP_LOGW(TAG, "CSI: host did not renew");
+        disable_csi();
+    }
 }
 #else
 static void enable_csi(const c6_csi_cfg_t *c) { (void)c; }
@@ -1111,8 +1367,12 @@ static bool s_ftm_evt = false;
 
 static void on_ftm_report(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    (void)arg; (void)base;
-    if (id != WIFI_EVENT_FTM_REPORT || !data) { return; }
+    (void)arg;
+    (void)base;
+    if (id != WIFI_EVENT_FTM_REPORT || !data)
+    {
+        return;
+    }
     const wifi_event_ftm_report_t *r = (const wifi_event_ftm_report_t *)data;
     c6_ftm_rep_t rep;
     memcpy(rep.peer, r->peer_mac, 6);
@@ -1123,27 +1383,34 @@ static void on_ftm_report(void *arg, esp_event_base_t base, int32_t id, void *da
     rep.rtt_raw_ns = r->rtt_raw;
     queue_message(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
     /* The detailed report does not go to the P4 (only the summary); free it to avoid leaking. */
-    if (r->ftm_report_data) { free(r->ftm_report_data); }
+    if (r->ftm_report_data)
+    {
+        free(r->ftm_report_data);
+    }
 }
 
 static void start_ftm(const c6_ftm_cfg_t *c)
 {
-    if (!s_ftm_evt) {
+    if (!s_ftm_evt)
+    {
         esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_FTM_REPORT, on_ftm_report, NULL);
         s_ftm_evt = true;
     }
     wifi_ftm_initiator_cfg_t cfg = {
-        .channel = c->channel, .frm_count = c->frm_count, .burst_period = c->burst_period,
+        .channel = c->channel,
+        .frm_count = c->frm_count,
+        .burst_period = c->burst_period,
     };
     memcpy(cfg.resp_mac, c->peer, 6);
     const esp_err_t r = esp_wifi_ftm_initiate_session(&cfg);
-    if (r != ESP_OK) {
+    if (r != ESP_OK)
+    {
         ESP_LOGW(TAG, "FTM rejected (%s)", esp_err_to_name(r));
         c6_ftm_rep_t rep;
         memset(&rep, 0, sizeof(rep));
         memcpy(rep.peer, c->peer, 6);
         rep.status = C6_FTM_NAO_INICIOU;
-        rep.rtt_raw_ns = (uint32_t)(int32_t)r;   /* reason; without it P4 would only know "failed" */
+        rep.rtt_raw_ns = (uint32_t)(int32_t)r; /* reason; without it P4 would only know "failed" */
         queue_message(C6_MSG_FTM, (const uint8_t *)&rep, sizeof(rep));
     }
 }
@@ -1153,7 +1420,7 @@ static void start_ftm(const c6_ftm_cfg_t *c) { (void)c; }
 
 /* ---- 802.15.4 (the other radio: raw Thread/Zigbee) ---- */
 #if CONFIG_IEEE802154_ENABLED
-static volatile int64_t  s_z154_validade = 0, s_z154_ult_us = 0;
+static volatile int64_t s_z154_validade = 0, s_z154_ult_us = 0;
 static volatile uint16_t s_z154_intervalo_ms = 0;
 
 /* WEAK driver symbol: ours wins and is called for every received frame.
@@ -1170,12 +1437,17 @@ void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *in
      * and its stack is small. */
     static uint8_t it[4 + sizeof(c6_154_cab_t) + C6_154_MAX];
     s_z154_rx++;
-    if (frame && info && s_saida) {
+    if (frame && info && s_saida)
+    {
         const int64_t now = esp_timer_get_time();
-        if (!s_z154_intervalo_ms || now - s_z154_ult_us >= (int64_t)s_z154_intervalo_ms * 1000) {
+        if (!s_z154_intervalo_ms || now - s_z154_ult_us >= (int64_t)s_z154_intervalo_ms * 1000)
+        {
             s_z154_ult_us = now;
-            uint8_t len = frame[0];            /* frame[0] = length; frame follows (FCS replaced by RSSI/LQI) */
-            if (len > C6_154_MAX) { len = C6_154_MAX; }
+            uint8_t len = frame[0]; /* frame[0] = length; frame follows (FCS replaced by RSSI/LQI) */
+            if (len > C6_154_MAX)
+            {
+                len = C6_154_MAX;
+            }
             const uint32_t id = C6_MSG_154;
             c6_154_cab_t cab;
             cab.channel = info->channel;
@@ -1187,10 +1459,14 @@ void esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *in
             memcpy(it + 4, &cab, sizeof(cab));
             memcpy(it + 4 + sizeof(cab), frame + 1, len);
             BaseType_t acordou = pdFALSE;
-            if (xRingbufferSendFromISR(s_saida, it, 4 + sizeof(cab) + len, &acordou) != pdTRUE) {
+            if (xRingbufferSendFromISR(s_saida, it, 4 + sizeof(cab) + len, &acordou) != pdTRUE)
+            {
                 s_saida_perdas++;
             }
-            if (acordou) { portYIELD_FROM_ISR(); }
+            if (acordou)
+            {
+                portYIELD_FROM_ISR();
+            }
         }
     }
     esp_ieee802154_receive_handle_done(frame);
@@ -1236,17 +1512,21 @@ static void enable_z154(const c6_154_cfg_t *c)
     s_z154_validade = esp_timer_get_time() + (int64_t)C6_RADIO_VALIDADE_MS * 1000;
     uint8_t canal = (c->channel >= 11 && c->channel <= 26) ? c->channel : 15;
     const bool novo = !s_z154_lig;
-    if (!s_z154_habilitado) {
+    if (!s_z154_habilitado)
+    {
         esp_coex_wifi_i154_enable();
         const esp_err_t r = esp_ieee802154_enable();
         s_z154_err = (int16_t)r;
-        if (r != ESP_OK) {
+        if (r != ESP_OK)
+        {
             ESP_LOGW(TAG, "802.15.4 enable rejected: %s", esp_err_to_name(r));
             esp_coex_ieee802154_status_disable();
             return;
         }
         s_z154_habilitado = true;
-    } else if (novo) {
+    }
+    else if (novo)
+    {
         esp_coex_ieee802154_status_enable();
     }
     s_z154_lig = true;
@@ -1259,20 +1539,30 @@ static void enable_z154(const c6_154_cfg_t *c)
     const esp_err_t rr = esp_ieee802154_receive();
     s_z154_err = (int16_t)rr;
     /* Renewal arrives every few seconds: log only changes. */
-    if (novo) { ESP_LOGI(TAG, "802.15.4 listening: channel %u", (unsigned)canal); }
+    if (novo)
+    {
+        ESP_LOGI(TAG, "802.15.4 listening: channel %u", (unsigned)canal);
+    }
 }
 static void disable_z154(void)
 {
-    if (!s_z154_lig) { return; }
-    esp_ieee802154_set_rx_when_idle(false);   /* otherwise the driver would keep listening by itself */
+    if (!s_z154_lig)
+    {
+        return;
+    }
+    esp_ieee802154_set_rx_when_idle(false); /* otherwise the driver would keep listening by itself */
     esp_ieee802154_sleep();
-    esp_coex_ieee802154_status_disable();     /* outside the arbiter: WiFi gets the radio exclusively */
+    esp_coex_ieee802154_status_disable(); /* outside the arbiter: WiFi gets the radio exclusively */
     s_z154_lig = false;
     ESP_LOGI(TAG, "802.15.4 sleeping");
 }
 static void z154_watchdog(int64_t now)
 {
-    if (s_z154_lig && now > s_z154_validade) { ESP_LOGW(TAG, "802.15.4: host did not renew"); disable_z154(); }
+    if (s_z154_lig && now > s_z154_validade)
+    {
+        ESP_LOGW(TAG, "802.15.4: host did not renew");
+        disable_z154();
+    }
 }
 #else
 static void enable_z154(const c6_154_cfg_t *c) { (void)c; }
@@ -1289,7 +1579,10 @@ static void z154_watchdog(int64_t a) { (void)a; }
  * the sniffer task, which is already sleeping and performs the check calmly. */
 static void radio_watchdog(int64_t now)
 {
-    if (!s_radio_mtx) { return; }
+    if (!s_radio_mtx)
+    {
+        return;
+    }
     xSemaphoreTake(s_radio_mtx, portMAX_DELAY);
     csi_watchdog(now);
     z154_watchdog(now);
@@ -1305,7 +1598,10 @@ static void radio_watchdog_cb(void *arg)
     const bool csi = false;
 #endif
     /* Nothing enabled: wake nobody (an idle C6 stays idle). */
-    if ((csi || s_z154_lig) && s_fj_tarefa) { xTaskNotifyGive(s_fj_tarefa); }
+    if ((csi || s_z154_lig) && s_fj_tarefa)
+    {
+        xTaskNotifyGive(s_fj_tarefa);
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1316,26 +1612,35 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
 {
     (void)ctx;
 
-    switch (msg_id) {
+    switch (msg_id)
+    {
     case MSG_HOST_VIVO:
         host_confirmed();
         break;
 
-    case MSG_HOST_ENVIAR: {
-        if (n <= ESP_NOW_ETH_ALEN) { return; }
+    case MSG_HOST_ENVIAR:
+    {
+        if (n <= ESP_NOW_ETH_ALEN)
+        {
+            return;
+        }
         /* STATIC: envio_t is 1.5 KB and this is esp_hosted's pserial_task
          * stack (4 KB, not ours). Only it calls do_host; xQueueSend copies
          * before returning. */
         static envio_t e;
         memcpy(e.mac, data, ESP_NOW_ETH_ALEN);
         size_t tam = n - ESP_NOW_ETH_ALEN;
-        if (tam > ESP_NOW_MAX_DATA_LEN) { tam = ESP_NOW_MAX_DATA_LEN; }
+        if (tam > ESP_NOW_MAX_DATA_LEN)
+        {
+            tam = ESP_NOW_MAX_DATA_LEN;
+        }
         memcpy(e.texto, data + ESP_NOW_ETH_ALEN, tam);
         e.n = (uint16_t)tam;
         e.cru = false;
         /* ESP-NOW inactive or queue full: fail IMMEDIATELY, or the Tab5 screen
          * would wait for confirmation forever. */
-        if (!s_espnow_no_ar || !s_envio || xQueueSend(s_envio, &e, 0) != pdTRUE) {
+        if (!s_espnow_no_ar || !s_envio || xQueueSend(s_envio, &e, 0) != pdTRUE)
+        {
             uint8_t st[ESP_NOW_ETH_ALEN + 1];
             memcpy(st, e.mac, ESP_NOW_ETH_ALEN);
             st[6] = 0;
@@ -1352,12 +1657,19 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
         request_sniffer(data, n);
         break;
 
-    case C6_MSG_HOST_CRU: {
-        if (n <= ESP_NOW_ETH_ALEN || !s_espnow_no_ar || !s_envio) { return; }
-        static envio_t e;   /* static: see MSG_HOST_ENVIAR */
+    case C6_MSG_HOST_CRU:
+    {
+        if (n <= ESP_NOW_ETH_ALEN || !s_espnow_no_ar || !s_envio)
+        {
+            return;
+        }
+        static envio_t e; /* static: see MSG_HOST_ENVIAR */
         memcpy(e.mac, data, ESP_NOW_ETH_ALEN);
         size_t tam = n - ESP_NOW_ETH_ALEN;
-        if (tam > ESP_NOW_MAX_DATA_LEN_V2) { tam = ESP_NOW_MAX_DATA_LEN_V2; }
+        if (tam > ESP_NOW_MAX_DATA_LEN_V2)
+        {
+            tam = ESP_NOW_MAX_DATA_LEN_V2;
+        }
         memcpy(e.texto, data + ESP_NOW_ETH_ALEN, tam);
         e.n = (uint16_t)tam;
         e.cru = true;
@@ -1366,29 +1678,76 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
     }
 
     case C6_MSG_HOST_AJUSTE:
-        if (n < 1) { return; }
-        switch (data[0]) {
-        case C6_AJ_INFO: send_info(); break;
-        case C6_AJ_CRU:  s_repassar_cru = (n >= 2 && data[1]); break;
-        default: break;   /* key added by a newer P4: ignore */
+        if (n < 1)
+        {
+            return;
+        }
+        switch (data[0])
+        {
+        case C6_AJ_INFO:
+            send_info();
+            break;
+        case C6_AJ_CRU:
+            s_repassar_cru = (n >= 2 && data[1]);
+            break;
+        default:
+            break; /* key added by a newer P4: ignore */
         }
         break;
 
-    case C6_MSG_HOST_RADIO: {
-        if (n < 1) { return; }
-        const uint8_t  sub = data[0];
+    case C6_MSG_HOST_RADIO:
+    {
+        if (n < 1)
+        {
+            return;
+        }
+        const uint8_t sub = data[0];
         const uint8_t *p = data + 1;
-        const size_t   m = n - 1;
-        if (!s_radio_mtx) { return; }
+        const size_t m = n - 1;
+        if (!s_radio_mtx)
+        {
+            return;
+        }
         xSemaphoreTake(s_radio_mtx, portMAX_DELAY);
-        switch (sub) {
-        case C6_RX_CSI: { c6_csi_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          if (c.liga) { enable_csi(&c); } else { disable_csi(); } break; }
-        case C6_RX_FTM: { c6_ftm_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          start_ftm(&c); break; }
-        case C6_RX_154: { c6_154_cfg_t c = { 0 }; memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
-                          if (c.liga) { enable_z154(&c); } else { disable_z154(); } break; }
-        default: break;   /* subcommand added by a newer P4: ignore */
+        switch (sub)
+        {
+        case C6_RX_CSI:
+        {
+            c6_csi_cfg_t c = {0};
+            memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
+            if (c.liga)
+            {
+                enable_csi(&c);
+            }
+            else
+            {
+                disable_csi();
+            }
+            break;
+        }
+        case C6_RX_FTM:
+        {
+            c6_ftm_cfg_t c = {0};
+            memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
+            start_ftm(&c);
+            break;
+        }
+        case C6_RX_154:
+        {
+            c6_154_cfg_t c = {0};
+            memcpy(&c, p, m < sizeof(c) ? m : sizeof(c));
+            if (c.liga)
+            {
+                enable_z154(&c);
+            }
+            else
+            {
+                disable_z154();
+            }
+            break;
+        }
+        default:
+            break; /* subcommand added by a newer P4: ignore */
         }
         xSemaphoreGive(s_radio_mtx);
         break;
@@ -1399,10 +1758,14 @@ static void do_host(uint32_t msg_id, const uint8_t *data, size_t n, void *ctx)
          * for "it does not work." If C6 is associated with an AP, the AP owns
          * the channel—changing it here would drop the connection. Therefore we
          * change it only when the P4 explicitly asks. */
-        if (n >= 1) {
+        if (n >= 1)
+        {
             esp_err_t r = esp_wifi_set_channel(data[0], WIFI_SECOND_CHAN_NONE);
             ESP_LOGI(TAG, "channel -> %u: %s", (unsigned)data[0], esp_err_to_name(r));
-            if (r == ESP_OK) { s_canal_volta = data[0]; }   /* sniffer returns to this */
+            if (r == ESP_OK)
+            {
+                s_canal_volta = data[0];
+            } /* sniffer returns to this */
         }
         break;
 
@@ -1418,20 +1781,25 @@ void app_main(void)
     ESP_LOGI(TAG, "Tab5 C6 firmware (esp_hosted + ESP-NOW + sniffer), contract v%d", C6_PROTO_VERSAO);
 
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         nvs_flash_erase();
         ret = nvs_flash_init();
     }
     /* No ESP_ERROR_CHECK, for the same reason as the registration below:
      * nothing here may take down the coprocessor. NVS failure is bad; aborting is MUCH worse. */
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "nvs_flash_init: %s", esp_err_to_name(ret)); }
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "nvs_flash_init: %s", esp_err_to_name(ret));
+    }
     esp_event_loop_create_default();
 
     /* New image guard BEFORE anything that could fail. */
     start_image_guard();
 
     s_saida = xRingbufferCreate(SAIDA_RING_BYTES, RINGBUF_TYPE_NOSPLIT);
-    if (s_saida) {
+    if (s_saida)
+    {
         xTaskCreate(output_task, "c6output", 4096, NULL, 5, NULL);
     }
     /* Lock before the sniffer: it runs the radio-extra watchdog. */
@@ -1444,8 +1812,9 @@ void app_main(void)
     /* Radio-extra watchdog (CSI/802.15.4): once per second, wake the sniffer if
      * either is enabled. */
     esp_timer_handle_t guarda = NULL;
-    const esp_timer_create_args_t ga = { .callback = radio_watchdog_cb, .name = "radio_watchdog" };
-    if (esp_timer_create(&ga, &guarda) == ESP_OK) {
+    const esp_timer_create_args_t ga = {.callback = radio_watchdog_cb, .name = "radio_watchdog"};
+    if (esp_timer_create(&ga, &guarda) == ESP_OK)
+    {
         esp_timer_start_periodic(guarda, 1000000);
     }
 
@@ -1463,23 +1832,28 @@ void app_main(void)
      *
      * Rule: NOTHING in a coprocessor's app_main may abort. It is its only
      * recovery path. */
-    for (int tent = 0; ; ++tent) {
+    for (int tent = 0;; ++tent)
+    {
         const esp_err_t r = eh_cp_feat_peer_data_register_callback(MSG_HOST_VIVO, do_host, NULL);
-        if (r == ESP_OK) { break; }
-        if (tent == 0) {
+        if (r == ESP_OK)
+        {
+            break;
+        }
+        if (tent == 0)
+        {
             ESP_LOGW(TAG, "peer_data is not up yet (%s) - waiting",
                      esp_err_to_name(r));
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     eh_cp_feat_peer_data_register_callback(MSG_HOST_ENVIAR, do_host, NULL);
-    eh_cp_feat_peer_data_register_callback(MSG_HOST_CANAL,  do_host, NULL);
+    eh_cp_feat_peer_data_register_callback(MSG_HOST_CANAL, do_host, NULL);
     eh_cp_feat_peer_data_register_callback(MSG_HOST_ESPNOW, do_host, NULL);
     /* peer_data table: 8 of 8 slots, including VIVO (see tab5_c6.h). */
     eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_FAREJO, do_host, NULL);
-    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_CRU,    do_host, NULL);
+    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_CRU, do_host, NULL);
     eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_AJUSTE, do_host, NULL);
-    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_RADIO,  do_host, NULL);  /* 8th: table full */
+    eh_cp_feat_peer_data_register_callback(C6_MSG_HOST_RADIO, do_host, NULL); /* 8th: table full */
 
     ESP_LOGI(TAG, "ready - waiting for host to enable ESP-NOW");
 }

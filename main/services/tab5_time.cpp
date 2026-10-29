@@ -15,24 +15,24 @@
 
 static const char* TAG = "hora";
 
-// Carimbo mais antigo que isto e "essa fonte ainda nao sincronizou of
-// verdade" (2025-01-01T00:00:00Z).
+// Stamp older than this and "this font has not yet synchronized"
+// true" (2025-01-01T00:00:00Z).
 #define EPOCH_MINIMO 1735689600u
 
-// NAO ESCREVE O RTC TODA VOLTA - o chip tem vida finita of escrita, e o
-// clock of sistema anda sozinho entre acertos. 10 minutos corrige a deriva
-// sem martelar o barramento I2C.
+// DOES NOT WRITE THE RTC ALL THE WAY - the chip has a finite writing life, and the
+// system clock runs alone between adjustments. 10 minutes corrects the drift
+// without hammering the I2C bus.
 #define RESSINCRONIZAR_MS (10u * 60u * 1000u)
 
-// Uma fonte pior so assume depois of a melhor ficar este time sem acertar.
+// A worse source only takes over after the best this team is left without a hit.
 #define VALIDADE_MS (6u * 60u * 60u * 1000u)
 
-// Abaixo disto a diferenca e deriva, nao clock errado: ninguem precisa
-// corrigir carimbo por isso.
+// Below this the difference is drift, not the wrong clock: no one needs
+// fix stamp for this.
 #define SALTO_S 60
 
-// Uma resposta of NTP vale como "now" por este time (o lwIP pergunta of
-// novo a cada CONFIG_LWIP_SNTP_UPDATE_DELAY, 1 h).
+// An answer of NTP counts as "now" for this team (lwIP asks of
+// new every CONFIG_LWIP_SNTP_UPDATE_DELAY, 1 h).
 #define NTP_VALIDO_MS (2u * 60u * 60u * 1000u)
 
 typedef enum { NIVEL_NENHUM = 0, NIVEL_MESH, NIVEL_GPS, NIVEL_NTP } level_t;
@@ -46,14 +46,14 @@ static uint32_t s_ultima_sync_ms = 0;
 static tab5_time_jump_cb s_assinantes[MAX_ASSINANTES];
 
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // NTP
-// ---------------------------------------------------------------------------
-// O lwIP chama sntp_sync_time() com a hora recebida, e a versao default (weak)
-// faz settimeofday in hora. Esta a substitui: a resposta so e ANOTADA, e o
-// acerto passa pela mesma porta das outras fontes - com a priority, o RTC
-// e o aviso of salto. Roda in tarefa of lwIP; os dois campos sao lidos in of
-// interface, e one par rasgado custaria no maximum one acerto adiado.
+// -------------------------------------------------------------------------------
+// lwIP calls sntp_sync_time() with the received time, and the default version (weak)
+// makes settimeofday in hour. This replaces it: the answer is only WRITE DOWN, and the
+// hit goes through the same port as the other sources - with priority, the RTC
+// and the jump warning. Run in task of lwIP; both fields are read in of
+// interface, and one torn pair would cost at most one delayed hit.
 static volatile uint32_t s_ntp_epoch = 0;
 static volatile uint32_t s_ntp_ms    = 0;
 static bool              s_sntp_of_pe = false;
@@ -81,12 +81,12 @@ static uint32_t hora_ntp(void)
   return ep + (tab5_now_ms() - ms) / 1000;
 }
 
-// ---------------------------------------------------------------------------
-// GPS - so com fix e com o receptor falando now
-// ---------------------------------------------------------------------------
-// SUBSTITUI timegm() - a libc deste IDF nao a declara em <ctime> sem uma
-// macro of extensao. Formula of Howard Hinnant (days_from_civil, dominio
-// publico): dias UTC since 1970-01-01, correta em qualquer ano.
+// -------------------------------------------------------------------------------
+// GPS - only with fix and with the receiver speaking now
+// -------------------------------------------------------------------------------
+// REPLACES timegm() - the libc of this IDF does not declare it in <ctime> without a
+// macro of extension. Formula of Howard Hinnant (days_from_civil, domain
+// public): UTC days since 1970-01-01, correct in any year.
 static time_t utc_para_epoch(const struct tm& t)
 {
   int y = t.tm_year + 1900;
@@ -103,7 +103,7 @@ static time_t utc_para_epoch(const struct tm& t)
 
 static uint32_t hora_gps(void)
 {
-  if (!tab5_gps_on_air()) { return 0; }   // RMC guardado of one receptor que calou
+  if (!tab5_gps_on_air()) { return 0; }   // RMC saved from one receiver that shut down
   const nmea_time_t g = tab5_gps_time();
   if (!g.valid || !g.fix) { return 0; }
   struct tm t = { };
@@ -117,20 +117,20 @@ static uint32_t hora_gps(void)
   return (e > (time_t)EPOCH_MINIMO) ? (uint32_t)e : 0;
 }
 
-// ---------------------------------------------------------------------------
-// O ACERTO
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// THE AGREEMENT
+// -------------------------------------------------------------------------------
 static bool pode_usar(level_t level)
 {
-  if (level > s_level) { return true; }   // fonte melhor: in hora
+  if (level > s_level) { return true; }   // better source: in hora
   const uint32_t since = tab5_now_ms() - s_ultima_sync_ms;
   if (level == s_level) { return since >= RESSINCRONIZAR_MS; }
-  return since >= VALIDADE_MS;            // a melhor sumiu faz time
+  return since >= VALIDADE_MS;            // the best disappeared from the team
 }
 
-// Quanto e para que lado o clock estava errado, em palavras. O log dizia
-// "clock changed +1s", e nao dava para saber se o +1 era o clock andando
-// para frente, a correcao ou a diferenca of fuso.
+// How much and which way the clock was off, in words. The log said
+// "clock changed +1s", and it was impossible to know if the +1 was the clock moving
+// forward, the correction or difference of spindle.
 static void descrever_ajuste(int64_t antes, int64_t delta, char* out, size_t n)
 {
   if (antes < (int64_t)EPOCH_MINIMO) { snprintf(out, n, "o relogio ainda nao tinha hora"); return; }
@@ -150,8 +150,8 @@ static bool acertar(uint32_t epoch, level_t level)
   const int64_t delta = (int64_t)epoch - antes;
 
   if (level != s_level || delta > SALTO_S || delta < -SALTO_S) {
-    // HORA LOCAL no log, a mesma que a barra mostra. Em UTC ("18:19Z") ela
-    // parecia errada para quem le, que esta 3 h atras.
+    // LOCAL TIME in the log, the same as the bar shows. In UTC ("18:19Z") it
+    // seemed wrong to anyone reading it, who is 3 hours ago.
     struct tm t = { };
     tab5_local_time(epoch, &t);
     char ajuste[48];
@@ -163,9 +163,9 @@ static bool acertar(uint32_t epoch, level_t level)
   s_level = level;
   s_ultima_sync_ms = tab5_now_ms();
 
-  // O clock velho so e comparavel se era uma hora of verdade: saindo of
-  // 1970 (RTC nunca acertado) nada foi carimbado - carimbo abaixo of minimum
-  // vira "sem data" em todo lugar.
+  // The old clock is only comparable if it was a moment of truth: leaving
+  // 1970 (RTC never agreed) nothing was stamped - stamp below minimum
+  // becomes "no date" everywhere.
   if ((delta > SALTO_S || delta < -SALTO_S) && antes > (int64_t)EPOCH_MINIMO) {
     for (int i = 0; i < MAX_ASSINANTES; ++i) {
       if (s_assinantes[i]) { s_assinantes[i]((int32_t)delta); }
@@ -210,7 +210,7 @@ void tab5_local_time(uint32_t epoch_utc, struct tm* out)
 void tab5_day_filename(uint32_t epoch_utc, const char* prefixo, const char* sufixo,
                            char* out, size_t size)
 {
-  if (epoch_utc < 1577836800u) {   // 2020-01-01: antes disso o RTC nunca foi acertado
+  if (epoch_utc < 1577836800u) {   // 2020-01-01: before this the RTC was never agreed
     snprintf(out, size, "%ssem-data%s", prefixo, sufixo);
     return;
   }

@@ -1,17 +1,17 @@
 // SYSTEM LOG ON THE CARD, ONE FILE PER DAY.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // WHY
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // Until now, the ONLY way to see the log was the serial monitor connected to a
 // computer. Many bugs in this system (GPS, Mesh, and Grove in general) appear
 // away from the desk, near a window where the signal is better but the USB
 // cable cannot reach. Without a log, each incident is unproven and the cause
 // must be guessed from the symptom.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // BY DAY, NOT BY BOOT, with the reason included
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // "Per boot is complicated because we boot constantly"—the system restarts
 // throughout development (each flash.sh creates a new boot). One file per boot
 // would create an unreadable directory of short files. By DAY, using the RTC
@@ -19,9 +19,9 @@
 // several boots on one day share the SAME file, one after another, separated
 // by an "=== boot ... ===" marker.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HOW CAPTURE WORKS: replaces ESP_LOG's vprintf, without duplicating calls
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // tab5_log_iniciar() replaces the function ESP_LOG uses for output
 // (esp_log_set_vprintf) with one that does TWO things: calls the ORIGINAL
 // first (the serial console remains byte-for-byte identical) and sends a copy
@@ -29,9 +29,9 @@
 // (interface, GPS, Mesh, camera, and so on) is captured automatically; no task
 // needs to know this file exists.
 //
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // WHY A RAM BUFFER BEFORE THE CARD
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // The vprintf replacement runs on THE CALLER'S STACK—it may be the interface,
 // GPS, camera, or any other task. Writing to the card there (mount, open,
 // write, close, unmount—the ~100 ms documented by tab5_sd.hpp) would hold up

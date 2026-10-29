@@ -1,40 +1,40 @@
-// Pintura por diferenca - o auxilio que faltava aos apps.
+// Painting by difference - the help that apps were missing.
 //
-// -------------------------------------------------------------------------
-// O PROBLEMA QUE ISTO RESOLVE
-// -------------------------------------------------------------------------
-// O M5GFX desenha direto no framebuffer visivel, entao APAGAR PARA REDESENHAR
-// aparece como flash. A regra e write por top, com width fixa, e so
-// when o valor changed.
+// ------------------------------------------------------------------------
+// THE PROBLEM THIS SOLVE
+// ------------------------------------------------------------------------
+// M5GFX draws directly to the visible framebuffer, so ERASE TO REDRAW
+// appears as flash. The rule is write by top, with fixed width, and so
+// when the value changed.
 //
-// So que a regra sozinha nao bastou: foi esquecida em cinco apps (Energia,
-// Tarefas, Ajustes, Arquivos e Mesh), cada one corrigido separadamente. E
-// junto vinha sempre o mesmo segundo erro: esquecer que o SISTEMA limpa a area
-// (in abertura, on voltar of sleep) e que dali o app precisa repintar TUDO,
-// senao a screen stays em branco - foi o que aconteceu com o app Ajustes.
+// But the rule alone was not enough: it was forgotten in five apps (Energy,
+// Tasks, Adjustments, Files and Mesh), each one fixed separately. And
+// always came with the same second error: forgetting that the SYSTEM cleans the area
+// (in opening, on returning from sleep) and from there the app needs to repaint EVERYTHING,
+// otherwise the screen stays blank - that's what happened with the Settings app.
 //
-// Enquanto isso for memoria of programador, vai continuar falhando. Aqui os
-// dois passos ficam embutidos: pintura_iniciar() consulta a limpeza of area
-// sozinho, e numa pass complete TODO comparador devolve "changed" - entao o
-// app repinta everything sem precisar lembrar of nada.
+// As long as this is programmer memory, it will continue to fail. Here the
+// two steps are embedded: painting_initiar() queries the cleaning of area
+// alone, and in a complete pass EVERY comparator returns "changed" - then the
+// app repaints everything without having to remember anything.
 //
-// -------------------------------------------------------------------------
-// COMO SE USA
-// -------------------------------------------------------------------------
-//   static pintura_t s_p;
-//   static int s_bat; static char s_nome[24];
+// ------------------------------------------------------------------------
+// HOW TO USE IT
+// ------------------------------------------------------------------------
+// static painting_t s_p;
+// static int s_bat; static char s_name[24];
 //
-//   void draw(lgfx::LovyanGFX& d, const area_t& a)
-//   {
-//     pintura_iniciar(&s_p);                       // decide se e complete
-//     if (pintura_completa(&s_p)) { ...fundo, titulos, molduras... }
+// void draw(lgfx::LovyanGFX& d, const area_t& a)
+// {
+// painting_start(&s_p);                       // decide whether and complete
+// if (complete_painting(&s_p)) { ...background, titles, frames... }
 //
-//     if (pintura_mudou_i(&s_p, &s_bat, battery)) { ...desenha o numero... }
-//     if (pintura_mudou_s(&s_p, s_nome, sizeof(s_nome), name)) { ... }
-//   }
+// if (pintura_mudou_i(&s_p, &s_bat, battery)) { ...draws the number... }
+// if (pintura_mudou_s(&s_p, s_nome, sizeof(s_nome), name)) { ... }
+// }
 //
-//   // on switch of pagina, of selecao, of qualquer coisa estrutural:
-//   pintura_pedir(&s_p);  sistema_pedir_redesenho_completo();
+// // on switch of page, of selection, of anything structural:
+// painting_order(&s_p);  system_request_complete_redesign();
 
 #pragma once
 
@@ -42,30 +42,30 @@
 #include <stddef.h>
 
 typedef struct {
-  bool complete;    // esta pass repinta everything
-  bool request;      // o app pediu repintura total
-  bool ja_desenhou; // false ate a primeira pass (que e sempre complete)
+  bool complete;    // this pass repaints everything
+  bool request;      // the app requested a complete repaint
+  bool ja_desenhou; // false until the first pass (which is always complete)
 } paint_t;
 
-// Chamar no INICIO of draw(). Decide se a pass e complete, olhando: se
-// e a primeira, se o app pediu, ou se o sistema limpou a area.
+// Call at the BEGINNING of draw(). Decide whether to pass and complete, looking: if
+// and the first, if the app requested it, or if the system cleaned the area.
 void paint_start(paint_t* p);
 
-// O app pede repintura total. Use on mudar of pagina, of item selected ou
-// qualquer coisa que reorganize a screen - e chame tambem
-// sistema_pedir_redesenho_completo(), que e quem agenda o drawing.
+// The app requires complete repainting. Use on change of page, of selected item or
+// anything that rearranges the screen - and also calls
+//sistema_pedir_redesenho_completo(), which is who schedules the drawing.
 void paint_request(paint_t* p);
 
 static inline bool paint_complete(const paint_t* p) { return p->complete; }
 
-// SO PARA DECIDIR DESENHO. Nao use estes comparadores para decidir E/S (reler
-// cartao, open arquivo, falar com hardware): eles devolvem true em toda pass
-// COMPLETA, por drawing, e uma E/S que dispare repintura complete entra em loop
-// foi o que fez o keyboard virtual of app Mesh piscar sozinho.
-// Para decisao of E/S, compare in mao.
+// JUST TO DECIDE DESIGN. Do not use these comparators to decide I/O (reread
+// card, open file, talk to hardware): they return true in every pass
+// COMPLETE, by drawing, and an I/O that triggers repaint complete goes into a loop
+// was what made the virtual keyboard of app Mesh blink by itself.
+// For I/O decision, compare in hand.
 //
-// Comparadores COM MEMORIA. Guardam o valor e devolvem true when ele muda -
-// e SEMPRE true numa pass complete, que e o que faz o app repintar everything sem
-// precisar lembrar disso.
+// Comparators WITH MEMORY. They store the value and return true when it changes -
+// and ALWAYS true in a pass complete, which is what makes the app repaint everything without
+// need to remember that.
 bool paint_changed_i(const paint_t* p, int* memory, int now);
 bool paint_changed_s(const paint_t* p, char* memory, size_t size, const char* now);

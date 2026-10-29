@@ -1,26 +1,26 @@
-// O WORKER DO SISTEMA - work lento fora of tarefa of interface.
+// SYSTEM WORKER - slow work outside of interface task.
 //
-// A tarefa of interface desenha e atende o touch. Tudo que pode demorar -
-// read o cartao, varrer one arquivo, montar uma lista grande - tem que exit
-// dela, senao a screen congela enquanto o cartao responde (era o caso of Mesh,
-// que relia o historico of SD NA INTERFACE a cada message nova).
+// The interface task draws and responds to touch. All that may take -
+// read the card, scan a file, create a large list - you have to exit
+// of it, otherwise the screen freezes while the card responds (this was the case of Mesh,
+// which rereads the history of SD IN THE INTERFACE with each new message).
 //
-// Como so one app stays em first plano por vez, UM worker of sistema
-// basta para todos: o app pede, o worker executa in propria tarefa
-// (priority 2, abaixo of interface e dos servicos of radio), e when
-// termina o app recebe AVISO_TRABALHO (declare-o em app_t.notices) e pega o
-// resultado in tarefa of interface.
+// Since only one app stays in the foreground at a time, ONE system worker
+// enough for everyone: the app asks, the worker executes the task in its own right
+// (priority 2, below the interface and services of radio), and when
+// ends the app receives NOTICE_WORK (declare it in app_t.notices) and gets the
+// result in task of interface.
 //
-// O PADRAO DO RESULTADO: o work escreve num buffer que a interface NAO
-// esta lendo, e so no ao_aviso a interface troca para ele. Nunca write no
-// que a interface desenha.
+// THE RESULT PATTERN: the work writes to a buffer that the interface DOES NOT
+// is reading, and only at ao_aviso does the interface switch to it. Never write to
+// that the interface draws.
 //
-// FECHAR O APP E SEGURO: o sistema espera o work em andamento terminar e
-// descarta os que ainda estavam in queue ANTES of chamar ao_fechar() - entao o
-// app pode liberar seus buffers ali sem medo. Por isso one work deve durar
-// no maximum algumas centenas of ms (uma leitura, nao one loop eterno) - a
-// interface stays parada enquanto o fechamento espera. O que demora mais e
-// work SOLTO (abaixo); loop permanente e tarefa propria (tarefa_app).
+// CLOSE THE APP AND SAFE: the system waits for the work in progress to finish and
+// discards those that were still in queue BEFORE calling ao_close() - then the
+// app can flush your buffers there without fear. That's why one work must last
+// no maximum a few hundred ms (one read, not one eternal loop) - a
+// interface stays stopped while the closure waits. What takes longer and
+// work LOOSE (below); permanent loop and own task (task_app).
 
 #pragma once
 
@@ -28,33 +28,33 @@
 
 typedef void (*work_t)(void* arg);
 
-// Chamar uma vez no boot, pela tarefa of interface.
+// Call once at boot, by the of interface task.
 void work_start(void);
 
-// Pede one work para o app current. Nao bloqueia. false = queue cheia.
+// Requests one work for the current app. Does not block. false = queue full.
 bool system_work(work_t fn, void* arg);
 
-// O APP FECHOU - pare. Para o work (nao released) que pode demorar: varrer one
-// arquivo grande, por exemplo. Fechar o app ESPERA o work em andamento
-// terminar (e o que deixa o ao_fechar() liberar buffers sem medo), e a
-// interface stays parada nessa espera - one loop que pergunta isto a cada bloco
-// devolve a interface in hora, em vez of no end of arquivo. Sair no middle e
-// seguro: o resultado ja nao vai ser usado (o app fechou).
+// THE APP CLOSED - stop. For work (not released) that may take a while: sweep one
+// large file, for example. Close the app WAIT for the work in progress
+// finishes (which lets ao_close() release buffers without fear), and the
+// interface stays stuck in this wait - one loop that asks this every block
+// returns the interface in hour, instead of at the end of file. Exit in the middle and
+// safe: the result will no longer be used (the app has closed).
 bool system_work_cancelled(void);
 
-// PARA O SISTEMA: descarta a queue e espera o work em andamento terminar.
-// Chamado por fechar_app() antes of ao_fechar().
+// FOR THE SYSTEM: discards the queue and waits for the work in progress to finish.
+// Called by closing_app() before of ao_closing().
 void work_stop_of_app(void);
 
-// TRABALHO SOLTO - para o que demora SEGUNDOS e nao pode hold o fechamento
-// of app (gravar uma foto of 1,8 MB no cartao,: close a Camera
-// esperava a gravacao inteira e a interface congelava ate ela acabar).
+// LOOSE WORK - for what takes SECONDS and cannot hold the closing
+// of app (write a photo of 1.8 MB to the card,: close the Camera
+// waited for the entire recording and the interface froze until it ended).
 //
-// A diferenca: o sistema NAO espera one work released on close o app, e ele
-// roda mesmo que o app ja tenha closed. O preco e o CONTRATO:
-//   - 'arg' e of work: memoria alocada so para ele, que ele mesmo libera
-//     no end. Nada of buffer of app (o app pode ja te-lo liberado).
-//   - o resultado iteration por AVISO_TRABALHO so se o MESMO app ainda estiver
-//     open; o work pode deixar one resultado em estatica of app (a
-//     estatica existe sempre - o app e compilado no firmware).
+// The difference: the system DOES NOT wait for one work released on close the app, and it
+// runs even if the app has already closed. The price and the CONTRACT:
+// - 'arg' and of work: memory allocated just for him, which he frees himself
+// at address. Nothing buffering the app (the app may have already released it).
+// - the result iteration by AVISO_WORK only if the SAME app is still
+// open; the work can leave a result in static of app (a
+// static always exists - the app is compiled into the firmware).
 bool system_work_released(work_t fn, void* arg);

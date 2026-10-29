@@ -1,57 +1,57 @@
-// IMU (BMI270) - leitura compartilhada, no MESMO espirito of tab5_power.hpp
-// (measure() vs latest()) e tab5_sensors.hpp (cache em vez of queue).
+// IMU (BMI270) - shared reading, in the SAME spirit of tab5_power.hpp
+// (measure() vs latest()) and tab5_sensors.hpp (cache instead of queue).
 //
-// -------------------------------------------------------------------------
-// POR QUE ISTO EXISTE - achado on revisar "ready para mais of one
-// consumidor", o mesmo exercicio que corrigiu tab5_gps.cpp.
-// -------------------------------------------------------------------------
-// app_imu.cpp sempre leu o BMI270 direto (M5.Imu.update()/getAccel/getGyro),
-// e isso e SEGURO hoje - mas nao porque alguem pensou em concorrencia: e
-// porque o unico chamador e o proprio draw() of app, que so roda in
-// tarefa of interface, a UNICA que pode falar no barramento I2C interno
-// (regra documentada em tab5_power.hpp: "o I2C_Class of M5Unified nao tem
-// mutex e duas tarefas intercalando leem registrador trocado sem dar erro").
-// Nenhum outro app tinha como perguntar "qual a inclinacao of aparelho
-// now" sem duplicar aquele code E sem correr o risco of acessar o
-// barramento of uma tarefa errada.
+// ------------------------------------------------------------------------
+// WHY THIS EXISTS - find on review "ready for more of one
+// consumer", the same exercise that corrected tab5_gps.cpp.
+// ------------------------------------------------------------------------
+// app_imu.cpp always read the direct BMI270 (M5.Imu.update()/getAccel/getGyro),
+// and that is SAFE today - but not because anyone thought about competition: and
+// because the only caller is the draw() of app itself, which only runs in
+// task of interface, the ONLY one that can talk on the internal I2C bus
+// (rule documented in tab5_power.hpp: "the I2C_Class of M5Unified does not have
+// mutex and two interleaving tasks read the changed register without giving an error").
+// No other app had a way to ask "what is the inclination of the device
+// now" without duplicating that code AND without running the risk of accessing the
+// bus of a wrong task.
 //
-// A SOLUCAO, EXATAMENTE COMO PARA ENERGIA E TEMPERATURA: uma funcao que MEDE
-// of verdade (so of tarefa of interface) e outra que LE O CACHE (qualquer
-// tarefa, protegido por mutex - ver o aviso sobre tab5_gps.cpp que motivou
-// isto).
+// THE SOLUTION, EXACTLY AS FOR ENERGY AND TEMPERATURE: a function that MEASURE
+// of truth (so of task of interface) and another that READS THE CACHE (any
+// task, protected by mutex - see warning about tab5_gps.cpp that prompted
+// this).
 //
-// -------------------------------------------------------------------------
-// CADENCIAS DIFERENTES DE PROPOSITO - isto NAO e so "copiar o default of INA226"
-// -------------------------------------------------------------------------
-// tab5_power_measure()/tab5_sensors_measure() rodam 1x/segundo porque energia e
-// temperatura mudam devagar - 1Hz serve pra qualquer consumidor, incluindo
-// who "e owner" delas. A IMU e diferente: o proprio app_imu.cpp precisa of
-// leitura A CADA FRAME para o indicador of level nao parecer travado -
-// amostrar so 1x/segundo pioraria a UNICA screen que hoje usa isto of verdade.
+// ------------------------------------------------------------------------
+// DIFFERENT CADENCES ON PURPOSE - this is NOT just "copying the default of INA226"
+// ------------------------------------------------------------------------
+// tab5_power_measure()/tab5_sensors_measure() run 1x/second because power and
+// temperature changes slowly - 1Hz is suitable for any consumer, including
+// who "and owner" of them. The IMU is different: app_imu.cpp itself needs
+// reading EVERY FRAME so that the level indicator does not appear stuck -
+// sampling just 1x/second would worsen the ONLY screen that actually uses this today.
 //
-// Por isso app_imu.cpp CONTINUA lendo direto (M5.Imu.update()/getAccel/
-// getGyro), sem passar por aqui - ele ja e seguro (mesma tarefa) e ja e
-// rapido. tab5_imu_measure() abaixo roda em paralelo, 1x/segundo, alimentando
-// SO o cache que os OUTROS apps vao read - "o aparelho esta of pe ou
-// deitado", nao "o level bolha precisa ser fluido". Um consumidor que
-// precisar of mais frequencia que isso no futuro precisa of MESMA discussao
-// que este file documenta, nao so aumentar one numero.
+// That's why app_imu.cpp CONTINUES reading directly (M5.Imu.update()/getAccel/
+// getGyro), without going through here - it is already safe (same task) and already
+// quickly. tab5_imu_measure() below runs in parallel, 1x/second, feeding
+// ONLY the cache that OTHER apps will read - "the device is offline or
+// lying down", not "the bubble level needs to be fluid". A consumer who
+// needing more frequency than this in the future needs the SAME discussion
+// that this file documents, not just increase one number.
 #pragma once
 
 #include <stdbool.h>
 
 typedef struct {
-  bool  valid;   // false ate a primeira measurement (ou se a IMU nunca subiu)
-  float ax, ay, az;   // g (aceleracao, com gravidade incluida)
-  float gx, gy, gz;   // graus/s (giroscopio)
+  bool  valid;   // false until the first measurement (or if the IMU never went up)
+  float ax, ay, az;   // g (acceleration, including gravity)
+  float gx, gy, gz;   // degrees/s (gyroscope)
 } tab5_imu_data_t;
 
-// Le o BMI270 DE VERDADE e atualiza o cache. SO DA TAREFA DE INTERFACE -
-// mesma regra of INA226/temperatura/keyboard, ver o aviso grande acima.
-// No-op silencioso se M5.Imu.isEnabled() for false (profile.imu=false no
-// boot deste app, ou nenhum app que precise of IMU rodou ainda).
+// Reads the REAL BMI270 and updates the cache. INTERFACE TASK OS -
+// same rule of INA226/temperature/keyboard, see the big warning above.
+// Silent no-op if M5.Imu.isEnabled() is false (profile.imu=false no
+// boot of this app, or no app that needs IMU has run yet).
 void tab5_imu_measure(void);
 
-// A ULTIMA leitura, sem touch no I2C - o que qualquer tarefa deve usar.
-// Devolve false (com 'valid'=false em '*output') se a IMU nunca mediu.
+// The ULTIMATE reading, no touch on I2C - what any task should use.
+// Returns false (with 'valid'=false in '*output') if the IMU never measured.
 bool tab5_imu_latest(tab5_imu_data_t* output);

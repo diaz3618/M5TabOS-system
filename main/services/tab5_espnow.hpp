@@ -35,10 +35,10 @@ typedef enum {
 } espnow_send_state_t;
 
 typedef struct {
-  uint8_t  mac[6];         // quem mandou (recebida) ou para quem (minha)
+  uint8_t  mac[6];         // who sent it (received) or to whom (my)
   bool     minha;
   bool     difusao;
-  bool     espressif;       // arrived in the esp-now component format; false = plain text
+  bool     espressif;       // arrived in the esp-now component format; false = plaintext
   uint8_t  send_state;          // espnow_envio_t
   uint32_t when;         // UTC epoch; 0 = clock not set yet
   char     text[C6_TEXTO_MAX + 1];
@@ -47,11 +47,11 @@ typedef struct {
 // Start the task. Call at boot, after WiFi.
 void tab5_espnow_start(void);
 
-// O C6 confirmou o ESP-NOW no ar (mandou o PRONTO).
+// C6 confirmed ESP-NOW on air (sent READY).
 bool    tab5_espnow_pronto(void);
 uint8_t tab5_espnow_canal(void);
 void    tab5_espnow_meu_mac(uint8_t out[6]);
-bool    tab5_espnow_c6_compativel(void);   // o C6 tem o firmware nosso?
+bool    tab5_espnow_c6_compativel(void);   // Does the C6 have our firmware?
 
 // RAM history: 0 is the oldest. Returns a copy (the table changes in another task).
 int      tab5_espnow_n(void);
@@ -75,7 +75,7 @@ uint8_t tab5_espnow_canal_fixo(void);
 bool tab5_espnow_send(const char* text);
 
 // The app reports when its window opens/closes. While open (and the screen is
-// on), the receiver stays enabled. See POWER above.
+// on), the receiver remains enabled. See POWER above.
 void tab5_espnow_window(bool open);
 
 // Unread (received since the last time someone looked).

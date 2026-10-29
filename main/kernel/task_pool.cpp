@@ -10,10 +10,10 @@
 
 static const char* TAG = "pool";
 
-// CLASSES DE VAGA. O consumo real measured (menor stack livre em uso of verdade)
-// manda aqui: servicos of serial e apps cabem em 4 KB; o Mesh pede 6 KB.
-// O total e ~26 KB e substitui o que esses mesmos usos pediam on heap,
-// no pior caso, como blocos separados.
+// VACANCY CLASSES. Actual consumption measured (smallest free stack in actual use)
+// send it here: serial services and apps fit in 4 KB; Mesh asks for 6 KB.
+// The total is ~26 KB and replaces what these same uses requested on heap,
+// in the worst case, as separate blocks.
 #define VAGA_G  6144
 #define VAGA_M  4096
 
@@ -47,7 +47,7 @@ static vaga_t s_v[POOL_N];
 static bool   s_pronto = false;
 static std::atomic<uint32_t> s_dinamicas{0};
 
-// Menor stack livre por name of execucao.
+// Smallest free stack per name of execution.
 #define PILHAS_N 24
 static pool_stack_t s_pilhas[PILHAS_N];
 static int          s_pilhas_n = 0;
@@ -70,22 +70,22 @@ static void anotar_stack(const char* name, uint32_t livre)
   taskEXIT_CRITICAL(&s_mux);
 }
 
-// Repinta com o default 0xA5 a parte LIVRE of stack, para que o high water mark
-// of next execucao meca so a dela.
+// Repaint the FREE part of stack with the default 0xA5, so that the high water mark
+// of next mecca execution only hers.
 //
-// ONDE COMECA A PILHA: NAO e o start of buffer (v->stack). No P4 o IDF guarda
-// no pe of buffer a area of context dos coprocessadores (FPU e PIE) of tarefa,
-// e so depois dela comeca a stack que o FreeRTOS conhece (pxStack). Nos
-// primeiros 32 bytes of pxStack, alinhados a 32, stays o vigia of end of stack
-// (FREERTOS_WATCHPOINT_END_OF_STACK): qualquer escrita ali derruba o sistema
-// com "Breakpoint" - of proposito, e o que pega estouro of stack in hora.
-// Repintar a partir of "buffer + 128" apagava o context of FPU/PIE e batia no
-// vigia (Guru Meditation on close a Camera). Por isso o start vem of proprio
-// FreeRTOS, e pula-se o vigia e o canario com folga.
+// WHERE THE STACK STARTS: NOT the start of buffer (v->stack). In P4 the IDF keeps
+// in the pe of buffer the area of context of the coprocessors (FPU and PIE) of task,
+// and only after that does the stack that FreeRTOS knows (pxStack) begin. Us
+// first 32 bytes of pxStack, aligned to 32, stays watchman of end of stack
+// (FREERTOS_WATCHPOINT_END_OF_STACK): any writing there brings down the system
+// with "Breakpoint" - of purpose, and what causes stack overflow in time.
+// Repainting from "buffer + 128" erased the context of FPU/PIE and crashed the
+// watchman (Guru Meditation on close a Camera). That's why the start comes from itself
+// FreeRTOS, and the lookout and the canary are easily skipped.
 static void __attribute__((noinline)) repintar(void)
 {
   const uintptr_t ini_stack = (uintptr_t)pxTaskGetStackStart(nullptr);
-  uint8_t* base = (uint8_t*)(((ini_stack + 31u) & ~(uintptr_t)31u) + 64u);   // vigia (32 B) + canario, com folga
+  uint8_t* base = (uint8_t*)(((ini_stack + 31u) & ~(uintptr_t)31u) + 64u);   // lookout (32 B) + canary, with clearance
   uint8_t* topo = (uint8_t*)__builtin_frame_address(0) - 512;
   if (topo > base) { memset(base, 0xA5, (size_t)(topo - base)); }
 }
@@ -94,11 +94,11 @@ static void vTaskVaga(void* a)
 {
   vaga_t* v = (vaga_t*)a;
   for (;;) {
-    // xTaskAbortDelay pode wake aqui sem work: iteration a dormir.
+    // xTaskAbortDelay can wake here without work: iteration sleeping.
     if (xSemaphoreTake(v->wake, portMAX_DELAY) != pdTRUE) { continue; }
     pool_body_t fn = v->fn;
     if (!fn) { continue; }
-    ulTaskNotifyTake(pdTRUE, 0);   // aviso que sobrou of execucao anterior
+    ulTaskNotifyTake(pdTRUE, 0);   // warning left over from previous execution
 
     fn(v->arg);
 
@@ -134,7 +134,7 @@ void pool_start(void)
            POOL_N, (unsigned long)fixos);
 }
 
-// Execucao em tarefa comum, when nao ha vaga.
+// Execution in a common task, when there is no vacancy.
 typedef struct { pool_body_t fn; void* arg; } dinamica_t;
 static void vTaskDinamica(void* a)
 {
@@ -152,8 +152,8 @@ bool pool_create(pool_id_t* id, pool_body_t fn, void* arg, const char* name,
   if (!fn) { return false; }
   if (!s_pronto) { pool_start(); }
 
-  // A menor vaga livre que serve: o Mesh nao toma a of 6 KB when cabe em 4.
-  // As of 4 KB sao as of indice 1..N-1; a of 6 KB e a 0 e stays por ultimo.
+  // The smallest free space that fits: Mesh does not take up to 6 KB when it fits into 4.
+  // As of 4 KB are as of index 1..N-1; a of 6 KB and a 0 and stays last.
   vaga_t* esc = nullptr;
   for (int k = 1; k <= POOL_N && !esc; ++k) {
     vaga_t* v = &s_v[k % POOL_N];

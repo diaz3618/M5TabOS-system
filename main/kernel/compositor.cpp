@@ -11,31 +11,31 @@ static const char *TAG = "comp";
 static const int FB_L = 720;
 static const int FB_A = 1280;
 
-// ---------------------------------------------------------------------------
-// AREAS SUJAS
-// ---------------------------------------------------------------------------
-// Fundir duas areas so vale when o rectangle que as envolve nao e maior que
-// as duas somadas - senao redesenhamos pixel que ninguem pediu. E a mesma
-// regra of LVGL (lv_refr.c, refr_join_area).
+// -------------------------------------------------------------------------------
+// DIRTY AREAS
+// -------------------------------------------------------------------------------
+// Merging two areas is only valid when the rectangle that surrounds them is not larger than
+// the two added together - otherwise we redesign a pixel that no one asked for. And the same
+// rule of LVGL (lv_refr.c, refr_join_area).
 //
-// 32 e nao 16: uma screen com text espalhado (barra of top, valores no middle,
-// barra of bottom) enche 16 com facilidade, e o que acontece on encher custa
-// caro - ver estourou().
+// 32 and not 16: a screen with scattered text (top bar, values in the middle,
+// bar of bottom) fills 16 easily, and what happens when filling costs
+// expensive - see burst().
 //
-// 96 e nao 32: ANIMACAO COM MUITOS OBJETOS PEQUENOS. Particulas, flocos,
-// estrelas - cada one e uma caixinha, e 32 enchiam no middle of uma explosao of
-// fogos. Cheia, a lista junta caixas distantes em retangulos gordos, e a
-// pagina seguinte copia toda a sobra: o frame pesava justo when a screen
-// enchia, e a animacao engasgava. Quem anima tinha of juntar as proprias
-// caixas para caber aqui - cuidado que nao e of app. Custa 1,5 KB of RAM
-// interna a mais (tres listas); o caminho of cada escrita continua curto
-// (ver s_ult_contem).
+// 96 and no 32: ANIMATION WITH MANY SMALL OBJECTS. Particles, flakes,
+// stars - each one is a little box, and 32 filled in the middle of an explosion of
+// fireworks. Full, the list joins distant boxes into fat rectangles, and the
+// next page copies all the remainder: the frame weighed just when a screen
+// filled up, and the animation choked. Those who animate it had to put together their own
+// boxes to fit here - be careful as it is not of app. Costs 1.5 KB of RAM
+// extra internal (three lists); the path of each writing remains short
+// (see s_ult_contem).
 #define MAX_AREAS 96
 
 typedef struct { tab5_rect_t r[MAX_AREAS]; int n; } areas_t;
 
-static areas_t s_sujas;      // o que vai ser drawn no next frame
-static areas_t s_anterior;   // o que o frame anterior desenhou (falta in pagina que exited)
+static areas_t s_sujas;      // what will be drawn in the next frame
+static areas_t s_anterior;   // what the previous frame drew (missing in page that exited)
 static uint32_t s_estouros = 0;
 
 static inline int area(const tab5_rect_t& r) { return r.l * r.a; }
@@ -49,7 +49,7 @@ static tab5_rect_t envolver(const tab5_rect_t& a, const tab5_rect_t& b)
   return { (int16_t)x0, (int16_t)y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0) };
 }
 
-// Quanto of pixel NAO request a fusao of a e b obriga a copiar.
+// How much of pixel does NOT request the fusion of a and b requires copying.
 static inline int desperdicio(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   return area(envolver(a, b)) - area(a) - area(b);
@@ -72,10 +72,10 @@ static bool recortar_in_screen(tab5_rect_t& r)
   return true;
 }
 
-// A area que cobriu a ultima escrita. Quase toda escrita cai dentro of mesma
-// area que a anterior (as lines of one circulo, os glifos of one text, o
-// drawing por top of caixa que acabou of ser apagada): olhar ela first
-// poupa varrer a lista inteira, que now e longa.
+// The area covered by the last write. Almost all writing falls into the same
+// area than the previous one (the lines of one circle, the glyphs of one text, the
+// drawing by top of box that has just been deleted): look at it first
+// saves scanning the entire list, which is now long.
 static int s_ult_contains = 0;
 
 void comp_invalidar(const tab5_rect_t& entrada)
@@ -85,10 +85,10 @@ void comp_invalidar(const tab5_rect_t& entrada)
   if (s_ult_contains < s_sujas.n && contains(s_sujas.r[s_ult_contains], r)) { return; }
 
   for (;;) {
-    // Ja coberta: nada a fazer.
+    // Already covered: nothing to do.
     for (int i = 0; i < s_sujas.n; ++i) { if (contains(s_sujas.r[i], r)) { s_ult_contains = i; return; } }
 
-    // Funde enquanto compensar. Uma fusao pode habilitar outra, entao repete.
+    // Merge while compensating. One merger can enable another, then repeat.
     bool fundiu = true;
     while (fundiu) {
       fundiu = false;
@@ -104,13 +104,13 @@ void comp_invalidar(const tab5_rect_t& entrada)
 
     if (s_sujas.n < MAX_AREAS) { s_sujas.r[s_sujas.n++] = r; return; }
 
-    // LISTA CHEIA. A primeira versao envolvia TUDO num rectangle so - e a
-    // barra of top mais one numero la embaixo viravam a screen inteira (1,8 MB
-    // of copia por one punhado of text). Agora a area nova se junta a VIZINHA
-    // que desperdica menos: abre espaco sem engordar o que esta longe. (A
-    // versao anterior procurava o melhor PAR entre todas - n^2 a cada estouro,
-    // caro demais com a lista longa; com 96 vagas o estouro became raro e a
-    // diferenca of sobra entre os dois jeitos, pequena.)
+    // LIST FULL. The first version involved EVERYTHING in just one rectangle - and the
+    // bar of top plus one number at the bottom turned the entire screen (1.8 MB
+    // of copies for a handful of text). Now the new area joins the NEIGHBOR
+    // that wastes less: it opens up space without adding weight to what is far away. (A
+    // previous version looked for the best PAR among all - n^2 for each burst,
+    // too expensive with the long list; with 96 vacancies the overflow became rare and the
+    // difference of left between the two ways, small.)
     ++s_estouros;
     int bi = 0;
     int melhor = 0x7fffffff;
@@ -120,40 +120,40 @@ void comp_invalidar(const tab5_rect_t& entrada)
     }
     r = envolver(s_sujas.r[bi], r);
     s_sujas.r[bi] = s_sujas.r[--s_sujas.n];
-    // Volta on topo: a area fundida pode now cover ou fundir com outras.
+    // Back to top: the merged area can now cover or merge with others.
   }
 }
 
-// ---------------------------------------------------------------------------
-// ESTADO DO QUADRO
-// ---------------------------------------------------------------------------
-static bool     s_open   = false;   // a pagina of tras esta sincronizada e em uso
-static bool     s_active    = false;   // conhecemos as paginas of panel current
-static bool     s_pending = false;   // pedimos troca e ainda nao confirmamos
-static uint32_t s_geracao  = 0;       // of qual panel sao as paginas que conhecemos
-static uint32_t s_geracao_vista = 0;  // ultimo panel anunciado on core (comp_painel_novo)
-static void*    s_tras     = nullptr; // a pagina of tras of frame open
-static uint32_t s_epoca    = 0;       // g_tab5_screen_epoch when o frame abriu
+// -------------------------------------------------------------------------------
+// FRAME STATUS
+// -------------------------------------------------------------------------------
+static bool     s_open   = false;   // the behind page is synchronized and in use
+static bool     s_active    = false;   // we know the pages of panel current
+static bool     s_pending = false;   // we asked for an exchange and we haven't confirmed it yet
+static uint32_t s_geracao  = 0;       // of which panel are the pages we know
+static uint32_t s_geracao_vista = 0;  // last panel announced on core (comp_panel_novo)
+static void*    s_tras     = nullptr; // the page behind frame open
+static uint32_t s_epoca    = 0;       // g_tab5_screen_epoch when the frame opened
 static uint32_t s_round   = 0;
-static int64_t  s_ult_frame_us = 0;  // diagnostics: when exited o ultimo frame
-static uint32_t s_ult_frame_px = 0;  // e quantos pixels ele changed
+static int64_t  s_ult_frame_us = 0;  // diagnostics: when the last frame exited
+static uint32_t s_ult_frame_px = 0;  // and how many pixels it changed
 static std::atomic<bool> s_request_everything{false};
 
-// SINCRONIA PREGUICOSA. As areas of frame anterior que a pagina of tras
-// ainda NAO tem. Nao sao copiadas on open: cada uma vem of frente so when
-// algo vai touch nela (escrita ou leitura - comp_preparar), e o que sobrar,
-// in hora of apresentar. A que for inteira sobrescrita por uma copia of DMA
-// (rolagem, surface) nunca e copiada.
+// LAZY SYNCHRONY. The areas of frame before the page behind
+// DOESN'T have it yet. They are not copied on open: each one comes from the front only when
+// something will touch it (writing or reading - comp_preparar), and whatever is left,
+// in time to present. The one that is completely overwritten by a copy of DMA
+// (scroll, surface) is never copied.
 //
-// Por que: a primeira versao sincronizava TUDO on open. Mas o frame abre
-// in primeira escrita of iteration - e os apps desenham o cabecalho antes of
-// lista. Quando a rolagem chegava dizendo "vou cover a window inteira", a
-// window ja tinha sido copiada: measured, a sincronia era 2/3 of toda a copia.
+// Why: the first version synchronized EVERYTHING on open. But the frame opens
+// in first writing of iteration - and apps draw the header before of
+// list. When the scroll arrived saying "I'm going to cover the entire window", the
+// window had already been copied: measured, the sync was 2/3 of the entire copy.
 static areas_t s_pend;
-static void*   s_frente_pg = nullptr;   // a pagina of frente of frame open
+static void*   s_frente_pg = nullptr;   // the front page of frame open
 
-static comp_estat_t s_est = {};       // a measurement (ver comp_estat)
-static uint64_t     s_us_dentro = 0;  // time gasto aqui dentro (open + copias)
+static comp_estat_t s_est = {};       // a measurement (see comp_estat)
+static uint64_t     s_us_dentro = 0;  // time spent in here (open + copies)
 static uint64_t     s_marca_dentro = 0;
 
 static bool intersecta(const tab5_rect_t& a, const tab5_rect_t& b)
@@ -161,7 +161,7 @@ static bool intersecta(const tab5_rect_t& a, const tab5_rect_t& b)
   return a.x < b.x + b.l && b.x < a.x + a.l && a.y < b.y + b.a && b.y < a.y + a.a;
 }
 
-// Toda copia of compositor passa por aqui: e onde o time of DMA e contado.
+// Every copy of composer passes through here: this is where the time of DMA is counted.
 static bool copiar(void* destino, const tab5_rect_t& r, const void* origem, int ox, int oy)
 {
   const int64_t t0 = esp_timer_get_time();
@@ -183,9 +183,9 @@ static void wait_troca_pending(void)
   s_pending = false;
 }
 
-// Descarta o frame em andamento: o panel sumiu (sleep) ou foi trocado.
-// O que estava drawn se perde of proposito - o core redesenha everything
-// when o panel novo aparecer (comp_painel_novo).
+// Discards the frame in progress: the panel disappeared (sleep) or was changed.
+// What was drawn is lost of purpose - the core redesigns everything
+// when the new panel appears (comp_panel_novo).
 static void descartar(void)
 {
   s_open = false;
@@ -193,18 +193,18 @@ static void descartar(void)
   s_frente_pg = nullptr;
   s_sujas.n = 0;
   s_pend.n = 0;
-  // Rodada nova: o atalho of rastreador ("este rectangle ja foi anotado e
-  // preparado nesta round") nao pode atravessar para o frame seguinte - ele
-  // pularia o comp_preparar, e a sincronia of apresentacao apagaria o drawing.
+  // New round: the shortcut of tracker ("this rectangle has already been noted and
+  // prepared this round") cannot cross over to the next frame - it
+  // would skip the comp_preparar, and the synchronization of presentation would erase the drawing.
   ++s_round;
 }
 
-// AS PENDENTES SAO RECORTADAS, nao copiadas inteiras. A fusao of areas junta
-// vizinhos (o cabecalho of one app e a window of lista logo abaixo viram UM
-// rectangle pending). Copiar a pending inteira porque o cabecalho foi
-// touched trazia a window junto - 1,6 MB que a rolagem sobrescreve em seguida.
-// Agora so a INTERSECAO vem (ou e descartada), e o resto of pending continua
-// pending, em ate 4 pedacos.
+// THE PENDANTS ARE CUT, not copied whole. The merger of areas together
+// neighbors (the header of one app and the window of list below become ONE
+// rectangle pending). Copy the entire pending because the header was
+// touched brought the window together - 1.6 MB that scrolling then overwrites.
+// Now only the INTERSECTION comes (or is discarded), and the rest of pending continues
+// pending, in up to 4 pieces.
 static tab5_rect_t intersecao(const tab5_rect_t& a, const tab5_rect_t& b)
 {
   const int x0 = a.x > b.x ? a.x : b.x;
@@ -214,9 +214,9 @@ static tab5_rect_t intersecao(const tab5_rect_t& a, const tab5_rect_t& b)
   return { (int16_t)x0, (int16_t)y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0) };
 }
 
-// Tira a pending i e devolve a lista o que dela stays FORA of 'r' (faixa of
-// top, of bottom, left, right). false = nao coube in lista: nada foi
-// mexido, e quem chamou copia a pending inteira.
+// Removes pending i and returns to the list what stays OUTSIDE of 'r' (range of
+// top, of bottom, left, right). false = did not fit in list: nothing was
+// changed, and whoever called copies the entire pending.
 static bool recortar_pending(int i, const tab5_rect_t& r)
 {
   const tab5_rect_t p = s_pend.r[i];
@@ -239,8 +239,8 @@ static void copiar_pending(const tab5_rect_t& a)
   s_est.px_sinc += (uint32_t)area(a);
 }
 
-// Traz a pending i inteira e a tira of lista (troca com a ultima - quem
-// percorre of tras para frente nao perde ninguem).
+// Brings the entire pending i and the strip of list (swaps with the last one - who
+// runs backwards without losing anyone).
 static void synchronize(int i)
 {
   const tab5_rect_t a = s_pend.r[i];
@@ -248,8 +248,8 @@ static void synchronize(int i)
   copiar_pending(a);
 }
 
-// Percorre of tras para frente: os pedacos acrescentados no end ficam FORA
-// of 'r' e nao precisam ser revistos.
+// Scrolls backwards: the pieces added at the end are OUT
+// of 'r' and do not need to be revised.
 void comp_preparar(const tab5_rect_t& r)
 {
   if (!s_open || s_pend.n == 0) { return; }
@@ -267,28 +267,28 @@ void comp_cobrir(const tab5_rect_t& r)
   for (int i = s_pend.n - 1; i >= 0; --i) {
     if (i >= s_pend.n || !intersecta(s_pend.r[i], r)) { continue; }
     if (contains(r, s_pend.r[i])) { s_pend.r[i] = s_pend.r[--s_pend.n]; continue; }
-    if (!recortar_pending(i, r)) { synchronize(i); }   // sem vaga: vem inteira (correto, so mais caro)
+    if (!recortar_pending(i, r)) { synchronize(i); }   // no space: comes in one piece (correct, they are more expensive)
   }
 }
 
 void* comp_abrir(void)
 {
   if (s_open) {
-    // O CAMINHO DE TODA ESCRITA (cada pixel of borda of letra passa aqui):
-    // uma comparacao, nada mais. Um frame open nao pode atravessar a
-    // troca of panel (sleep, clock) - a pagina dele foi liberada junto
-    // com o panel antigo -, e a epoca das paginas sobe exatamente nisso.
+    // THE PATH OF ALL WRITING (each pixel of edge of letter passes here):
+    // a comparison, nothing more. An open frame cannot cross the
+    // change of panel (sleep, clock) - his page was released together
+    // with the old panel -, and the time of the pages goes up exactly to that.
     if (s_epoca == g_tab5_screen_epoch) { return s_tras; }
     descartar();
   }
 
-  // Sem panel (sleep): nada a open.
+  // No panel (sleep): nothing to open.
   if (!tab5_screen_init()) { return nullptr; }
 
-  // PAINEL NOVO (sleep, troca of clock, boot): as paginas que
-  // conheciamos nao existem mais, e as novas nao tem nada nosso - nao ha o
-  // que synchronize. O core ja foi (ou vai ser) avisado por
-  // comp_painel_novo() e redesenha a screen inteira.
+  // NEW PANEL (sleep, change of clock, boot): the pages that
+  // we knew no longer exist, and the new ones have nothing of ours - there is no
+  // that synchronizes. The core has already been (or will be) warned by
+  // comp_panel_novo() and redraws the entire screen.
   if (!s_active || tab5_screen_generation() != s_geracao) {
     s_geracao = tab5_screen_generation();
     s_active = true;
@@ -296,14 +296,14 @@ void* comp_abrir(void)
     s_anterior.n = 0;
   }
 
-  // 1. A pagina of tras so esta livre depois que o panel trocou.
+  // 1. The back page is only free after the panel has changed.
   wait_troca_pending();
   void* tras   = tab5_screen_page(true);
   void* frente = tab5_screen_page(false);
   if (!tras || !frente) { return nullptr; }
 
-  // 2. Sincronia, PREGUICOSA: o que o frame anterior desenhou stays
-  //    pending, e vem of frente so when for touched (ver s_pend).
+  // 2. Synchrony, LAZY: what the previous frame drew stays
+  // pending, and comes forward only when touched (see s_pend).
   s_pend = s_anterior;
   s_anterior.n = 0;
 
@@ -326,7 +326,7 @@ bool comp_copiar_da_frente(const tab5_rect_t& r, int ox, int oy)
   if (!tras) { return false; }
   if (!s_frente_pg || s_frente_pg == tras) { return false; }
   if (!copiar(tras, r, s_frente_pg, ox, oy)) { return false; }
-  comp_cobrir(r);   // so DEPOIS of dar certo: falhou, as pendentes continuam
+  comp_cobrir(r);   // only AFTER it works: it failed, the pending issues continue
   s_est.px_rolar_dma += (uint32_t)area(r);
   return true;
 }
@@ -350,16 +350,16 @@ bool comp_apresentar(void)
   }
   if (s_sujas.n == 0) { return false; }
 
-  // Marcado sem nada drawn (so one request of invalidate): abre aqui, para
-  // a pagina of tras ficar igual a of frente antes of ir on ar.
+  // Marked without anything drawn (so one request of invalidate): open here, to
+  // the back page will be the same as the front page before going live.
   if (!s_open && !comp_abrir()) { descartar(); return false; }
 
-  // O panel sumiu ou foi trocado DEPOIS of open: a pagina em que
-  // desenhamos nao existe mais.
+  // The panel disappeared or was changed AFTER opening: the page where
+  // we drew no longer exists.
   if (!tab5_screen_init() || tab5_screen_generation() != s_geracao) { descartar(); return false; }
 
-  // O que ninguem tocou continua pending: vem now, senao a pagina of tras
-  // iria on ar com o frame of duas trocas atras nesses pontos.
+  // What no one touched is still pending: come now, otherwise the back page
+  // would go live with the frame of two changes ago at these points.
   while (s_pend.n > 0) { synchronize(s_pend.n - 1); }
 
   int y_min = FB_A, y_max = 0;
@@ -371,10 +371,10 @@ bool comp_apresentar(void)
     px += (uint32_t)area(a);
   }
 
-  // 3. A troca. O driver devolve on cache as lines y_min..y_max of pagina
-  //    of tras (o que a CPU escreveu e ainda esta so no cache) e muda o
-  //    indice. Se recusar, o frame stays open e tenta of novo in next
-  //    iteration - close aqui faria a sincronia erase o que foi drawn.
+  // 3. The exchange. The driver returns in cache the lines y_min..y_max of page
+  // of back (what the CPU wrote and is still only in the cache) and changes the
+  // index. If you refuse, the frame stays open and tries again in next
+  // iteration - close here would make the synchronization erase what was drawn.
   if (!tab5_screen_request_swap(y_min, y_max)) { return false; }
   s_pending = true;
   s_anterior = s_sujas;
@@ -421,20 +421,20 @@ uint32_t comp_contar_desenho(uint32_t us, bool complete)
 
 void comp_contar_volta(uint32_t us)
 {
-  // O periodo MEDIDO of panel (hal/tab5_frame), e nao one numero fixo: o
-  // clock of panel e ajuste of user (59 MHz = 20,6 ms, 80 MHz = 15,7).
+  // The MEASURED period of panel (hal/tab5_frame), not a fixed number: the
+  // clock of panel and adjustment of user (59 MHz = 20.6 ms, 80 MHz = 15.7).
   uint32_t periodo = 0;
   tab5_frame_delays(nullptr, &periodo);
   if (periodo == 0) { periodo = 16667; }
-  uint32_t f = us / periodo;          // 0 = coube em 1 periodo
+  uint32_t f = us / periodo;          // 0 = fit in 1 period
   if (f > COMP_FAIXAS - 1) { f = COMP_FAIXAS - 1; }
   s_est.us_iteration += us;
   ++s_est.voltas[f];
 }
 
-// Leitura of outra tarefa (console, monitor) sem trava: campos of 64 bits
-// podem exit rasgados num instante raro. E diagnostics - one numero torto numa
-// window some in seguinte; uma trava aqui pesaria em todo frame.
+// Reading of another task (console, monitor) without crash: 64-bit fields
+// can exit ripped in a rare instant. And diagnostics - a crooked number in a
+// window disappears next; a lock here would weigh down the entire frame.
 void comp_estat(comp_estat_t* out)
 {
   if (!out) { return; }

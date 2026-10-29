@@ -1,7 +1,7 @@
 # Prepares the terminal to build M5tabOS with ESP-IDF 5.5.
 #
-#   source environment.sh
-#   idf.py build
+# source environment.sh
+# idf.py build
 #
 # Standard ESP-IDF install: set IDF_PATH (or install it at ~/esp/esp-idf)
 # and this script loads its export.sh. For a non-standard setup (a
@@ -23,7 +23,7 @@ else
 fi
 
 # CRITICAL FOR WIFI. esp_wifi_remote's Kconfig does
-#   orsource "./Kconfig.idf_v$ESP_IDF_VERSION.in"
+# orsource "./Kconfig.idf_v$ESP_IDF_VERSION.in"
 # and orsource SILENTLY IGNORES a file that doesn't exist. Without this
 # variable set to "5.5", the CONFIG_WIFI_RMT_* options don't exist and the
 # build dies with "CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM undeclared".

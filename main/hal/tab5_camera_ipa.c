@@ -1,54 +1,54 @@
-// PROTECAO DO BRANCO NO PIPELINE DO ISP (one IPA proprio, "tab5_ipa_cor").
+// WHITE PROTECTION ON THE ISP PIPELINE (one IPA itself, "tab5_ipa_cor").
 //
-// O DEFEITO. Branco estourado exit magenta, in screen on vivo e in foto.
+// THE DEFECT. White burst exit magenta, in screen on live and in photo.
 //
-// A CAUSA, no silicio. O ISP of P4 abaixo of v3.0 nao tem o bloco of ganho of
-// balanco of branco (WBG). O esp_video compensa multiplicando as colunas R e B
-// of matriz of color (CCM) pelos ganhos of AWB (esp_video_isp_device.c,
-// isp_init_ccm_param). Matematicamente of no mesmo - ate o sensor saturar. Num
-// pixel estourado o sensor entrega (255,255,255) raw; o ganho, que deveria
-// levar R e B alem of 255 e ser CORTADO ali (e o que o WBG of v3 faz), entra
-// direto in CCM sem corte nenhum. A line of verde of CCM tem coeficientes
-// negativos para R e B (tipico: -0,40 R + 1,63 G - 0,23 B), entao:
+// THE CAUSE, in silicon. The ISP of P4 below v3.0 does not have the block of gain of
+// white balance (WBG). esp_video compensates by multiplying columns R and B
+// of matrix of color (CCM) by gains of AWB (esp_video_isp_device.c,
+// isp_init_ccm_param). Mathematically, it's the same - until the sensor saturates. Num
+// pixel burst the sensor delivers (255,255,255) raw; the gain, which should
+// taking R and B beyond 255 and being CUT there (and what the WBG of v3 does), enters
+// straight into CCM without any cutting. The line of green of CCM has coefficients
+// negative for R and B (typical: -0.40 R + 1.63 G - 0.23 B), then:
 //
-//   G_saida = -0,40 * 255 * gR + 1,63 * 255 - 0,23 * 255 * gB
+// G_output = -0.40 * 255 * gR + 1.63 * 255 - 0.23 * 255 * gB
 //
-// com gR = 2,0 e gB = 1,7 (luz of dia) of 0,43 * 255. R e B saem cortados em
-// 255: o branco vira (255, 110, 255) linear, (255, 154, 255) depois of gama.
-// Em luz quente (gR 1,6, gB 2,0) stays pior: (255, 117, 255). Nao e memoria,
-// nao e exposicao: e algebra.
+// with gR = 2.0 and gB = 1.7 (daylight) of 0.43 * 255. R and B are cut into
+// 255: white becomes (255, 110, 255) linear, (255, 154, 255) after gamma.
+// In warm light (gR 1.6, gB 2.0) stays worse: (255, 117, 255). It's not memory,
+// is not exposition: it is algebra.
 //
-// A CORRECAO. Chamando s = (gR, 1, gB), o branco saturado exit of line of
-// verde como m . s. Basta essa line cumprir duas coisas:
-//   1. m . (1,1,1) igual a of calibracao - cinza continua cinza;
-//   2. m . s >= G_MIN - o branco saturado continua (quase) branco.
-// Sao 2 restricoes em 3 incognitas: sobra one grau of liberdade, usado para
-// ficar o mais perto possivel of line original, medindo o erro nas 24
-// manchas of uma carta of color (Macbeth) levadas para o dominio of sensor.
-// Isso tem solucao closed (minimos quadrados com restricao of igualdade):
+// THE FIX. By calling s = (gR, 1, gB), the saturated white exit of line of
+// green as m . s. This line just needs to do two things:
+// 1. m . (1,1,1) equal to of calibration - gray remains gray;
+// 2. m . s >= G_MIN - saturated white remains (almost) white.
+// There are 2 restrictions on 3 unknowns: there remains one degree of freedom, used to
+// stay as close as possible to the original line, measuring the error in the 24
+// stains of a color chart (Macbeth) taken to the domain of sensor.
+// This has a closed solution (least squares with restriction of equality):
 //
-//   m' = m - Ci A^T (A Ci A^T)^-1 (A m - b),   Ci = M^T K M
+// m' = m - Ci A^T (A Ci A^T)^-1 (A m - b), Ci = M^T K M
 //
-// com K = (T T^T)^-1 constante (T = as 24 manchas em sRGB linear). Linhas R e
-// B ficam como estao: o branco saturado ja exit delas acima of 1 e e cortado
-// em 255, que e o certo.
+// with K = (T T^T)^-1 constant (T = the 24 patches in linear sRGB). R lines and
+// B remain as they are: the saturated white is already above 1 and is cut off
+// at 255, which is correct.
 //
-// O CUSTO. A line of verde e a que mais separa verdes e magentas. Mexer nela
-// tira one pouco of saturation dessas cores (simulado: dE medio ~5 in carta).
-// Um reforco of 10% in saturation of ISP (dominio YUV, onde branco tem croma
-// zero e nao e afetado) devolve parte disso. Na v3 (WBG of verdade) nada
-// disto e preciso e o IPA nem entra no pipeline.
+// THE COST. The line of green is the one that most separates greens and magentas. Move it
+// takes a little bit of saturation out of these colors (simulated: average dE ~5 in letter).
+// A boost of 10% in saturation of ISP (YUV domain, where white has chroma
+// zero and is not affected) returns part of this. In v3 (WBG of truth) nothing
+// this is necessary and the IPA does not even enter the pipeline.
 //
-// COMO ENTRA NO PIPELINE SEM EDITAR O COMPONENTE. O esp_video pega a lista of
-// algoritmos of esp_ipa_pipeline_get_config(); o link desvia essa chamada
-// para ca (-Wl,--wrap, main/CMakeLists.txt) e devolvemos a mesma
-// configuracao com "tab5_ipa_cor" no FIM of lista. O pipeline acha o
-// algoritmo pelo name in secao .esp_ipa_detect (ESP_IPA_DETECT_FN) e o roda
-// a cada frame, DEPOIS of AWB e of ACC: ele recebe a CCM e os ganhos ja
-// decididos e so ajusta a matriz antes of ela ir para o ISP.
+// HOW TO ENTER THE PIPELINE WITHOUT EDITTING THE COMPONENT. esp_video gets the list of
+// algorithms of esp_ipa_pipeline_get_config(); the link diverts this call
+// to ca (-Wl,--wrap, main/CMakeLists.txt) and return the same
+// configuration with "tab5_ipa_cor" at the END of list. The pipeline finds the
+// algorithm by name in section .esp_ipa_detect (ESP_IPA_DETECT_FN) and runs it
+// every frame, AFTER AWB and ACC: it receives the CCM and the gains already
+// decided and only adjusts the matrix before it goes to the ISP.
 //
-// Arquivo em C, nao C++: o ESP_IPA_DETECT_FN usa inicializadores designados
-// fora of order dos campos, o que o C++ recusa.
+// C file, not C++: ESP_IPA_DETECT_FN uses designated initializers
+// out of order of the fields, which C++ refuses.
 
 #include <string.h>
 #include <math.h>
@@ -61,14 +61,14 @@
 
 static const char *TAG = "tab5_ipa_cor";
 
-// Verde minimum of one branco saturado (1 = branco puro). 0,92 exit, depois of
-// gama, como ~243 of 255: imperceptivel on lado of R e B em 255.
+// Green minimum of one saturated white (1 = pure white). 0.92 exit, after of
+// range, such as ~243 of 255: imperceptible on side of R and B at 255.
 #define G_MIN        0.92f
-// Reforco of saturation when a matriz foi protegida (percentual).
+// Boost of saturation when the matrix was protected (percentage).
 #define SAT_REFORCO  110
-#define SAT_PADRAO   128   // 1,0 no formato of ISP
+#define SAT_PADRAO   128   // 1.0 in format of ISP
 
-// (T T^T)^-1 das 24 manchas of carta em sRGB linear (D65).
+// (T T^T)^-1 of 24 letter patches in linear sRGB (D65).
 static const float K[3][3] = {
   {  0.80074f, -0.90448f,  0.09025f },
   { -0.90448f,  2.03918f, -0.97943f },
@@ -77,9 +77,9 @@ static const float K[3][3] = {
 
 typedef struct {
   bool     tem_ccm, tem_sat;
-  float    ccm_awb[3][3];      // a latest que o ACC mandou (sem protecao)
+  float    ccm_awb[3][3];      // the latest that ACC sent (without protection)
   uint32_t sat_awb;
-  float    ccm_enviada[3][3];  // a latest que foi para o ISP
+  float    ccm_enviada[3][3];  // the latest that went to the ISP
   uint32_t sat_enviada;
 } estado_t;
 
@@ -91,8 +91,8 @@ static bool                  s_tem_foto;
 
 static float ganho_valido(float g) { return (g > 0.1f && g < 8.0f) ? g : 1.0f; }
 
-// A line of verde protegida (ver o header). Devolve o verde of branco
-// saturado antes of protecao; 'output' recebe a matriz inteira.
+// A line of green protected (see header). Returns the green of white
+// saturated before protection; 'output' receives the entire array.
 static float proteger(const float M[3][3], float gR, float gB, float output[3][3])
 {
   memcpy(output, M, sizeof(float) * 9);
@@ -101,7 +101,7 @@ static float proteger(const float M[3][3], float gR, float gB, float output[3][3
   const float g_antes = m[0] * s[0] + m[1] * s[1] + m[2] * s[2];
   if (g_antes >= G_MIN) { return g_antes; }
 
-  // Ci = M^T K M (simetrica)
+  // Ci = M^T K M (symmetric)
   float KM[3][3], Ci[3][3];
   for (int i = 0; i < 3; ++i) {
     for (int j = 0; j < 3; ++j) {
@@ -126,7 +126,7 @@ static float proteger(const float M[3][3], float gR, float gB, float output[3][3
   const float p11 = s[0] * c1[0] + s[1] * c1[1] + s[2] * c1[2];
   const float det = p00 * p11 - p01 * p10;
 
-  // r = A m - b: a soma of line nao muda (r0 = 0), o branco sobe ate G_MIN.
+  // r = A m - b: the sum of line does not change (r0 = 0), the blank goes up to G_MIN.
   const float r1 = g_antes - G_MIN;
   if (fabsf(det) < 1e-9f) {
     const float soma = m[0] + m[1] + m[2];
@@ -149,7 +149,7 @@ static void ajustar(esp_ipa_metadata_t *md, const esp_ipa_stats_t *stats, const 
     s_e.sat_awb = md->saturation;
     s_e.tem_sat = true;
   }
-  if (!s_e.tem_ccm) { return; }   // ISP ainda in matriz identidade: branco ja e branco
+  if (!s_e.tem_ccm) { return; }   // ISP still in identity matrix: white is already white
 
   const float gR = ganho_valido(md->red_gain);
   const float gB = ganho_valido(md->blue_gain);
@@ -157,8 +157,8 @@ static void ajustar(esp_ipa_metadata_t *md, const esp_ipa_stats_t *stats, const 
   const float g_antes = proteger(s_e.ccm_awb, gR, gB, nova);
   const bool  protegida = g_antes < G_MIN;
 
-  // Manda a matriz when o ACC mandou uma (a dele esta em md->ccm e precisa
-  // ser trocada) ou when o resultado changed (ganhos novos of AWB).
+  // Send the matrix when ACC sent one (his is in md->ccm and needs
+  // be changed) or when the result changed (new gains of AWB).
   if ((md->flags & IPA_METADATA_FLAGS_CCM) || memcmp(nova, s_e.ccm_enviada, sizeof(nova)) != 0) {
     memcpy(md->ccm.matrix, nova, sizeof(nova));
     md->flags |= IPA_METADATA_FLAGS_CCM;
@@ -174,8 +174,8 @@ static void ajustar(esp_ipa_metadata_t *md, const esp_ipa_stats_t *stats, const 
     s_e.sat_enviada = sat;
   }
 
-  // Foto para o diagnostics. Copia curta (~200 B) sob trava of giro: who le
-  // e o console, em outra tarefa.
+  // Photo for diagnostics. Short copy (~200 B) under spin lock: who le
+  // and the console, in another task.
   taskENTER_CRITICAL(&s_trava);
   s_foto.frames++;
   s_foto.red_gain = gR;
@@ -222,7 +222,7 @@ static void ipa_processar(esp_ipa_t *ipa, const esp_ipa_stats_t *stats, const es
   ajustar(md, stats, sensor);
 }
 
-static void ipa_destruir(esp_ipa_t *ipa) { }   // objeto estatico: nada a release
+static void ipa_destruir(esp_ipa_t *ipa) { }   // static object: nothing to release
 
 static const esp_ipa_ops_t s_ops = {
   .init    = ipa_start,
@@ -238,9 +238,9 @@ ESP_IPA_DETECT_FN(tab5_ipa_color, "tab5_ipa_cor")
   return &s_ipa;
 }
 
-// ---------------------------------------------------------------------------
-// O DESVIO DA LISTA DE ALGORITMOS
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// THE ALGORITHM LIST BYPASS
+// -------------------------------------------------------------------------------
 #define MAX_IPAS 16
 
 const esp_ipa_config_t *__real_esp_ipa_pipeline_get_config(const char *name);
@@ -249,7 +249,7 @@ const esp_ipa_config_t *__wrap_esp_ipa_pipeline_get_config(const char *name)
 {
   const esp_ipa_config_t *orig = __real_esp_ipa_pipeline_get_config(name);
 #if ESP_VIDEO_ISP_DEVICE_WBG
-  return orig;   // v3: o ISP corta o ganho antes of CCM, nada a proteger
+  return orig;   // v3: ISP cuts gain before CCM, nothing to protect
 #else
   if (!orig || orig->nums >= MAX_IPAS) { return orig; }
 

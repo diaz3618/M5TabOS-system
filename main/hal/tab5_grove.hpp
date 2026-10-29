@@ -1,79 +1,79 @@
-// Descoberta of que esta plugado no Grove.
+// Discovery that is plugged into the Grove.
 //
-// O Grove of Tab5 e one so e cabe one dispositivo of cada vez. Hoje disputam:
-//   - o modulo GPS (NMEA, 9600 baud)
-//   - o M5 Unit C6L running Meshtastic (protobuf enquadrado, 115200)
-// e no futuro qualquer outro. Em vez of o user escolher in mao qual app pode
-// open, o sistema PERGUNTA AO FIO.
+// The Grove of Tab5 is only one device and fits one device at a time. Today they compete:
+// - the GPS module (NMEA, 9600 baud)
+// - the M5 Unit C6L running Meshtastic (protobuf framed, 115200)
+// and in the future any other. Instead of the user choosing in hand which app can
+// open, the system ASKS THE FIO.
 //
-// Os dois falam UART, mas se denunciam of longe:
+// They both speak UART, but they report each other from afar:
 //
-//   GPS         9600    lines ASCII comecando em '$' (ex: $GPGSV,...)
-//   Meshtastic  115200  frames binarios comecando em 0x94 0xC3 + size
+// GPS 9600 ASCII lines starting with '$' (ex: $GPGSV,...)
+// Meshtastic 115200 binary frames starting at 0x94 0xC3 + size
 //
-// A diferenca of baud e o que torna isto confiavel: no baud errado o outro
-// aparece como lixo, que nao casa com assinatura none.
+// The difference in baud is what makes it reliable: in the wrong baud the other
+// appears as garbage, which does not match the signature none.
 //
-// UMA ASSIMETRIA IMPORTANTE: o GPS fala sozinho, sem ser perguntado. O
-// Meshtastic em mode PROTO stays CALADO ate one cliente request - por isso a sonda
-// dele e active (mandamos one ToRadio{want_config_id} e vemos se iteration frame).
-// Procurar so escutando encontraria o GPS e nunca o C6L.
+// AN IMPORTANT ASYMMETRY: the GPS speaks to itself, without being asked. O
+// Meshtastic in PROTO mode stays QUIET until one client request - hence the probe
+// it is active (we send one ToRadio{want_config_id} and see if it is an iteration frame).
+// Searching just by listening would find the GPS and never the C6L.
 
 #pragma once
 
 typedef enum {
-  GROVE_NOTHING = 0,       // ninguem respondeu
-  GROVE_GPS,            // modulo NMEA
-  GROVE_MESHTASTIC,     // Unit C6L em mode PROTO
-  GROVE_UNKNOWN,   // chegou byte, mas nao bate com none assinatura
+  GROVE_NOTHING = 0,       // no one responded
+  GROVE_GPS,            // NMEA module
+  GROVE_MESHTASTIC,     // Unit C6L in PROTO mode
+  GROVE_UNKNOWN,   // byte arrived, but it doesn't match none signature
 } grove_type_t;
 
 const char* grove_name(grove_type_t t);
 
-// ---------------------------------------------------------------------------
-// POSSE DO GROVE
-// ---------------------------------------------------------------------------
-// O Grove tem UM par of pins e cabe UM dispositivo. Hoje disputam o service
-// Meshtastic (permanente, enquanto o C6L estiver plugado) e o app Azimutal
-// (enquanto estiver open). Os dois querem a mesma UART.
+// -------------------------------------------------------------------------------
+// GROVE POSSESSION
+// -------------------------------------------------------------------------------
+// The Grove has ONE pair of pins and fits ONE device. Today they compete for the service
+// Meshtastic (permanent, while the C6L is plugged in) and the Azimutal app
+// (while open). They both want the same UART.
 //
-// Sem arbitro, o segundo a chegar levava "UART driver already installed" e
-// falhava - foi o que aconteceu on open o Azimutal com o
-// Meshtastic no ar. Consertar isso dentro of cada app espalharia a regra;
-// aqui ela mora num lugar so.
+// Without referee, the second one to arrive had "UART driver already installed" and
+// failed - that's what happened on open the Azimutal with the
+// Meshtastic in the air. Fixing this within each app would spread the rule;
+// here she lives in a lonely place.
 //
-// Quem toma DEVE release. O service toma no start e nunca released; o app toma no
-// ao_abrir() e released no ao_fechar().
+// Whoever takes it MUST release. The service takes on start and never released; the app takes
+// when_open() and released in when_close().
 typedef enum { GROVE_OWNER_NONE = 0, GROVE_OWNER_MESH, GROVE_OWNER_GPS } grove_owner_t;
 
-// Devolve false se ja houver outro owner. NAO tira of ninguem: who chegou
-// first stays, e who chegou depois precisa notify o user.
+// Returns false if there is already another owner. DO NOT take away from anyone: who arrived
+// first stays, and whoever arrived later needs to notify the user.
 bool         tab5_grove_acquire(grove_owner_t who);
 void         tab5_grove_release(grove_owner_t who);
 grove_owner_t tab5_grove_owner(void);
 const char*  grove_owner_name(grove_owner_t d);
 
-// Roda a sondagem. Bloqueia por alguns segundos (liga o trilho, espera o
-// modulo start, testa os dois baud). SO of tarefa of interface, e SO com o
-// Grove free_space - se one app estiver usando a UART, o resultado nao presta.
+// Run the poll. Blocks for a few seconds (turns on the rail, waits for the
+// start module, tests both baud). OS of task of interface, and OS with the
+// Grove free_space - if an app is using the UART, the result is no good.
 grove_type_t tab5_grove_detect(void);
 
-// Escuta one baud especifico e DESPEJA os bytes crus (hex + ASCII) no console.
+// Listens to a specific baud and DUMP the raw bytes (hex + ASCII) to the console.
 //
-// A contagem of bytes nao basta para diagnosticar: a sonda achou
-// "GPS" num Grove onde estava o C6L, porque 209 bytes of lixo continham one '$'
-// seguido of duas maiusculas. Ver o content desfaz qualquer duvida - NMEA e
-// text legivel, protobuf enquadrado comeca em 94 C3, e lixo nao e nem one nem
-// outro.
+// The count of bytes is not enough to diagnose: the probe found
+// "GPS" in a Grove where the C6L was, because 209 bytes of garbage contained one '$'
+// followed by two capital letters. Seeing the content dispels any doubts - NMEA and
+// readable text, framed protobuf starts at 94 C3, and garbage is neither one nor
+// other.
 void tab5_grove_dump(int baud, int ms);
 
-// Ultimo resultado, sem sondar of novo.
+// Last result, without polling again.
 grove_type_t tab5_grove_type(void);
 
-// Ha ALGUM modulo no cabo? Leitura of level of pino of data: barata o
-// bastante para rodar em loop, on contrario of sondagem. Nao diz QUEM e.
-// SO vale com a porta free_space - com a UART instalada o pino e of driver.
+// Are there ANY modules in the cable? Reading of level of pin of data: cheap or
+// enough to run in a loop, as opposed to polling. It doesn't say WHO it is.
+// SO is valid with the free_space port - with the UART installed the pin and of driver.
 bool tab5_grove_present(void);
 
-// Zera o type detectado, para when o cabo esvazia.
+// Reset the detected type, for when the cable empties.
 void tab5_grove_forget(void);

@@ -1,38 +1,38 @@
-// ORIENTACAO DA TELA - quem decide se o app open stays em pe ou deitado.
+// SCREEN ORIENTATION - who decides whether the open app stays standing up or lying down.
 //
-// O app declara (app_t.orientation, ver kernel/app.h); este modulo aplica. Para
-// ORI_EM_PE e ORI_DEITADO e so a rotation certa in abertura. Para
-// ORI_SEGUE_IMU ele tambem vigia a gravidade enquanto o app esta open e
-// gira entre os DOIS estados que existem - em pe (rotation 0) e deitado
-// (rotation 3, ExtPort1 embaixo). Nunca o lado oposto of nenhum deles.
+// The app declares (app_t.orientation, see kernel/app.h); this module applies. For
+// ORI_EM_PE and ORI_DEITADO and only the right rotation in opening. For
+// ORI_SEGUE_IMU it also monitors gravity while the app is open and
+// rotates between the TWO states that exist - standing (rotation 0) and lying down
+// (rotation 3, ExtPort1 below). Never the opposite side of any of them.
 //
-// NAO E UMA TAREFA. O IMU stays no I2C interno, que so a tarefa of interface
-// pode usar (ver hal/tab5_imu.hpp); entao a vigia e uma funcao que o laco of
-// interface chama a cada iteration. Com nenhum app seguindo o IMU ela retorna in
-// primeira line: quem nao usa nao paga leitura none.
+// IS NOT A TASK. The IMU stays on internal I2C, which is the task of interfacing
+// can use (see hal/tab5_imu.hpp); so the watchman is a function that the loop of
+// interface calls every iteration. With no app following the IMU it returns in
+// first line: Those who don't use it don't pay for reading none.
 //
-// TUDO AQUI E DA TAREFA DE INTERFACE.
+// EVERYTHING HERE AND FROM THE INTERFACE TASK.
 #pragma once
 
 #include <stdint.h>
 #include "app.h"
 
-// Aplica a orientation inicial of app que esta abrindo. Chamar ANTES of profile
-// e of qualquer drawing: rotate muda width e height, e everything que for
-// calculado a partir delas precisa ver o valor novo.
+// Applies the initial orientation of the app that is opening. Call BEFORE of profile
+// and of any drawing: rotate changes width and height, and everything else
+// calculated from them needs to see the new value.
 void orientation_on_open(const app_t* app);
 
-// O app fechou: iteration em pe (a home e sempre em pe) e para of vigiar.
+// The app closed: iteration in pe (home is always in pe) and to watch.
 void orientation_on_close(void);
 
-// Uma iteration of vigia. 'pode_girar' = nenhum finger in screen, nada in frente of
-// app (bloqueio), app ja open of fato. A amostragem continua mesmo when
-// nao pode - so a troca espera.
+// An iteration of watchman. 'pode_girar' = no fingers on screen, nothing in front of
+// app (blocking), app already open indeed. Sampling continues even when
+// can't - only the exchange waits.
 //
-// Devolve true when GIROU nesta chamada: quem chama pede a pass
-// complete e avisa o app (ao_girar).
+// Returns true when TURNED on this call: the caller asks for the pass
+// complete and notify the app (when rotating).
 bool orientation_vigiar(uint32_t now_ms, bool pode_rotate);
 
-// Quanto falta para a next sample, em ms - para a interface parada nao
-// dormir alem dela. UINT32_MAX when nenhum app segue o IMU.
-uint32_t orientation_prazo_ms(uint32_t now_ms);
+// How much is left until the next sample, in ms - for the stopped interface, no
+// sleep beyond it. UINT32_MAX when no app follows the IMU.
+uint32_t orientation_time_until_sample_ms(uint32_t now_ms);

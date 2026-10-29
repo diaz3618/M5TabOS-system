@@ -1,14 +1,14 @@
 // SYSTEM BLUETOOTH - BLE provided by the Tab5's internal C6.
 //
-// The P4 has no radio. The BLE controller lives on the C6, the same chip that
+// The P4 is on the radio. The BLE controller lives on the C6, the same chip that
 // provides Wi-Fi and ESP-NOW. Our C6 firmware enables it by default, and HCI
 // packets use the same Wi-Fi SDIO link (esp_hosted). This header owns the
 // common NimBLE stack on the P4 and provides the following system services:
 //
-//   - turn_on and turn_off; the C6 shares its radio among Wi-Fi, ESP-NOW, and
-//     BLE, so all three coexist with some performance cost;
-//   - scanning for nearby devices, their names, signal strength, and
-//     Meshtastic status.
+// - turn_on and turn_off; the C6 shares its radio among Wi-Fi, ESP-NOW, and
+// BLE, so all three coexist with some performance cost;
+// - scanning for nearby devices, their names, signal strength, and
+// Meshtastic status.
 //
 // Connections and GATT belong to the protocol that uses them (see
 // services/tab5_mesh_ble.cpp). NimBLE delivers connection events through the
@@ -43,9 +43,9 @@ tab5_ble_state_t tab5_ble_state(void);
 bool        tab5_ble_ready(void);
 const char* tab5_ble_description(void);
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // SCANNING - nearby devices
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 #define TAB5_BLE_SEEN_MAX 24
 
 // Classify a device from its advertisement, without connecting. Trackers help

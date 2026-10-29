@@ -13,31 +13,31 @@
 
 static const char *TAG = "grove";
 
-// Mesmos pins of Azimutal - o Grove e one so.
+// Same pins of Azimutal - the Grove and one so.
 #define GROVE_UART   UART_NUM_1
 #define GROVE_RX     54
 #define GROVE_TX     53
 
-// Tempo para o modulo start depois of receber energia. O C6L tem one ESP32-C6
-// que boota o Meshtastic inteiro; 1,2s e folgado para ele chegar on point of
-// responder. Curto demais aqui faz o C6L parecer ausente.
-// Tempo para o modulo start DEPOIS of receber energia.
+// Time for the module to start after receiving power. The C6L has one ESP32-C6
+// which boots the entire Meshtastic; 1.2s and a long time for it to reach the point of
+// respond. Too short here makes the C6L seem absent.
+// Time for module to start AFTER receiving power.
 //
-// 1,2s bastava para one GPS, que comeca a falar quase in hora. NAO basta para o
-// Unit C6L: ele roda o Meshtastic inteiro num ESP32-C6 e leva segundos. Com a
-// espera curta ele era reiniciado a cada sondagem e nunca chegava a responder -
-// a sonda dizia "nada" com o modulo plugado e funcionando.
+// 1.2s was enough for a GPS, which starts talking almost immediately. NOT enough for
+// Unit C6L: it runs the entire Meshtastic on an ESP32-C6 and takes seconds. With the
+// short wait, it restarted with each poll and never responded -
+// the probe said "nothing" with the module plugged in and working.
 //
-// Se o trilho JA estiver on (ajuste "Grove sempre on"), nao ha boot
-// nenhum a wait e a sonda e imediata.
-#define ESPERA_BOOT_MS   4000
+// If the JA rail is on ("Grove always on" setting), there is no boot
+// none of the wait and the probe is immediate.
+#define MODULE_BOOT_WAIT_MS   4000
 
-// Quanto escutar em cada baud. O GPS manda uma sentenca por segundo no pior
-// caso, entao 1,5s garante pelo menos uma.
+// How much to hear at each baud. GPS sends one sentence per second at worst
+// case, then 1.5s guarantees at least one.
 #define ESCUTA_MS        1500
 
-static grove_type_t s_tipo = GROVE_NOTHING;
-static grove_owner_t s_dono = GROVE_OWNER_NONE;
+static grove_type_t s_detected_type = GROVE_NOTHING;
+static grove_owner_t s_owner = GROVE_OWNER_NONE;
 
 const char* grove_owner_name(grove_owner_t d)
 {
@@ -48,26 +48,26 @@ const char* grove_owner_name(grove_owner_t d)
   }
 }
 
-grove_owner_t tab5_grove_owner(void) { return s_dono; }
+grove_owner_t tab5_grove_owner(void) { return s_owner; }
 
 bool tab5_grove_acquire(grove_owner_t who)
 {
-  if (s_dono != GROVE_OWNER_NONE && s_dono != who) {
+  if (s_owner != GROVE_OWNER_NONE && s_owner != who) {
     ESP_LOGW(TAG, "Grove is already owned by %s - %s cannot take it over",
-             grove_owner_name(s_dono), grove_owner_name(who));
+             grove_owner_name(s_owner), grove_owner_name(who));
     return false;
   }
-  s_dono = who;
+  s_owner = who;
   ESP_LOGI(TAG, "Grove agora e do %s", grove_owner_name(who));
   return true;
 }
 
 void tab5_grove_release(grove_owner_t who)
 {
-  // So o owner released. Sem esta guarda, one app que fechasse depois of ter
-  // FALHADO em acquire liberaria o Grove of who estava usando of verdade.
-  if (s_dono != who) { return; }
-  s_dono = GROVE_OWNER_NONE;
+  // Only the owner released. Without this guard, an app that would close after having
+  // FAILED acquire would release the Grove of whoever was using it.
+  if (s_owner != who) { return; }
+  s_owner = GROVE_OWNER_NONE;
   ESP_LOGI(TAG, "Grove liberado por %s", grove_owner_name(who));
 }
 
@@ -81,18 +81,18 @@ const char* grove_name(grove_type_t t)
   }
 }
 
-grove_type_t tab5_grove_type(void) { return s_tipo; }
+grove_type_t tab5_grove_type(void) { return s_detected_type; }
 
 static bool open(int baud)
 {
-  // Cala o driver of UART durante a sonda.
+  // Shuts the UART driver during probe.
   //
-  // O M5.Ex_I2C e inicializado no boot nos pins of Grove (54/53) e RESERVA os
-  // GPIOs. Quando o tab5_keyboard reaponta esse barramento para o ExtPort1, o
-  // release() of M5GFX released o barramento mas nao devolve a reserva - ela stays
-  // pendurada. O uart_set_pin entao avisa "GPIO 53 is not usable" e configura o
-  // pino assim mesmo (a sonda funciona: medimos 209 bytes of NMEA com o aviso
-  // aparecendo). E ruido conhecido, calado so aqui.
+  // The M5.Ex_I2C is initialized at boot on the Grove pins (54/53) and RESERVES the
+  // GPIOs. When tab5_keyboard repoints this bus to ExtPort1, the
+  // release() of M5GFX released the bus but does not return the reservation - it stays
+  // hanging. The uart_set_pin then warns "GPIO 53 is not usable" and configures the
+  // pin anyway (the probe works: we measured 209 bytes of NMEA with the warning
+  // appearing). It's known noise, quiet only here.
   esp_log_level_set("uart", ESP_LOG_ERROR);
 
   uart_config_t cfg = { };
@@ -103,14 +103,14 @@ static bool open(int baud)
   cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   cfg.source_clk = UART_SCLK_DEFAULT;
 
-  tab5_mark("grove: UART a", baud);   // instala o driver - e a trava of PM dele
+  tab5_mark("grove: UART a", baud);   // installs the driver - and the PM locks it
   if (uart_driver_install(GROVE_UART, 2048, 512, 0, NULL, 0) != ESP_OK) {
     esp_log_level_set("uart", ESP_LOG_WARN); return false;
   }
   if (uart_param_config(GROVE_UART, &cfg) != ESP_OK) {
     uart_driver_delete(GROVE_UART); esp_log_level_set("uart", ESP_LOG_WARN); return false;
   }
-  // Atencao a order: uart_set_pin recebe TX antes of RX.
+  // Pay attention to order: uart_set_pin receives TX before RX.
   if (uart_set_pin(GROVE_UART, GROVE_TX, GROVE_RX,
                    UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK)
   {
@@ -124,10 +124,10 @@ static bool open(int baud)
 static void close(void)
 {
   uart_driver_delete(GROVE_UART);
-  esp_log_level_set("uart", ESP_LOG_WARN);   // fora of sonda o aviso iteration a valer
+  esp_log_level_set("uart", ESP_LOG_WARN);   // out of probe the iteration warning takes effect
 }
 
-// Le o que chegar in window e devolve quantos bytes pegou.
+// Reads what arrives in window and returns how many bytes it took.
 static int escutar(uint8_t* buf, int size, int ms)
 {
   int n = 0;
@@ -140,29 +140,29 @@ static int escutar(uint8_t* buf, int size, int ms)
   return n;
 }
 
-// ---------------------------------------------------------------------------
-// Sonda of Meshtastic (115200, active)
-// ---------------------------------------------------------------------------
-// Pede on Meshtastic que se apresente. Chamada com a UART JA open.
+// -------------------------------------------------------------------------------
+// Probe of Meshtastic (115200, active)
+// -------------------------------------------------------------------------------
+// Ask Meshtastic to introduce himself. Call with UART JA open.
 //
-// Isto e obrigatorio: em mode PROTO o radio NAO fala sozinho, so responde. Uma
-// escuta passiva devolve zero bytes mesmo com everything funcionando - foi o que me
-// enganou on usar o despejo raw para testar o C6L.
+// This is mandatory: in PROTO mode the radio DOES NOT speak to itself, it only responds. One
+// passive listening returns zero bytes even with everything working - that's what I
+// tricked into using the raw dump to test the C6L.
 //
-// Mandar estes bytes para one GPS e inofensivo: ele ignora o que nao entende.
+// Sending these bytes to a GPS is harmless: it ignores what it doesn't understand.
 static void request_apresentacao(void)
 {
-  // O StreamAPI of Meshtastic pede que o cliente acorde a porta com 32 bytes
-  // of START1 antes of first request - o radio pode estar em mode of bottom
-  // consumo in serial e perder os primeiros bytes.
+  // StreamAPI of Meshtastic asks client to wake up port with 32 bytes
+  // of START1 before first request - the radio may be in bottom mode
+  // consumption in serial and losing the first bytes.
   uint8_t acorda[32];
   memset(acorda, 0x94, sizeof(acorda));
   uart_write_bytes(GROVE_UART, acorda, sizeof(acorda));
   vTaskDelay(pdMS_TO_TICKS(120));
 
-  // ToRadio{ want_config_id = 0x2A }  -- protobuf raw, mounted a mao:
-  //   field 3 (want_config_id), varint  -> tag 0x18, value 0x2A
-  // Enquadrado: 0x94 0xC3 <tam_hi> <tam_lo> <payload>
+  // ToRadio{ want_config_id = 0x2A } -- protobuf raw, mounted by hand:
+  // field 3 (want_config_id), varint -> tag 0x18, value 0x2A
+  // Framed: 0x94 0xC3 <size_hi> <size_lo> <payload>
   const uint8_t frame[] = { 0x94, 0xC3, 0x00, 0x02, 0x18, 0x2A };
   uart_write_bytes(GROVE_UART, frame, sizeof(frame));
 }
@@ -184,9 +184,9 @@ static bool sondar_meshtastic(void)
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// Sonda of GPS (9600, passiva)
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// GPS probe (9600, passive)
+// -------------------------------------------------------------------------------
 static bool sondar_gps(int* bytes_vistos)
 {
   if (!open(9600)) { return false; }
@@ -197,8 +197,8 @@ static bool sondar_gps(int* bytes_vistos)
   *bytes_vistos = n;
   ESP_LOGI(TAG, "sondagem a 9600 baud (GPS?): %d byte(s) recebidos", n);
 
-  // Assinatura NMEA: '$' seguido of duas letras maiusculas (GP, GL, GN, GA...).
-  // Exigir as letras evita casar com one '$' que caiu no storage of lixo binario.
+  // NMEA signature: '$' followed by two capital letters (GP, GL, GN, GA...).
+  // Requiring the letters avoids matching one '$' that fell into the storage of binary garbage.
   for (int i = 0; i + 2 < n; ++i)
   {
     if (buf[i] == '$' && buf[i+1] >= 'A' && buf[i+1] <= 'Z'
@@ -207,24 +207,24 @@ static bool sondar_gps(int* bytes_vistos)
   return false;
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 
 void tab5_grove_dump(int baud, int ms)
 {
-  // PERGUNTA ANTES DE LIGAR - senao a resposta seria sempre "sim" (o proprio
-  // tab5_power_grove(true) logo abaixo). Estado of hardware of verdade, nao
-  // preferencia (ver o comentario em tab5_power_grove_on()).
+  // ASK BEFORE YOU CALL - otherwise the answer would always be "yes" (the
+  // tab5_power_grove(true) below). State of hardware of truth, no
+  // preference (see comment in tab5_power_grove_on()).
   const bool ja_enabled = tab5_power_grove_on();
   tab5_power_grove(true);
-  // Se o trilho acabou of start, o modulo esta bootando: wait. Ver o
-  // comentario of ESPERA_BOOT_MS - foi isso que fez o C6L parecer mudo.
-  vTaskDelay(pdMS_TO_TICKS(ja_enabled ? 300 : ESPERA_BOOT_MS));
+  // If the trail has just started, the module is booting: wait. See the
+  // comment of ESPERA_BOOT_MS - this is what made the C6L seem dumb.
+  vTaskDelay(pdMS_TO_TICKS(ja_enabled ? 300 : MODULE_BOOT_WAIT_MS));
 
   if (!open(baud)) { printf("could not open UART at %d\n", baud); return; }
 
-  // Pede apresentacao SEMPRE. Para o Meshtastic e obrigatorio (ele nao fala
-  // sozinho); para one GPS e inofensivo. Sem isto o despejo mente: mostra zero
-  // bytes num modulo que esta perfeito, so calado.
+  // ALWAYS ask for an introduction. For Meshtastic it is mandatory (it doesn't say
+  // alone); for one GPS and harmless. Without this the eviction lies: it shows zero
+  // bytes in a module that is perfect are silent.
   request_apresentacao();
 
   static uint8_t buf[512];
@@ -248,27 +248,27 @@ void tab5_grove_dump(int baud, int ms)
   printf("--- end ---\n");
 }
 
-// TEM ALGUEM NO CABO? Uma leitura of GPIO, e so.
+// IS THERE ANYONE ON CABO? One reading of GPIO, and that's it.
 //
-// A sondagem of verdade custa 3 SEGUNDOS - liga a UART, escuta 1,5s a 9600,
-// troca of baud, pede apresentacao e escuta mais 1,5s a 115200. Isso nao pode
-// rodar em loop: e o que fez a deteccao virar decisao of boot, feita uma vez e
-// nunca mais revista.
+// True polling costs 3 SECONDS - turns on the UART, listens for 1.5s at 9600,
+// changes the baud, asks for a presentation and listens for another 1.5s at 115200. This cannot be done
+// run in a loop: this is what made the detection become a decision of boot, made once and
+// never reviewed again.
 //
-// Mas identificar QUEM esta la e caro; perceber que ALGUEM chegou e barato. A
-// line of data denuncia sozinha: em UART, sleep e level ALTO, e todo modulo
-// mantem o TX dele nesse level mesmo sem falar nada. Sem modulo, o pino stays
+// But identifying WHO is there is expensive; realize that SOMEONE has arrived and cheaply. A
+// line of data reports alone: in UART, sleep and level HIGH, and every module
+// keeps his TX at this level even without saying anything. Without module, the pin stays
 // released.
 //
-// Entao: pull-down interno on e uma leitura.
-//   modulo present -> o TX dele (push-pull) vence o pull-down  -> ALTO
-//   nada no cabo    -> so o pull-down sustenta o pino           -> BAIXO
+// So: internal pull-down on is a read.
+// module present -> his TX (push-pull) wins the pull-down -> HIGH
+// nothing on the cable -> only the pull-down supports the pin -> LOW
 //
-// Custo: one gpio_config e one gpio_get_level. A 0,5Hz e ruido estatistico on
-// lado of qualquer coisa que a screen faca.
+// Cost: one gpio_config and one gpio_get_level. At 0.5Hz and statistical noise on
+// side of anything the screen does.
 //
-// SO COM A PORTA LIVRE. Com a UART instalada o pino e of driver dela, e
-// reconfigurar por bottom quebraria a leitura of who esta usando.
+// ONLY WITH THE DOOR FREE. With the UART installed, its e of driver pin, and
+// reconfiguring by bottom would break the reading of who is using it.
 bool tab5_grove_present(void)
 {
   gpio_config_t c = { };
@@ -279,50 +279,50 @@ bool tab5_grove_present(void)
   c.intr_type    = GPIO_INTR_DISABLE;
   gpio_config(&c);
 
-  // O pull-down e fraco (dezenas of kohm) e precisa descarregar a capacitancia
-  // of pino e of cabo. Sem esta pausa a primeira leitura pega o level VELHO -
-  // e one modulo recem-tirado ainda pareceria present.
+  // The pull-down is weak (tens of kohm) and needs to discharge the capacitance
+  // of pin and of cable. Without this pause, the first reading takes the level OLD -
+  // and the newly removed module would still appear to be present.
   esp_rom_delay_us(500);
 
   return gpio_get_level((gpio_num_t)GROVE_RX) != 0;
 }
 
-// Esquece o que foi detectado. Para when o cabo stays vazio: nao ha o que
-// identificar, entao nao se paga sondagem none para concluir "nada".
-void tab5_grove_forget(void) { s_tipo = GROVE_NOTHING; }
+// Forgets what was detected. For when the cable remains empty: there is nothing to
+// identify, so you don't pay poll none to conclude "nothing".
+void tab5_grove_forget(void) { s_detected_type = GROVE_NOTHING; }
 
 grove_type_t tab5_grove_detect(void)
 {
   ESP_LOGI(TAG, "sondando o Grove...");
 
-  // Energia first: sem os 5V nenhum modulo se apresenta, e a sonda diria
-  // "nada" com o aparelho plugado - o pior type of resposta errada.
+  // Energy first: without 5V no module appears, and the daily probe
+  // "nothing" with the device plugged in - the worst type of wrong answer.
   //
-  // ESTADO DE HARDWARE, nao a preferencia "manter sempre on" - as duas
-  // costumavam coincidir, mas nao sao a mesma pergunta (o trilho pode estar
-  // on now por outro reason mesmo com a preferencia desligada). Corrigido
-  // junto com a auditoria of camadas - HAL pergunta a HAL, nunca
-  // a one service (ver WRITING_APPS.md secao 8).
+  // HARDWARE STATUS, not the "always on" preference - both
+  // used to coincide, but they are not the same question (the track may be
+  // on now for another reason even with the preference turned off). Fixed
+  // along with the audit of layers - HAL asks HAL, never
+  // a one service (see docs/WRITING_APPS.md section 8).
   if (tab5_power_grove_on()) {
     ESP_LOGI(TAG, "power rail was already on - probing without a boot wait");
   } else {
     tab5_power_grove(true);
-    ESP_LOGI(TAG, "powered the rail on - waiting %d ms for the module to boot", ESPERA_BOOT_MS);
-    vTaskDelay(pdMS_TO_TICKS(ESPERA_BOOT_MS));
+    ESP_LOGI(TAG, "powered the rail on - waiting %d ms for the module to boot", MODULE_BOOT_WAIT_MS);
+    vTaskDelay(pdMS_TO_TICKS(MODULE_BOOT_WAIT_MS));
   }
 
-  // Meshtastic ANTES of GPS. Motivo: a sonda dele escreve in line, e write
-  // num GPS e inofensivo (ele ignora), enquanto o contrario nao vale - o
-  // Meshtastic calado passaria por "nada" se testassemos so escutando.
-  if (sondar_meshtastic()) { s_tipo = GROVE_MESHTASTIC; }
+  // Meshtastic BEFORE GPS. Reason: his probe writes in line, and write
+  // on a GPS is harmless (it ignores it), while the opposite is not valid - the
+  // Silent Meshtastic would be "nothing" if we tested it just by listening.
+  if (sondar_meshtastic()) { s_detected_type = GROVE_MESHTASTIC; }
   else
   {
     int seen_devices = 0;
-    if (sondar_gps(&seen_devices))  { s_tipo = GROVE_GPS; }
-    else if (seen_devices > 0)      { s_tipo = GROVE_UNKNOWN; }
-    else                      { s_tipo = GROVE_NOTHING; }
+    if (sondar_gps(&seen_devices))  { s_detected_type = GROVE_GPS; }
+    else if (seen_devices > 0)      { s_detected_type = GROVE_UNKNOWN; }
+    else                      { s_detected_type = GROVE_NOTHING; }
   }
 
-  ESP_LOGI(TAG, "Grove: %s", grove_name(s_tipo));
-  return s_tipo;
+  ESP_LOGI(TAG, "Grove: %s", grove_name(s_detected_type));
+  return s_detected_type;
 }

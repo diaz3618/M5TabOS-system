@@ -2,7 +2,7 @@
 #include "app.h"
 #include "tab5_owners.hpp"
 #include "task_pool.h"
-#include "service_stop.hpp"      // request/confirm a saida - o mesmo of GPS, Mesh e Mesh BLE
+#include "service_stop.hpp"      // request/confirm the output - the same as GPS, Mesh and Mesh BLE
 
 #include <string.h>
 #include <stdio.h>
@@ -15,31 +15,31 @@
 
 static const char* TAG = "fundo";
 
-#define FUNDO_PRIORIDADE  1      // abaixo of interface (4), radios (3) e worker (2)
+#define FUNDO_PRIORIDADE  1      // below interface (4), radios (3) and worker (2)
 #define FUNDO_PARAR_MS    3000
-#define FUNDO_CEDER_US    20000  // fundo_ceder() so cede of fato a cada 20 ms
+#define FUNDO_CEDER_US    20000  // Fundo_ceder() only actually cedes every 20 ms
 
-// A PARADA E A DO KERNEL (kernel/service_stop.hpp), e nao uma maquina of estados
-// propria. Antes havia uma (LIVRE, RODANDO, SAIU, ABANDONADA, LIXO) e quem
-// parava ESPERAVA PERGUNTANDO o estado a cada 10 ms, ate 3 s, in tarefa of
-// interface - o mesmo default que o service_stop.hpp aposentou nos servicos. Agora:
-//   - a tarefa DA o semaforo 'exited' como ultima coisa (parada_confirmar) e
-//     NAO TOCA MAIS NA VAGA depois disso;
-//   - quem para ESPERA NELE: acorda no instante of saida;
-//   - passou of prazo, a vaga stays 'abandoned' com o request of pe, e
-//     fundo_manter() limpa when o semaforo finalmente for dado;
-//   - o loop que termina sozinho e visto of mesmo jeito (semaforo dado sem
-//     ninguem ter request).
-// O semaforo 'exited' e o 'wake' nascem uma vez por vaga e nunca sao
-// apagados: o trampolim pode dar o 'exited' depois of a interface ter desistido.
+// THE STOPPING IS THE KERNEL'S (kernel/service_stop.hpp), and not a state machine
+// own. Before there was one (FREE, RUNNING, LEFT, ABANDONED, TRASH) and who
+// stopped WAITING ASKING the status every 10 ms, up to 3 s, in task of
+// interface - the same default as service_stop.hpp retired in services. Now:
+// - the DA task uses the 'exited' semaphore as the last thing (stop_confirm) and
+// DON'T TOUCH THE SPOT AFTER THAT;
+// - whoever stops WAITS FOR HIM: wakes up at the moment of leaving;
+// - expired, the vacancy remains 'abandoned' with the request of pe, and
+// fund_maintain() clears when the semaphore is finally given;
+// - the loop that ends alone and seen in the same way (semaphore given without
+// no one has a request).
+// The 'exited' and 'wake' lights appear once per wave and are never
+// deleted: the springboard can exit after the interface has given up.
 struct background_s {
   const background_def_t*  def;
-  volatile bool       em_uso;         // of start ate a limpeza (finalizar)
-  volatile bool       stop_request;   // alguem of fora of interface pediu (console)
-  bool                stopping;        // a interface esta dentro of sistema_fundo_parar()
-  bool                abandoned;     // nao exited no prazo: limpa when exit
-  stop_t            parada;         // request of parada e confirmacao of saida
-  SemaphoreHandle_t   wake;        // tira o loop of fundo_esperar(); criado 1x, nunca apagado
+  volatile bool       em_uso;         // from start to cleaning (finish)
+  volatile bool       stop_request;   // someone outside the interface asked (console)
+  bool                stopping;        // the interface is inside ofsistema_fundo_parar()
+  bool                abandoned;     // not exited within the deadline: clean when exit
+  stop_t            parada;         // request of stop and confirmation of departure
+  SemaphoreHandle_t   wake;        // remove the loop of Fundo_esperar(); created 1x, never deleted
   int                 notif;
   int64_t             since_us;
   int64_t             cedeu_us;
@@ -54,14 +54,14 @@ static void trampolim(void* arg)
 {
   background_s* f = (background_s*)arg;
   f->def->body(f);
-  // A ULTIMA vez que esta tarefa toca a vaga: daqui em diante a interface
-  // pode limpa-la (o semaforo nao e apagado, so a vaga e zerada).
+  // The LAST time this task touches the vacancy: from now on the interface
+  // can clean it (the traffic light is not turned off, only the parking space is reset).
   stop_confirm(&f->parada);
-  system_wake_interface();   // fundo_manter() limpa quem exited sozinho
-  // Retorna: a vaga of pool devolve o dono e iteration a dormir. Nunca vTaskDelete.
+  system_wake_interface();   // fund_manter() clears who exited alone
+  // Returns: the vacancy of pool returns the owner and iteration to sleep. Never vTaskDelete.
 }
 
-// So in interface (a unica que muda 'def').
+// So in interface (the only one that changes 'def').
 static background_s* achar(const background_def_t* d)
 {
   for (int i = 0; i < FUNDO_MAX; ++i) {
@@ -70,9 +70,9 @@ static background_s* achar(const background_def_t* d)
   return nullptr;
 }
 
-// Volta a vaga a livre preservando os dois semaforos, e esvazia o 'wake':
-// one aviso que sobrou of parada nao pode fazer o next loop pular a
-// primeira espera. (O 'exited' e esvaziado pelo parada_preparar of next.)
+// Returns to free space, preserving both traffic lights, and empties the 'wake':
+// one warning that is left of stop cannot make the next loop skip the
+// first wait. (The 'exited' is emptied by the para_preparar of next.)
 static void reset_vaga(background_s* f)
 {
   SemaphoreHandle_t wake = f->wake;
@@ -85,8 +85,8 @@ static void reset_vaga(background_s* f)
   if (wake) { xSemaphoreTake(wake, 0); }
 }
 
-// A limpeza comum a todo end: parada requested, loop que terminou sozinho, ou
-// abandoned que por end exited. Sempre in interface.
+// Cleanup common to every end: stop requested, loop that ended alone, or
+// abandoned que por end exited. Always in interface.
 static void finalizar(background_s* f)
 {
   if (f->def->on_stop) { f->def->on_stop(); }
@@ -97,13 +97,13 @@ static void finalizar(background_s* f)
   s_profile_dirty = true;
 }
 
-// A tarefa of vaga ja exited (deu o semaforo)? Nao consome o semaforo.
+// Has the vacancy task already exited? Does not consume the traffic light.
 static bool exited(const background_s* f) { return !stop_running(&f->parada); }
 
 bool system_fundo_start(const background_def_t* d)
 {
   if (!d || !d->body || !d->name) { return false; }
-  if (achar(d)) { return false; }   // ja running (ou ainda saindo)
+  if (achar(d)) { return false; }   // already running (or still leaving)
 
   background_s* f = nullptr;
   for (int i = 0; i < FUNDO_MAX && !f; ++i) {
@@ -119,26 +119,26 @@ bool system_fundo_start(const background_def_t* d)
     return false;
   }
 
-  if (!f->wake) { f->wake = xSemaphoreCreateBinary(); }   // uma vez por vaga, para sempre
+  if (!f->wake) { f->wake = xSemaphoreCreateBinary(); }   // once per slot, forever
   reset_vaga(f);
   f->def      = d;
   f->since_us = esp_timer_get_time();
   f->cedeu_us = f->since_us;
   snprintf(f->summary, sizeof(f->summary), "rodando");
 
-  // VISIVEL DESDE O PRIMEIRO INSTANTE - a pastilha cinza e a promessa of
-  // "nada roda escondido". O registro e idempotente pelo name.
+  // VISIBLE FROM THE FIRST INSTANT - the gray tablet and the promise of
+  // "nothing runs hidden". The registry is idempotent by name.
   f->notif = notification_registrar(d->name);
   notification_silenciar(f->notif, d->com_sound ? !d->com_sound() : false);
   notification_publicar(f->notif, 1, NOTIF_ESTADO, f->summary);
 
   const bool pronta = f->wake && stop_prepare(&f->parada);
   taskENTER_CRITICAL(&s_mux);
-  f->em_uso = true;   // por ultimo e sob a trava: quem lista ve a vaga ja complete
+  f->em_uso = true;   // lastly and under the lock: whoever lists sees the vacancy already complete
   taskEXIT_CRITICAL(&s_mux);
   if (!pronta
    || !pool_create(nullptr, trampolim, f, d->name, d->stack ? d->stack : 4096,
-                  FUNDO_PRIORIDADE, OWNER_BACKGROUND, d->name)) {   // dono: ver hal/tab5_owners.hpp
+                  FUNDO_PRIORIDADE, OWNER_BACKGROUND, d->name)) {   // owner: see hal/tab5_owners.hpp
     ESP_LOGE(TAG, "sem memoria para a tarefa de '%s'", d->name);
     stop_abandon(&f->parada);
     finalizar(f);
@@ -153,20 +153,20 @@ bool system_fundo_start(const background_def_t* d)
 bool system_fundo_stop(const background_def_t* d)
 {
   background_s* f = achar(d);
-  if (!f || f->stopping || f->abandoned) { return false; }   // abandoned: ja desistimos dela
+  if (!f || f->stopping || f->abandoned) { return false; }   // abandoned: we've already given up on her
 
   f->stopping = true;
-  // O request ANTES of wake: o loop acordado tem que ja ver "pare", senao
-  // iteration a dormir a espera inteira dele (fundo_esperar pode ser of minutos).
+  // The request BEFORE wake: the woken loop must already see "stop", otherwise
+  // iteration to sleep its entire wait (fundo_wait can be of minutes).
   f->parada.request = true;
   xSemaphoreGive(f->wake);
-  if (stop_request(&f->parada, FUNDO_PARAR_MS)) {   // espera no semaforo, sem perguntar
+  if (stop_request(&f->parada, FUNDO_PARAR_MS)) {   // waits at the traffic lights, without asking
     finalizar(f);
     return true;
   }
-  // Nao matamos a tarefa (ver o porque em kernel/app_task.h): o request stays
-  // of pe, ela exit when puder, e fundo_manter() limpa nessa hora. A
-  // pastilha diz a verdade enquanto isso.
+  // We don't kill the task (see why in kernel/app_task.h): the request stays
+  // of pe, it exits when it can, and Fundo_manter() clears at that time. A
+  // gum tells the truth in the meantime.
   ESP_LOGE(TAG, "'%s' nao saiu em %d ms - fica parando em fundo", d->name, FUNDO_PARAR_MS);
   notification_publicar(f->notif, 1, NOTIF_ESTADO, "parando...");
   f->abandoned = true;
@@ -203,12 +203,12 @@ int system_fundo_listar(background_info_t* out, int max)
   return n;
 }
 
-// De QUALQUER tarefa (o console): so marca, e a interface para of verdade em
-// fundo_manter() - assim ao_parar() roda sempre in interface, como promete o
-// contrato.
+// Of ANY task (the console): just mark, and the interface for of truth in
+// Fundo_manter() - so ao_parar() always runs in interface, as promised by
+// contract.
 bool system_fundo_stop_name(const char* name)
 {
-  // Sob a trava: roda no console, e a interface pode estar zerando a vaga.
+  // Under the lock: runs on the console, and the interface may be resetting the slot.
   bool achou = false;
   taskENTER_CRITICAL(&s_mux);
   for (int i = 0; i < FUNDO_MAX; ++i) {
@@ -223,7 +223,7 @@ bool system_fundo_stop_name(const char* name)
   return achou;
 }
 
-// ---- o loop ---------------------------------------------------------------
+// ---- the loop ---------------------------------------------------------------
 
 bool background_wait(background_t* f, uint32_t ms)
 {
@@ -237,7 +237,7 @@ bool background_yield(background_t* f)
 {
   const int64_t now = esp_timer_get_time();
   if (now - f->cedeu_us >= FUNDO_CEDER_US) {
-    vTaskDelay(1);   // o IDLE deste core roda: watchdog e energia em dia
+    vTaskDelay(1);   // this core's IDLE runs: watchdog and energy up to date
     f->cedeu_us = esp_timer_get_time();
   }
   return !stop_requested(&f->parada);
@@ -252,15 +252,15 @@ void background_estado(background_t* f, int count, const char* summary)
   taskENTER_CRITICAL(&s_mux);
   memcpy(f->summary, r, sizeof(r));
   taskEXIT_CRITICAL(&s_mux);
-  // Quantidade minima 1: a pastilha nunca some enquanto o fundo roda.
+  // Minimum quantity 1: the tablet never disappears while the bottom rotates.
   notification_publicar(f->notif, count > 0 ? count : 1, NOTIF_ESTADO, r);
 }
 
-// ---- o kernel ---------------------------------------------------------------
+// ---- the kernel ---------------------------------------------------------------
 
-// Sob a trava: sistema_impor_preferencias() pode ser chamada fora of
-// interface. So SOMA - e o teto of clock (cpu_max) stays com a screen: one fundo
-// com o profile default (360) apagaria o teto mais bottom que one app pediu.
+// Under the lock:sistema_impor_preferencias() can be called outside of
+// interface. So SOMA - and the ceiling of clock (cpu_max) stays with the screen: one bottom
+// with the default profile (360) would delete the bottom ceiling that one app requested.
 void background_somar_profile(tab5_profile_t& p)
 {
   taskENTER_CRITICAL(&s_mux);
@@ -285,8 +285,8 @@ int background_piso_sleep(void)
   int piso = 0;
   taskENTER_CRITICAL(&s_mux);
   for (int i = 0; i < FUNDO_MAX; ++i) {
-    if (s_f[i].em_uso && s_f[i].def->piso_sleep_mhz > piso) {
-      piso = s_f[i].def->piso_sleep_mhz;
+    if (s_f[i].em_uso && s_f[i].def->sleep_clock_floor_mhz > piso) {
+      piso = s_f[i].def->sleep_clock_floor_mhz;
     }
   }
   taskEXIT_CRITICAL(&s_mux);
@@ -299,8 +299,8 @@ void background_manter(void)
     background_s* f = &s_f[i];
     if (!f->em_uso || f->stopping) { continue; }
     if (exited(f)) {
-      // O loop terminou sozinho, ou a abandoned por end exited: recolhe o
-      // semaforo (ele foi dado) e limpa.
+      // The loop ended on its own, or abandoned by end exited: collects the
+      // traffic light (it was given) and clear.
       stop_request(&f->parada, 0);
       finalizar(f);
     } else if (f->stop_request && !f->abandoned) {
@@ -308,8 +308,8 @@ void background_manter(void)
       system_fundo_stop(f->def);
     }
   }
-  // O conjunto changed: o profile efetivo (screen + fundos) e reaplicado aqui, in
-  // interface, e so aqui. EM REPOUSO ESPERA: aplicar profile mexe em brilho e
-  // teto of clock, que o sleep esta segurando - vale on wake.
+  // The changed set: the effective profile (screen + backgrounds) is reapplied here, in
+  // interface, and only here. ON STANDBY: applying profile changes brightness and
+  // ceiling of clock, which sleep is holding - worth on wake.
   if (!tab5_power_is_sleeping() && s_profile_dirty.exchange(false)) { system_reapply_profile(); }
 }

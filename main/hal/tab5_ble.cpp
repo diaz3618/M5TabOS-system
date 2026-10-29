@@ -39,33 +39,33 @@ extern "C" void ble_store_config_init(void);
 // task-pool slot (kernel/task_pool.h), which exists only while startup runs.
 // Ordering is still guaranteed: only one execution runs at a time, and each
 // request gets a sequence number so requests arriving during execution are not lost.
-static volatile bool     s_quer      = false;   // o ultimo request: on?
-static volatile uint32_t s_request    = 0;       // numero of ultimo request
-static volatile uint32_t s_atendido  = 0;       // numero of ultimo atendido
-static volatile bool     s_running   = false;   // ha uma execucao in vaga
+static volatile bool     s_quer      = false;   // the last request: on?
+static volatile uint32_t s_request    = 0;       // number of last request
+static volatile uint32_t s_atendido  = 0;       // number of last served
+static volatile bool     s_running   = false;   // there is a vague execution
 static bool              s_iniciado  = false;
-static SemaphoreHandle_t      s_trava = nullptr;       // a lista of seen_devices
-static SemaphoreHandle_t      s_sync = nullptr;        // a NimBLE sincronizou
+static SemaphoreHandle_t      s_trava = nullptr;       // the list of seen_devices
+static SemaphoreHandle_t      s_sync = nullptr;        // NimBLE synced
 // THE STACK IN USE. Scanning/canceling from any task and lowering the BLE task
 // go through this mutex. Without it, a screen scan could overlap
 // nimble_port_deinit after NimBLE had destroyed its mutex, rebooting the device.
 static SemaphoreHandle_t      s_stack = nullptr;
-static volatile bool          s_ressincronizar = false; // a stack reiniciou sozinha
+static volatile bool          s_ressincronizar = false; // the stack restarted itself
 static volatile tab5_ble_state_t s_estado = TAB5_BLE_OFF;
 static volatile bool          s_varrendo = false;
 static volatile uint32_t      s_versao = 1;
-static bool                   s_stack_nimble = false;  // nimble_port_init feito
+static bool                   s_stack_nimble = false;  // nimble_port_init done
 static ble_uuid_any_t         s_uuid_mesh;
 
 static tab5_ble_seen_t s_vistos[TAB5_BLE_SEEN_MAX];
 static int              s_n_vistos = 0;
-static int8_t           s_rssi_publicado[TAB5_BLE_SEEN_MAX];   // o que a screen ja mostrou
+static int8_t           s_rssi_publicado[TAB5_BLE_SEEN_MAX];   // what the screen has already shown
 
 static void changed(void) { s_versao = s_versao + 1; }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // STACK
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 static void on_synchronize(void)
 {
   // Use the public C6 address. Without this step, the first ble_gap_* call
@@ -132,7 +132,7 @@ static bool start(void)
     ble_hs_cfg.reset_cb = on_reiniciar;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
     // SECURITY: Meshtastic requires PIN pairing. The Tab5 is the side that
-    // ENTERS the PIN (it does not display or have a fixed one): keyboard only.
+    // ENTER the PIN (it does not display or have a fixed one): keyboard only.
     // The bond is stored in NVS, so the PIN is requested only the first time.
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_KEYBOARD_ONLY;
     ble_hs_cfg.sm_bonding = 1;
@@ -177,7 +177,7 @@ static bool lower(void)
   return ok;
 }
 
-// Serve one request; this is the body that used to run in the dedicated task.
+// Serves one request; this is the body that used to run in the dedicated task.
 static void aplicar(bool turn_on)
 {
   if (turn_on) {
@@ -206,7 +206,7 @@ static void execucao(void*)
     n = s_request;
     aplicar(s_quer);
     s_atendido = n;
-  } while (s_atendido != s_request);   // another request arrived: serve it too
+  } while (s_atendido != s_request);   // another request arrived: serves it too
   s_running = false;
   // A request that arrived between the loop and clearing s_running may not
   // have started another execution, so check once more.
@@ -232,15 +232,15 @@ static void request(bool turn_on)
   disparar();
 }
 
-// ---------------------------------------------------------------------------
-// VARREDURA
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// SCAN
+// -------------------------------------------------------------------------------
 // TRACKERS AND BEACONS, identified from their public advertising fields.
-//   Apple (company 0x004C): type 0x12 = Find My network (AirTag and offline
-//     iPhone/Mac); type 0x02 0x15 = iBeacon, with 1 m RSSI in the last byte.
-//   Tile: service 0xFEED/0xFEEC.  SmartTag (Samsung): service 0xFD5A.
-//   Google 0xFEAA: frame 0x40/0x41 = Find My Device network; other frames are
-//     Eddystone (0x00 and 0x10 carry the 0 m RSSI).
+// Apple (company 0x004C): type 0x12 = Find My network (AirTag and offline
+// iPhone/Mac); type 0x02 0x15 = iBeacon, with 1 m RSSI in the last byte.
+// Tile: service 0xFEED/0xFEEC.  SmartTag (Samsung): service 0xFD5A.
+// Google 0xFEAA: frame 0x40/0x41 = Find My Device network; other frames are
+// Eddystone (0x00 and 0x10 carry the 0 m RSSI).
 static bool uuid16_anunciado(const struct ble_hs_adv_fields& f, uint16_t u)
 {
   for (int k = 0; k < f.num_uuids16; ++k) { if (f.uuids16[k].value == u) { return true; } }
@@ -338,7 +338,7 @@ static void anotar(const ble_addr_t* a, int8_t rssi, const uint8_t* data, uint8_
   if (novo) { changed(); }
 }
 
-static tab5_listener_t<tab5_ble_listener_t> s_ouvinte;   // remover espera a chamada em voo
+static tab5_listener_t<tab5_ble_listener_t> s_ouvinte;   // remove call hold in flight
 
 static int on_evento_gap(struct ble_gap_event* ev, void*)
 {
@@ -359,9 +359,9 @@ static int on_evento_gap(struct ble_gap_event* ev, void*)
   return 0;
 }
 
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 // API
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
 void tab5_ble_init(void)
 {
   if (s_iniciado) { return; }
@@ -370,7 +370,7 @@ void tab5_ble_init(void)
   s_sync  = xSemaphoreCreateBinary();
   s_stack = xSemaphoreCreateMutex();
   ble_uuid_from_str(&s_uuid_mesh, TAB5_BLE_UUID_MESHTASTIC);
-  // No dedicated task: turn_on/turn_off use a task-pool slot (see disparar).
+  // No dedicated task: turn_on/turn_off use the task-pool slot (see trigger).
 }
 
 void tab5_ble_turn_on(void)

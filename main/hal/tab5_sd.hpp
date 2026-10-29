@@ -1,203 +1,203 @@
-// Cartao SD of Tab5, tratado como "disco of sistema".
+// SD card of Tab5, treated as "system disk".
 //
-// A ideia: cada aplicativo tem a sua folder em /sdcard/apps/<Nome>/ e nao
-// precisa saber nada sobre montagem, pins ou FAT. Ele pede one file dentro
-// of propria folder e escreve com fopen/fprintf/fwrite normais - o VFS of IDF
-// faz o resto.
+// The idea: each application has its folder in /sdcard/apps/<Name>/ and does not
+// needs to know nothing about mounting, pins or FAT. It asks for one file inside
+// of own folder and writes with normal fopen/fprintf/fwrite - the VFS of IDF
+// does the rest.
 //
-// FIACAO (of proprio M5Unified, tabela _pin_table_sd):
-//   CLK=43  CMD=44  D0=39  D1=40  D2=41  D3=42
-// Seis pins = SDMMC of 4 bits, nao SPI. Bem mais rapido, e o P4 permite
-// remapear porque tem GPIO matrix para o SDMMC.
+// FIACAO (of own M5Unified, table _pin_table_sd):
+// CLK=43 CMD=44 D0=39 D1=40 D2=41 D3=42
+// Six pins = SDMMC of 4 bits, not SPI. Much faster, and the P4 allows
+// remap because it has GPIO matrix for SDMMC.
 //
-// MONTAGEM POR CONTAGEM DE REFERENCIA: mount e unmount leva ~100ms e desgasta
-// nada, mas cartao mounted consome. Entao who precisa chama mount(), who
-// termina chama unmount(), e a montagem real so acontece in primeira e a
-// desmontagem in latest. O sistema faz isso sozinho para apps que declararam
-// usa_sd - o app nao precisa chamar none das duas.
+// MOUNTING BY REFERENCE COUNTING: mount and unmount takes ~100ms and wears out
+// nothing, but mounted card consumes. So who needs to call mount(), who
+// ends up calling unmount(), and the actual mounting only happens first and then
+// disassembly in latest. The system does this on its own for apps that have declared
+// usa_sd - the app does not need to call either.
 
 #pragma once
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "sd_protocol_types.h"   // sdmmc_card_t (o cartao raw of pendrive)
+#include "sd_protocol_types.h"   // sdmmc_card_t (the raw card of pendrive)
 
-// Onde o cartao aparece no sistema of arquivos.
+// Where the card appears in the file system.
 #define TAB5_SD_ROOT   "/sdcard"
 #define TAB5_SD_APPS   TAB5_SD_ROOT "/apps"
 
-// Monta o cartao (ou apenas incrementa a contagem, se ja estiver mounted).
-// Devolve false se nao ha cartao ou se a montagem failed - e nesse caso a
-// contagem NAO e incrementada.
-// Prepara o modulo. Chamar UMA vez, antes of qualquer tarefa existir.
+// Mounts the card (or just increments the count, if it is already mounted).
+// Returns false if there is no card or if the assembly failed - in which case the
+// count is NOT incremented.
+// Prepares the module. Call ONCE, before any task exists.
 void tab5_sd_init(void);
 
 bool tab5_sd_mount(void);
 
-// Decrementa a contagem; desmonta of verdade when ela chega a zero.
+// Decreases the count; dismounts from truth when it reaches zero.
 void tab5_sd_unmount(void);
 
 bool tab5_sd_mounted(void);
 
-// Diagnostico: uptime (us) of latest montagem e desmontagem of verdade (0 = nunca).
+// Diagnosis: uptime (us) of latest assembly and disassembly of true (0 = never).
 void tab5_sd_last_transitions(int64_t* montou_us, int64_t* desmontou_us);
 
-// Caminho of folder of app, CRIADA se nao existir.
-//   tab5_sd_folder("Azimutal", buf, sizeof buf) -> "/sdcard/apps/Azimutal"
-// Caracteres problematicos no name (space, barra, acento) viram '_'.
+// Path of folder of app, CREATED if it does not exist.
+// tab5_sd_folder("Azimutal", buf, sizeof buf) -> "/sdcard/apps/Azimutal"
+// Problematic characters in name (space, slash, accent) become '_'.
 bool tab5_sd_folder(const char* app, char* out, size_t out_size);
 
-// Abre one file DENTRO of folder of app, criando a folder se preciso.
-// mode e o of fopen ("w", "a", "r"...). Devolve NULL em qualquer failure.
-//   FILE* f = tab5_sd_open("Azimutal", "satelites.csv", "a");
+// Open one file INSIDE folder of app, creating the folder if necessary.
+// mode and the of fopen ("w", "a", "r"...). Returns NULL on any failure.
+// FILE* f = tab5_sd_open("Azimutal", "satelites.csv", "a");
 FILE* tab5_sd_open(const char* app, const char* file, const char* mode);
 
-// "app" aceita subpasta: "Sistema/logs" -> /sdcard/apps/Sistema/logs (cada
-// level e criado se faltar). As subpastas of sistema:
-#define TAB5_SD_LOGS    "Sistema/logs"      // log_AAAA-MM-DD.txt
-#define TAB5_SD_POWER "Sistema/energia"   // energia-AAAA-MM-DD.csv
+// "app" accepts subfolder: "System/logs" -> /sdcard/apps/System/logs (each
+// level and created if missing). The subfolders of system:
+#define TAB5_SD_LOGS    "Sistema/logs"      // log_YYYY-MM-DD.txt
+#define TAB5_SD_POWER "Sistema/energia"   // energy-YYYY-MM-DD.csv
 
-// ---------------------------------------------------------------------------
-// AS PORTAS DE GRAVACAO - todo dado que o sistema grava passa por uma delas
-// ---------------------------------------------------------------------------
-// Tres jeitos of write, e so tres:
+// -------------------------------------------------------------------------------
+// THE RECORDING PORTS - all data that the system writes passes through one of them
+// -------------------------------------------------------------------------------
+// Three ways of writing, and there are only three:
 //
-//   tab5_sd_enqueue_append      append line, SEM wait (vai em lote)
-//   tab5_sd_append append one bloco AGORA (who ja junta em lote: o log)
-//   tab5_sd_replace  switch o file inteiro, sem nunca deixar storage file
+// tab5_sd_enqueue_append append line, NO wait (goes in batch)
+// tab5_sd_append append one block NOW (who already joins in batch: the log)
+// tab5_sd_replace switch the entire file, without ever leaving storage file
 //
-// Por que so por elas: o cartao pode estar EMPRESTADO on computador (mode
-// pendrive, ver mais abaixo). Ai o que for gravado por uma porta vai para o
-// diario in flash interna (hal/tab5_journal) e chega on cartao in iteration, in
-// order em que aconteceu. Quem grava com fopen() direto perde o dado nessa
-// hora - e, se escrevesse no cartao com o computador usando, o corromperia.
+// Because it's just for them: the card can be BORROWED on the computer (mode
+// pendrive, see below). Then whatever is recorded by a door goes to the
+// diary in internal flash (hal/tab5_journal) and arrives on card in iteration, in
+// order in which it happened. Whoever records with fopen() directly loses the data in this
+// time - and, if you wrote on the card with the computer using it, it would corrupt it.
 //
-// tab5_sd_open() stays para LER, e para file novo GRANDE (foto, firmware
-// recebido pelo console): esses exigem o cartao of verdade, e o sistema nao
-// deixa open who os produz com o cartao lent (app_t.exige_sd).
+// tab5_sd_open() stays for READ, and for new BIG file (photo, firmware
+// received by the console): these require the true card, and the system does not
+// leaves open who produces them with the slow card (app_t.exige_sd).
 //
-// A ORDEM e garantida: as tres portas, o lending e a aplicacao of diario
-// passam pela mesma trava. Substituir grava antes o que estava para
-// append. Um mesmo file nao deve receber pelas DUAS portas of
-// append (o lote of enqueue_append pode exit depois).
+// ORDER is guaranteed: the three doors, lending and the application of diary
+// pass through the same lock. Replacing writes what was supposed to before
+// append. The same file must not receive through BOTH ports of
+// append (the batch of enqueue_append can exit later).
 //
-// LEITURA SEMPRE VE A ULTIMA ESCRITA: tab5_sd_open() grava o pending e
-// aplica o diario of one pendrive ANTES of open. Quem le com fopen() direto
-// (o Arquivos) chama tab5_sd_flush_pending() antes.
+// READING ALWAYS SEES THE LAST WRITE: tab5_sd_open() writes the pending and
+// applies the diary of one pendrive BEFORE opening. Who reads with fopen() directly
+// (the Files) calls tab5_sd_flush_pending() first.
 //
-// ---- enqueue_append (o gravador) -----------------------------------------------------
-// Antes, SETE modulos gravavam no cartao cada one of seu jeito. Agora who quer
-// append uma line ENTREGA e segue: tab5_sd_enqueue_append copia para one buffer
-// in PSRAM e iteration in hora, sem touch no cartao. Uma tarefa so ("cartao")
-// grava em lote: monta UMA vez, abre cada file UMA vez, escreve everything o que
-// ele tem pending, in order em que chegou. Grava:
-//   - a cada 5 s, se houver algo pending;
-//   - in hora, para o que foi request com 'urgent' (message of conversa);
-//   - when o buffer passa of half.
+// ---- enqueue_append (the recorder) -----------------------------------------------------
+// Previously, SEVEN modules recorded each one on the card in their own way. Now who wants
+// append a DELIVERY line and follow: tab5_sd_enqueue_append copies to one buffer
+// in PSRAM and iteration in time, without touching the card. A single task ("card")
+// writes in batch: mounts ONCE, opens each file ONCE, writes everything what
+// it has pending, in order in which it arrived. Records:
+// - every 5 s, if there is something pending;
+// - in hora, for what was request with 'urgent' (message of conversation);
+// - when the buffer goes beyond half.
 //
-// 'header' (opcional): escrito uma vez, se o file estiver vazio on open
-// - a line of titulo of one CSV.
+// 'header' (optional): written once, if the file is empty on open
+// - a line of title of one CSV.
 //
-// Falhou (sem cartao, buffer cheio): a line se perde e conta em 'lost' -
-// mesmo trato of antes, when cada modulo simplesmente nao gravava.
+// Failed (no card, buffer full): the line is lost and counts as 'lost' -
+// same deal as before, when each module simply didn't record.
 bool tab5_sd_enqueue_append(const char* app, const char* file, const char* text,
                     const char* header = nullptr, bool urgent = false);
 
-// Grava AGORA everything o que estiver pending (e o diario of one pendrive, se o
-// cartao ja voltou) e espera terminar. Para who vai read por fora of
+// Write NOW everything that is pending (and the diary of one pendrive, if the
+// card has already returned) and waits to finish. For those who will read outside of
 // tab5_sd_open.
 void tab5_sd_flush_pending(void);
 
-// ---- append e replace -----------------------------------------------
-// Bloqueiam (cartao ou flash): nunca of tarefa of interface - use o worker
-// (sistema_trabalho) ou a piggyback of tarefa "cartao". false = nao gravou (sem
-// cartao e sem lending, ou o diario cheio).
+// ---- append and replace -----------------------------------------------
+// Block (card or flash): never of interface task - use worker
+// (work_system) or a piggyback of task "card". false = did not record (no
+// card and without lending, or full diary).
 bool tab5_sd_append(const char* app, const char* file, const void* data, size_t n);
 
-// SIGILOSO: o content antigo e zerado antes of apagado (senhas) - no FAT,
-// erase so brand os setores como livres.
+// CONFIDENTIAL: the old content and zero before being deleted (passwords) - in FAT,
+// erase only the sectors as free.
 #define TAB5_SD_SIGILOSO  0x01
 bool tab5_sd_replace(const char* app, const char* file, const void* data, size_t n,
                         uint8_t flags = 0);
 
-// Diagnostico: bytes esperando, lines written e lost since o boot.
+// Diagnosis: bytes waiting, lines written and lost since boot.
 void tab5_sd_append_status(uint32_t* pending, uint32_t* written, uint32_t* lost);
 
-// CARONA NA TAREFA "cartao". Um service que so precisa, of tempos em tempos,
-// esvaziar algo seu no cartao (o log) nao ganha tarefa propria: registra uma
-// funcao, e a tarefa "cartao" a chama a cada iteration - no maximum 1 s entre
-// voltas, as vezes menos (when one anexo urgent a acorda). Quem pega piggyback
-// mede o proprio time (esp_timer), sem count voltas.
-// A funcao roda in stack of "cartao" (6 KB): pode mount e open file, nao
-// pode wait muito (as gravacoes of todos esperam junto). Ate 8 (CARONAS_MAX).
+// RIDE ON THE "card" TASK. A service that you only need, from time to time,
+// emptying something of yours on the card (the log) does not gain its own task: it records a
+// function, and the "card" task calls it every iteration - no maximum 1 s between
+// turns, sometimes less (when one urgent attachment wakes her up). Who gets piggyback
+// measures the time itself (esp_timer), without counting laps.
+// The function runs in stack of "card" (6 KB): it can mount and open file, no
+// can wait a long time (all recordings wait together). Up to 8 (CARRONAS_MAX).
 typedef void (*tab5_sd_piggyback_t)(void);
 bool tab5_sd_piggyback(tab5_sd_piggyback_t fn);
 
-// Espaco of cartao, em bytes. Qualquer ponteiro pode ser NULL.
+// Card space, in bytes. Any pointer can be NULL.
 bool tab5_sd_space(uint64_t* total, uint64_t* free_space);
 
-// Descricao curta of cartao para mostrar in screen ("SDHC 29.7GB"), ou
-// "sem cartao". Nunca devolve NULL.
+// Short description of card to show on screen ("SDHC 29.7GB"), or
+// "without card". Never returns NULL.
 const char* tab5_sd_description(void);
 
-// O name of cartao (rotulo of volume, o mesmo que o computador mostra), ou ""
-// se ele nao tem name ou ainda nao montou neste boot. Nunca NULL.
+// The name of card (label of volume, the same as the computer shows), or ""
+// if it does not have a name or has not yet mounted this boot. Never NULL.
 const char* tab5_sd_name(void);
 
-// ---------------------------------------------------------------------------
-// EMPRESTIMO AO COMPUTADOR - o mode pendrive (services/tab5_flashdrive)
-// ---------------------------------------------------------------------------
-// O cartao nao pode ter DOIS donos of sistema of arquivos. O FAT of Tab5
-// guarda tabela e diretorio em cache; o of computador tambem. Se os dois
-// escrevem, cada one sobrescreve o que o outro acha que esta la - e isso e
-// cartao corrompido, nao file perdido. Por isso lend e exclusivo:
+// -------------------------------------------------------------------------------
+// LOAN TO THE COMPUTER - the pendrive mode (services/tab5_flashdrive)
+// -------------------------------------------------------------------------------
+// The card cannot have TWO file system owners. The FAT of Tab5
+// stores table and directory in cache; the computer too. If both
+// write, each one overwrites what the other thinks is there - and that is
+// card corrupted, no file lost. That's why lend is exclusive:
 //
-//   1. o que estava para write (tab5_sd_enqueue_append) vai para o cartao antes;
-//   2. mount() passa a recusar, in hora e calado - para o resto of sistema
-//      e como se nao houvesse cartao (todos ja tratam isso);
-//   3. espera who ja estava com ele return_card, ate 'espera_ms'; passou disso,
-//      desiste (SD_LENDING_IN_USE) e everything iteration como estava;
-//   4. desmonta of verdade (sem cache of FAT of Tab5) e inicializa o cartao
-//      CRU, so setores - e isso que o computador recebe.
+// 1. what was to be written (tab5_sd_enqueue_append) goes to the card first;
+// 2. mount() starts to refuse, in time and silently - for the rest of the system
+// is as if there was no card (everyone already deals with this);
+// 3. wait who already had it return_card, until 'wait_ms'; passed that,
+// gives up (SD_LENDING_IN_USE) and everything iteration as it was;
+// 4. Unmount the truth (without cache of FAT of Tab5) and initialize the card
+// RAW, these are sectors - and that's what the computer receives.
 //
-// Enquanto lent, as portas of gravacao (acima) vao para o DIARIO in
-// flash interna. Na devolucao a tarefa "cartao" o aplica, em order: append
-// vai para o end of file; replace troca o file SE o computador nao
-// mexeu nele (comparado com a foto of size e data tirada no lending) -
-// se mexeu, o of computador stays e o of Tab5 vai para "<name>.tab5". Um
-// reinicio no storage nao perde nada: o diario esta in flash e e aplicado when
-// o cartao aparecer.
+// While slow, the recording ports (above) go to the JOURNAL in
+// internal flash. When returning, the "card" task applies it, in order: append
+// goes to the end of file; replace changes the file IF the computer does not
+// moved it (compared to the photo of size and date taken at the loan) -
+// moved, the of computer stays and the of Tab5 goes to "<name>.tab5". One
+// restarting the storage does not lose anything: the diary is in flash and is applied when
+// the card appears.
 //
-// Bloqueia (ate espera_ms + a inicializacao of cartao): nunca of tarefa of
+// Blocks (until wait_ms + card initialization): never of task of
 // interface.
 typedef enum {
   SD_LENT = 0,
-  SD_LENDING_IN_USE,      // alguem segurou o cartao alem of prazo
-  SD_LENDING_NO_CARD,  // nao ha cartao, ou ele nao respondeu
-  SD_LENDING_NO_JOURNAL,  // a particao "reserva" nao existe (tabela antiga)
+  SD_LENDING_IN_USE,      // someone held the card beyond the deadline
+  SD_LENDING_NO_CARD,  // there is no card, or he didn't respond
+  SD_LENDING_NO_JOURNAL,  // the "reserve" partition does not exist (old table)
 } tab5_sd_lending_t;
 tab5_sd_lending_t tab5_sd_lend(uint32_t espera_ms);
 
-// O cartao raw (sdmmc_read_sectors/sdmmc_write_sectors), ou NULL se nao
-// estiver lent. So para who pediu o lending.
+// The raw card (sdmmc_read_sectors/sdmmc_write_sectors), or NULL if not
+// is slow. Only for those who requested the loan.
 sdmmc_card_t* tab5_sd_raw(void);
 
-// Devolve: released o cartao raw, mount() iteration a funcionar e o que became
-// esperando e gravado. Chamar SO depois of o computador ter parado of usar o
-// cartao (USB disabled).
+// Returns: released the raw card, mount() iteration working and what became
+// waiting and recorded. Call OS after the computer has stopped using the
+// card (USB disabled).
 void tab5_sd_return(void);
 
 bool tab5_sd_lent(void);
 
-// O que aconteceu com o diario deste lending (para a screen).
+// What happened to the diary of this loan (to the screen).
 typedef struct {
-  uint32_t applied;     // gravacoes que ja foram para o cartao
-  uint32_t conflicts;     // arquivos que o computador changed: o of Tab5 became em .tab5
-  uint32_t discarded;   // registros sem como aplicar (name invalido)
-  uint32_t lost;      // nao couberam no diario (since o boot)
-  uint32_t in_journal;     // ainda esperando o cartao
+  uint32_t applied;     // recordings that were already on the card
+  uint32_t conflicts;     // files that the computer changed: the of Tab5 became .tab5
+  uint32_t discarded;   // records with no way to apply (invalid name)
+  uint32_t lost;      // didn't fit in the diary (since the boot)
+  uint32_t in_journal;     // still waiting for the card
   uint32_t journal_used, journal_total;   // bytes
-  bool     complete;      // o diario inteiro ja foi aplicado
+  bool     complete;      // the entire diary has already been applied
 } tab5_sd_summary_t;
 void tab5_sd_summary(tab5_sd_summary_t* r);

@@ -1,24 +1,24 @@
-// ANIMACOES DA TELA DE BLOQUEIO.
+// LOCK SCREEN ANIMATIONS.
 //
-// Cada vez que a screen of bloqueio aparece, uma animacao diferente of conjunto
-// e sorteada e stays running POR TRAS dos textos ate o desbloqueio.
+// Each time the lock screen appears, a different animation will appear.
+// is drawn and stays running BEHIND the texts until unlocked.
 //
-// Regras que tornam isto leve:
-//   - o estado of todas as animacoes divide uma unica uniao estatica
-//     (~2 KB); so a sorteada esta alive;
-//   - nada of repintar a screen: cada objeto apaga so a propria caixa (a antiga
-//     e a nova numa so) e se desenha of novo. Todas as formas sao sem
-//     antialiasing, entao draw duas vezes no mesmo lugar e inofensivo;
-//   - caixas que se sobrepoem viram uma so (nada e apagado duas vezes);
-//   - o frame exit no ritmo of frame of sistema (kernel/frame_pacing.hpp), como o
-//     of qualquer app periodico, e anda o sistema_quadro_dt() dele;
-//   - o fundo (lines abstratas) e uma imagem pintada uma vez por bloqueio
-//     (PSRAM, so enquanto locked): "erase" uma caixa e copiar o pedaco
-//     dela, o mesmo custo of paint preto;
-//   - o text (hora, data, aviso, dica) stays in frente: o shell o redesenha,
-//     recortado, so onde a animacao tocou.
+// Rules that make this light:
+// - the state of all animations shares a single static union
+// (~2 KB); only the lucky one is alive;
+// - nothing about repainting the screen: each object only erases its own box (the old one
+// and the new one in one) and it is designed new. All forms are without
+// antialiasing, so drawing twice in the same place is harmless;
+// - boxes that overlap become one (nothing is deleted twice);
+// - the frame exit in the rhythm of frame of system (kernel/frame_pacing.hpp), like the
+// of any periodic app, and its system_quadro_dt() is used;
+// - the background (abstract lines) and an image painted once per block
+// (PSRAM, only while locked): "erase" a box and copy the chunk
+// of it, the same cost of black paint;
+// - the text (time, date, warning, hint) stays in front: the shell redraws it,
+// cropped, just where the animation played.
 //
-// Chamar so of tarefa of interface, of dentro of desenhar_conteudo().
+// Call so of task of interface, of inside ofdraw_content().
 
 #pragma once
 
@@ -29,34 +29,34 @@ typedef struct {
   int16_t x, y, w, h;
 } bq_ret_t;
 
-// Escolhe a animacao of next exibicao (nunca a mesma duas vezes seguidas).
+// Choose the animation of next display (never the same two times in a row).
 void bq_anim_sortear(void);
 
-// O periodo request enquanto locked (~30 q/s). O sistema o arredonda para
-// varreduras inteiras of panel (2, em qualquer clock).
+// The request period while locked (~30 q/s). The system rounds it to
+// entire of panel scans (2, at any clock).
 static const uint32_t BQ_ANIM_PERIODO_MS = 33;
 
-// Devolve a memoria of fundo (desbloqueio, sleep). A next exibicao
-// pinta outro.
+// Returns background memory (unlock, sleep). The next exhibition
+// paints another one.
 void bq_anim_release(void);
 
-// Comeca a animacao sorteada numa area recem-limpa (preta).
+// The animation drawn in a newly cleaned area (black) begins.
 void bq_anim_start(const area_t& a);
 
-// Avanca e desenha one frame. 'extras' sao retangulos que o shell acabou of
-// precisar erase (text que changed): a animacao os apaga e se refaz neles.
-// 'caixas' sao as caixas dos textos; para cada uma, 'clips' devolve a area (ja
-// apagada, w == 0 se a animacao nao tocou) onde o text deve ser repintado -
-// UMA vez, recortado nela.
+// Go ahead and draw one frame. 'extras' are rectangles that the shell just made
+// need erase (text that changed): the animation erases them and recreates them.
+// 'boxes' are text boxes; for each one, 'clips' returns the area (already
+// erased, w == 0 if the animation did not play) where the text should be repainted -
+// ONCE, cut into it.
 void bq_anim_frame(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
                     const bq_ret_t* caixas, int n_caixas, bq_ret_t* clips);
 
-// PAPEL DE PAREDE DA HOME: one dos desenhos abstratos of fundo (estilo 0..4:
-// fios, ondas, teia, raios, circulos - a order of SETTINGS_WALLPAPER_*), pintado
-// in area 'a'. A mesma semente of sempre o mesmo drawing. false = sem memoria
-// ou estilo invalido (a area stays como estava - preta).
+// HOME WALLPAPER: one of the abstract background designs (style 0..4:
+// threads, waves, web, rays, circles - an order of SETTINGS_WALLPAPER_*), painted
+// in area 'a'. The same seed of always the same drawing. false = out of memory
+// or invalid style (the area stays as it was - black).
 bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t semente);
-// O papel of parede pronto stays guardado (PSRAM, o tamanho of area) enquanto
-// estilo, semente e area forem os mesmos - a home iteration sem gera-lo of novo.
-// Soltar: on open one app e no sleep (o kernel chama).
+// The ready wallpaper remains saved (PSRAM, the size of area) while
+// style, seed and area are the same - the home iteration without generating it new.
+// Release: on open one app and no sleep (kernel calls).
 void bq_parede_release(void);

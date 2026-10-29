@@ -1,28 +1,28 @@
-// O diario of gravacoes adiadas in flash interna - ver hal/journal_core.hpp
-// para o formato e as regras, e hal/tab5_sd.hpp para QUANDO ele e usado (o
-// cartao lent on computador). Quem fala com isto e so o tab5_sd.
+// The diary of postponed recordings in internal flash - see hal/journal_core.hpp
+// for the format and rules, and hal/tab5_sd.hpp for WHEN it is used (the
+// card slow on computer). The only person talking about this is tab5_sd.
 //
-// Mora in particao "reserva" (partitions.csv): 2 MB depois of app. Fica
-// vazio quase sempre - so tem registros enquanto o cartao esta fora, e e
-// apagado assim que eles vao para o cartao. O desgaste e desprezivel: alguns
-// KB por uso of pendrive, contra ~100 mil apagamentos por setor.
+// Lives in "reserve" partition (partitions.csv): 2 MB after app. Stay
+// empty almost always - it only has records while the card is out, and e
+// erased as soon as they go to the card. Wear is negligible: some
+// KB per use of pendrive, against ~100 thousand erases per sector.
 //
-// Seguro of qualquer tarefa (uma trava por dentro).
+// Safe for any task (a lock on the inside).
 #pragma once
 
 #include "journal_core.hpp"
 
-// Acha a particao e varre o que became of antes (one reinicio no storage of
-// pendrive). Chamar uma vez no boot, antes of qualquer gravacao.
+// Find the partition and scan what became of before (one restart in the storage of
+// flash drive). Call once at boot, before any recording.
 bool tab5_journal_init(void);
 
 bool tab5_journal_write(const journal_entry_t* reg);
 
-// Ha registros esperando para ir on cartao.
+// There are records waiting to go on the card.
 bool tab5_journal_pending(void);
 
-// Aplica os pending em order (ver journal_apply). Devolve quantos.
+// Applies the pending ones in order (see journal_apply). Return how many.
 int  tab5_journal_apply(journal_apply_fn fn, void* ctx);
 
-// Ocupacao, para a screen: bytes usados, size, registros pending.
+// Occupancy, for screen: bytes used, size, pending records.
 void tab5_journal_usage(uint32_t* usado, uint32_t* total, uint32_t* pending);

@@ -28,8 +28,8 @@ static const int   LINHA_STEP  = 34;    // acompanha TAM_MSG
 static const int   DIVISOR_A   = 40;
 static const int   VAO_BALAO   = 8;
 // A HORA EMBAIXO DO BALAO ("14:32"), of lado of quem falou. So when a
-// message tem data of verdade - sem ela (clock nao acertado) nao ha o que
-// dizer, e a faixa nem existe.
+// message has date of truth - without it (clock not set) there is nothing
+// say, and the track doesn't even exist.
 static const float TAM_HORA    = 1.7f;
 static const int   HORA_A      = 22;
 static const int   ESCRITA_A   = 80;
@@ -38,7 +38,7 @@ static const int   MARCA_L     = 26;    // marca of send_state, a left of bubble
 static const int   CAP_MAX     = 256;
 
 struct conversation_bubble_s {
-  uint32_t assin;               // text+name+meta+lado+width of ultima measurement (ver medir)
+  uint32_t assin;               // text+name+meta+lado+width of last measurement (see measure)
   int16_t  bl, ba, height, name_a, meta_a;
   uint16_t color_name, color_meta;
   bool     minha, start_dia;
@@ -67,7 +67,7 @@ int conversation_break_lines(lgfx::LovyanGFX& d, const char* txt, int width_px,
     while (*end && *end != ' ') { ++end; }
     size_t size = (size_t)(end - p);
     // Palavra maior que o buffer of uma line: entra so o que couber (sem
-    // partir one caractere UTF-8), e o resto iteration pelo loop como "a next
+    // starting from one UTF-8 character), and the rest iteration through the loop as "a next
     // palavra" - nada e descartado.
     const bool cortada = size >= CONVERSA_LINHA_BYTES;
     if (cortada) {
@@ -78,12 +78,12 @@ int conversation_break_lines(lgfx::LovyanGFX& d, const char* txt, int width_px,
     memcpy(palavra, p, size);
     palavra[size] = 0;
 
-    // O LIMITE E A LARGURA, NUNCA O BUFFER. Antes o teste montava "current +
+    // THE LIMIT AND THE WIDTH, NEVER THE BUFFER. Before the test mounted "current +
     // palavra" num buffer of tamanho of uma line: when os BYTES acabavam
-    // antes dos pixels (acento e emoji ocupam 2-4 bytes), o snprintf cortava,
+    // before pixels (accent and emoji take up 2-4 bytes), snprintf cut it off,
     // o text cortado "cabia", e o end of palavra sumia - a line terminava no
-    // middle of screen e o resto nao aparecia em lugar nenhum. Agora o que nao
-    // cabe no buffer simplesmente vai para a line of bottom.
+    // middle of screen and the rest didn't appear anywhere. Now what not
+    // fits in the buffer simply goes to the bottom line.
     const size_t usado = strlen(current);
     const bool cabe_bytes = usado + (usado ? 1 : 0) + size < CONVERSA_LINHA_BYTES;
     char teste[CONVERSA_LINHA_BYTES];
@@ -97,12 +97,12 @@ int conversation_break_lines(lgfx::LovyanGFX& d, const char* txt, int width_px,
       p = end;
       while (*p == ' ') { ++p; }
     } else if (!current[0]) {
-      // Linha vazia e nem assim coube: corta por caractere (nunca no middle of
+      // Empty line and it didn't even fit: cut by character (never in the middle of
       // one UTF-8) e avanca SO o que entrou - o resto of palavra segue adiante.
       memcpy(current, palavra, size + 1);
       tab5_cortar_on_caber(d, current, width_px);
       size_t consumido = strlen(current);
-      if (consumido == 0) {   // nem 1 caractere coube: avanca 1 mesmo assim (nunca trava)
+      if (consumido == 0) {   // not even 1 character fit: advances 1 anyway (never crashes)
         const unsigned char c0 = (unsigned char)palavra[0];
         consumido = ((c0 & 0xE0) == 0xC0) ? 2 : ((c0 & 0xF0) == 0xE0) ? 3 : ((c0 & 0xF8) == 0xF0) ? 4 : 1;
       }
@@ -166,13 +166,13 @@ static void marca_send_state(lgfx::LovyanGFX& d, int cx, int cy, uint8_t send_st
     d.drawLine(cx - 3, cy + 7, cx + 8, cy - 6, TFT_GREENYELLOW);
   } else if (send_state == CONVERSA_ENVIO_OUVIDO) {
     // O mesmo visto, em cinza: exited e a rede ouviu, mas quem devia
-    // confirm (o destinatario) ainda nao confirmou.
+    // confirm (the recipient) has not yet confirmed.
     d.drawLine(cx - 8, cy, cx - 3, cy + 6, TFT_DARKGREY);
     d.drawLine(cx - 8, cy + 1, cx - 3, cy + 7, TFT_DARKGREY);
     d.drawLine(cx - 3, cy + 6, cx + 8, cy - 7, TFT_DARKGREY);
     d.drawLine(cx - 3, cy + 7, cx + 8, cy - 6, TFT_DARKGREY);
   } else if (send_state == CONVERSA_ENVIO_SEM_RESPOSTA) {
-    // Cinza, circulo e "?": nao e falha, e nao saber.
+    // Gray, circle and "?": it is not failure, it is not knowing.
     d.drawCircle(cx, cy, 9, TFT_DARKGREY);
     d.drawCircle(cx, cy, 8, TFT_DARKGREY);
     const auto e = d.getTextStyle();
@@ -191,12 +191,12 @@ static void marca_send_state(lgfx::LovyanGFX& d, int cx, int cy, uint8_t send_st
 }
 
 // ---------------------------------------------------------------------------
-// MEDIR - uma vez por mudanca, nunca por frame
+// MEASURE - once per change, never per frame
 // ---------------------------------------------------------------------------
-// So o que changed e re-medido. Mensagem chegando ou confirmacao of entrega
-// (que so troca a marca) re-media TODOS os baloes - ate 256, quebrando line
+// Only what is changed and re-measured. Message arriving or confirmation of delivery
+// (which only changes the brand) re-measures ALL balloons - up to 256, breaking line
 // palavra a palavra - in tarefa of interface: se caia no middle of digitacao,
-// aquele frame atrasava e a key engasgava. Cada bubble guarda a assinatura
+// that frame was delayed and the key choked. Each bubble keeps the signature
 // of que o define (text, name, meta, lado, width); igual, so os campos
 // baratos (marca, data) sao atualizados. Indice deslocado (historico que
 // rolou) of assinatura diferente e e re-medido - nunca reaproveita errado.
@@ -241,7 +241,7 @@ static bool medir(conversation_t* c, lgfx::LovyanGFX& d, int larg)
 
   bool estrutura = (n != n_antes);
   int dia_ant = 0;
-  static conversation_msg_t m;   // 300+ bytes: fora of stack of interface
+  static conversation_msg_t m;   // 300+ bytes: out of stack of interface
   for (int i = 0; i < n; ++i) {
     bubble_t* b = &c->bal[i];
     memset(&m, 0, sizeof(m));
@@ -303,8 +303,8 @@ static bool medir(conversation_t* c, lgfx::LovyanGFX& d, int larg)
     b->bl = (int16_t)bl;
     b->ba = (int16_t)(24 + b->n_lines * LINHA_STEP + b->name_a + b->meta_a);
 
-    // Divisor antes of primeira message of cada dia. Sem data (clock nao
-    // acertado when ela chegou) nao abre dia - senao virava 31/12/1969.
+    // Divider before the first message of each day. No date (clock not
+    // agreed when it arrived) it doesn't open on the day - otherwise it would become 12/31/1969.
     b->start_dia = false;
     if (tab5_time_is_valid(b->when)) {
       const int dia = dia_local(b->when);
@@ -337,8 +337,8 @@ static void bubble_draw(lgfx::LovyanGFX& d, int i, int x0, int y, int larg, void
   const uint16_t color = color_bubble(d, b->minha);
   d.fillRoundRect(bx, y, b->bl, b->ba, 10, color);
 
-  // Recorte no proprio bubble (dentro of of faixa): one emoji no end of line
-  // nao pinta o vao ate o next.
+  // Crop in own bubble (within of track): one emoji at the end of line
+  // doesn't paint the gap to the next one.
   int32_t cx, cy, cl, ca;
   d.getClipRect(&cx, &cy, &cl, &ca);
   const int rx0 = (bx > cx) ? bx : cx;
@@ -396,7 +396,7 @@ void conversation_open(conversation_t* c, paint_t* p, conversation_count_t count
   c->bal = bal; c->cap = cap;
   c->count = count; c->read = read; c->send = send; c->ctx = ctx; c->p = p;
   c->medir = true;
-  virtual_keyboard_phrase(&c->kb, true);   // text corrido: maiuscula no start of phrase
+  virtual_keyboard_phrase(&c->kb, true);   // plain text: capitalized at the start of phrase
   c->barra_base = c->barra_modo = c->barra_larg = c->barra_cursor = c->barra_topo = c->barra_env = -1;
   list_set(&c->lista, ROLAGEM_FIM, 0, bubble_height, bubble_draw, c);
 }
@@ -443,7 +443,7 @@ void conversation_switch(conversation_t* c)
 }
 
 // ---------------------------------------------------------------------------
-// EDICAO DO RASCUNHO - sempre no cursor, sempre em fronteira of caractere UTF-8
+// DRAFT EDITING - always at the cursor, always on the UTF-8 character border
 // ---------------------------------------------------------------------------
 static int utf8_anterior(const char* s, int i)
 {
@@ -472,13 +472,13 @@ static void inserir(conversation_t* c, const char* t, size_t n)
 {
   cursor_ajustar(c);
   const size_t len = strlen(c->rascunho);
-  const size_t request = n;   // 't' tem EXATAMENTE n bytes - nao e uma string terminada
+  const size_t request = n;   // 't' is EXACTLY n bytes - it is not a terminated string
   size_t teto = sizeof(c->rascunho) - 1;
   if (c->limit > 0 && (size_t)c->limit < teto) { teto = (size_t)c->limit; }
   if (len >= teto) { return; }
   if (len + n > teto) { n = teto - len; }
-  // Nunca corta no middle of one caractere: recua ate a fronteira. So olha
-  // dentro dos 'request' bytes recebidos. Antes isto era strlen(t) - e a
+  // Never cuts in the middle of a character: indents to the border. Just look
+  // within the 'request' bytes received. Before this was strlen(t) - and the
   // key of keyboard virtual chega como UM char released in stack, sem o zero
   // no end: strlen lia o lixo depois dele, e when o byte seguinte calhava
   // of parecer continuacao of UTF-8 (0x80-0xBF) a letra era descartada.
@@ -505,7 +505,7 @@ static void send_rascunho(conversation_t* c)
   if (c->send(c->rascunho, c->ctx)) {
     c->rascunho[0] = 0;
     c->cursor = 0;
-    list_on_start(&c->lista);   // a message nova aparece embaixo: vai ate ela
+    list_on_start(&c->lista);   // the new message appears below: go to it
   }
   system_request_redraw();
 }
@@ -514,10 +514,10 @@ static void send_rascunho(conversation_t* c)
 // QUEBRA DA BARRA DE ESCRITA, com deslocamentos
 // ---------------------------------------------------------------------------
 // Diferente of conversa_quebrar_linhas (que devolve textos e engole os
-// espacos), esta devolve ONDE cada line comeca no text original: o touch no
+// spaces), this returns WHERE each line begins in the original text: touch does not
 // field precisa transformar "x, y" em position of cursor, e o cursor precisa of
 // one lugar exato mesmo entre espacos. As lines particionam o text - o
-// espaco que sobra no end of uma line pertence a ela.
+// space left at the end of a line belongs to it.
 // ini[k] e o start of line k; ini[n] = end of text. Devolve n (>= 1).
 static int break_offsets(lgfx::LovyanGFX& d, const char* s, int width_px, int16_t* ini, int max)
 {
@@ -547,7 +547,7 @@ static int break_offsets(lgfx::LovyanGFX& d, const char* s, int width_px, int16_
       else { break; }
     }
     if (bom == i) {
-      // Nem a primeira palavra coube: corta por caractere.
+      // Not even the first word fit: cut by character.
       int e = i;
       char teste[CONVERSA_LINHA_BYTES];
       for (;;) {
@@ -559,7 +559,7 @@ static int break_offsets(lgfx::LovyanGFX& d, const char* s, int width_px, int16_
         e = nx;
         if (!s[e]) { break; }
       }
-      if (e == i) { e = utf8_seguinte(s, i); }   // nunca trava
+      if (e == i) { e = utf8_seguinte(s, i); }   // never crashes
       bom = e;
     }
     i = bom;
@@ -574,8 +574,8 @@ static int break_offsets(lgfx::LovyanGFX& d, const char* s, int width_px, int16_
 // ---------------------------------------------------------------------------
 // BOTAO DE ENVIAR: circulo com o aviao of papel (seta para a right com o
 // entalhe atras), como nos mensageiros of celular. Aceso so com rascunho: sem
-// text nao ha o que send, e o botao apagado diz isso antes of touch.
-// Desenho por primitivas - a fonte of sistema nao tem o glifo.
+// text has nothing to send, and the unlit button says this before touch.
+// Drawing by primitives - the system font does not have the glyph.
 static void botao_send(lgfx::LovyanGFX& d, int x, int y, int l, int a, uint16_t color,
                          bool aceso, uint16_t fundo)
 {
@@ -630,16 +630,16 @@ void conversation_draw(conversation_t* c, lgfx::LovyanGFX& d, const area_t& r,
   const char* fonte = !pode_write ? (reason ? reason : "")
                     : c->rascunho[0] ? c->rascunho
                     // A dica diz a verdade of caso: com keyboard encaixado o touch
-                    // nao abre nada (nao rouba meia screen).
+                    // doesn't open anything (doesn't steal half a screen).
                     : (tab5_keyboard_present() ? "digite no teclado; ENTER envia" : "toque para escrever");
   const int field_l = r.width - 24 - ENV_L;
   const bool eh_rascunho = pode_write && c->rascunho[0];
   c->disp = &d;
   cursor_ajustar(c);
 
-  // A QUEBRA SO E REFEITA QUANDO O TEXTO OU A LARGURA MUDAM. Antes cada
+  // THE BREAK IS ONLY REDONE WHEN THE TEXT OR WIDTH CHANGES. Before each
   // pass re-quebrava e re-media o rascunho inteiro - e uma pass acontece
-  // on lower o finger in key, on release e a cada letra, ou seja, tres vezes
+  // on lower o finger in key, on release and at each letter, that is, three times
   // por letra digitada.
   const paint_t* p = c->p;
   const bool m_txt  = paint_changed_s(p, c->barra_txt, sizeof(c->barra_txt), fonte);
@@ -651,7 +651,7 @@ void conversation_draw(conversation_t* c, lgfx::LovyanGFX& d, const area_t& r,
   c->bar_rascunho = eh_rascunho;
 
   // Linha of cursor e window of DUAS lines que a contains. A window so anda
-  // when o cursor exit dela - edit no middle of text nao faz a barra pular.
+  // when the cursor exits it - edit in the middle of text does not make the bar jump.
   int lc = c->bar_n - 1;
   if (eh_rascunho) {
     lc = 0;
@@ -674,7 +674,7 @@ void conversation_draw(conversation_t* c, lgfx::LovyanGFX& d, const area_t& r,
   const bool m8 = paint_changed_i(p, &c->barra_env, eh_rascunho);
   if (m1 || m2 || m_txt || m_larg || m6 || m7 || m8 || complete) {
     // O botao of send so e refeito when a barra se mexe ou when o
-    // rascunho passa of vazio a cheio (ou o contrario) - nao a cada letra.
+    // draft goes from empty to full (or vice versa) - not with each letter.
     const bool everything = m1 || m2 || complete;
     const bool env  = everything || m8;
     if (everything) { tab5_screen_clear(r.x, base, r.width, ESCRITA_A, FUNDO); }
@@ -713,7 +713,7 @@ void conversation_draw(conversation_t* c, lgfx::LovyanGFX& d, const area_t& r,
       if (cx > r.x + 12 + field_l - 6) { cx = r.x + 12 + field_l - 6; }
       d.fillRect(cx, y0 + k * passo, 3, fa, TFT_GREENYELLOW);
     }
-    // Sem botao of send when nao of para send: one botao que nao funciona e pior que
+    // No button of send when not of to send: one button that doesn't work is worse than
     // a ausencia dele.
     if (pode_write && env) {
       botao_send(d, r.x + r.width - ENV_L, base + 6, ENV_L - 14, ESCRITA_A - 12,
@@ -727,9 +727,9 @@ void conversation_draw(conversation_t* c, lgfx::LovyanGFX& d, const area_t& r,
 }
 
 // ---------------------------------------------------------------------------
-// TECLAS
+// KEYS
 // ---------------------------------------------------------------------------
-// O keyboard olha o text antes of cursor para armar a maiuscula of start of
+// The keyboard looks at the text before the cursor to set the start of capital.
 // phrase: chamado sempre que o text ou o cursor mudam com ele open.
 static void context(conversation_t* c) { virtual_keyboard_context(&c->kb, c->rascunho, c->cursor); }
 
@@ -756,7 +756,7 @@ static void para_screen(int x, int y, int* xs, int* ys)
 }
 
 // O keyboard (fingers, return of key, soltura) e of sistema: aqui so se
-// aplicam as teclas que ele confirmou nesta sample.
+// apply the keys he confirmed in this sample.
 void conversation_touch_level(conversation_t* c, int x, int y, bool pressed)
 {
   int actions[8];
@@ -767,9 +767,9 @@ void conversation_touch_level(conversation_t* c, int x, int y, bool pressed)
   if (list_drag(&c->lista, x, y, pressed)) { system_request_redraw(); }
 }
 
-// TOQUE NO TEXTO: leva o cursor para o caractere mais next of finger, sem
+// TAP ON TEXT: takes the cursor to the character closest to the finger, without
 // erase nada. Usa as posicoes of ULTIMA paint of barra (bar_x0/bar_y0/
-// bar_passo e as lines visiveis) e mede com a mesma fonte dela.
+// bar_passo and visible lines) and measures it with the same source.
 static void cursor_no_touch(conversation_t* c, int xs, int ys)
 {
   if (!c->bar_rascunho || !c->disp || c->bar_nl <= 0 || c->bar_passo <= 0) { return; }
@@ -779,9 +779,9 @@ static void cursor_no_touch(conversation_t* c, int xs, int ys)
   const int lin = c->bar_topo + k;
   const int ini = c->bar_ini[lin];
   int end = c->bar_ini[lin + 1];
-  // Nas lines que nao sao a ultima, o espaco of quebra e of line mas o
-  // cursor depois dele seria drawn in line of bottom: para no ultimo
-  // caractere visivel.
+  // In lines that are not the last, the space of breaks and of line but the
+  // cursor after it would be drawn in line of bottom: stops at the last
+  // visible character.
   if (lin + 1 < c->bar_n) { while (end > ini && c->rascunho[end - 1] == ' ') { --end; } }
 
   lgfx::LovyanGFX& d = *c->disp;
@@ -816,11 +816,11 @@ void conversation_touch(conversation_t* c, int x, int y)
     return;
   }
 
-  // O end of uma rolagem nao e click em nada.
+  // The end of a scroll is not clicking on anything.
   if (list_item_touched(&c->lista, x, y, nullptr) == LISTA_ARRASTE) { return; }
 
   // Barra of escrita: o botao of seta envia; o field abre o keyboard virtual (so sem o
-  // fisico encaixado - com ele, nao roubamos meia screen).
+  // physical box - with it, we don't steal half a screen).
   const int base = r.y + r.height - ESCRITA_A - (virtual_keyboard_is_open(&c->kb) ? virtual_keyboard_height(area_tec(c)) : 0);
   if (ys >= base && ys < base + ESCRITA_A && c->pode_write) {
     if (xs >= r.x + r.width - ENV_L) {
@@ -829,9 +829,9 @@ void conversation_touch(conversation_t* c, int x, int y)
     } else if (virtual_keyboard_is_open(&c->kb)) {
       cursor_no_touch(c, xs, ys);
     } else if (!tab5_keyboard_present()) {
-      virtual_keyboard_open(&c->kb);            // trava o INICIO; o finger que abriu nao digita
+      virtual_keyboard_open(&c->kb);            // stops START; the finger that opened does not type
       cursor_no_touch(c, xs, ys);       // o mesmo touch que abre ja posiciona o cursor
-      context(c);                      // rascunho vazio: ja abre com a maiuscula armada
+      context(c);                      // empty draft: it already opens with the capital letter armed
       request_complete(c);
     }
   }
@@ -840,7 +840,7 @@ void conversation_touch(conversation_t* c, int x, int y)
 // ---------------------------------------------------------------------------
 // CURSOR PELO TECLADO FISICO
 // ---------------------------------------------------------------------------
-// Del: apaga o caractere DEPOIS of cursor (o Backspace apaga o of antes).
+// Del: deletes the character AFTER the cursor (Backspace deletes the of before).
 static void erase_depois(conversation_t* c)
 {
   cursor_ajustar(c);
@@ -865,7 +865,7 @@ static void palavra(conversation_t* c, bool frente)
   c->cursor = i;
 }
 
-// Quantos CARACTERES (nao bytes) ha of 'ini' ate 'end'.
+// How many CHARACTERS (not bytes) are there from 'ini' to 'end'.
 static int n_caracteres(const char* s, int ini, int end)
 {
   int n = 0;
@@ -875,7 +875,7 @@ static int n_caracteres(const char* s, int ini, int end)
 
 // Seta para top/bottom: a line of top/bottom of barra, in mesma coluna (em
 // caracteres). Usa a quebra of ULTIMA paint (bar_ini) - a barra e repintada
-// a cada key, entao ela e a of text of now. Ja in primeira line, top
+// to each key, so it is the one of text of now. Already in the first line, top
 // vai on start; in ultima, bottom vai on end.
 static void line_vizinha(conversation_t* c, bool bottom)
 {
@@ -894,8 +894,8 @@ static void line_vizinha(conversation_t* c, bool bottom)
   const int col = n_caracteres(c->rascunho, c->bar_ini[k], c->cursor);
   int i = c->bar_ini[alvo];
   int end = c->bar_ini[alvo + 1];
-  // O espaco of quebra pertence a line mas o cursor depois dele cairia in
-  // line of bottom: para no ultimo caractere visivel (como no touch).
+  // The space of break belongs to line but the cursor after it would fall in
+  // line of bottom: stops at the last visible character (as in touch).
   if (alvo + 1 < n) { while (end > i && c->rascunho[end - 1] == ' ') { --end; } }
   for (int k2 = 0; k2 < col && i < end; ++k2) { i = utf8_seguinte(c->rascunho, i); }
   c->cursor = i;
@@ -933,10 +933,10 @@ void conversation_type(conversation_t* c, const char* text, uint8_t code, uint8_
     case TAB5_KEY_TAB:    return;   // nada a fazer numa message
     default: break;
   }
-  // Com Ctrl ou Alt e atalho, nao text: one "Ctrl+c" nao pode virar one "c".
+  // With Ctrl or Alt and shortcut, not text: one "Ctrl+c" cannot become one "c".
   if (mod & (TAB5_KEY_CTRL | TAB5_KEY_ALT)) { return; }
-  // Controle nao vira caractere. Uma sequencia acentuada vem com mais of one
-  // byte e entra inteira (ou nao entra) - inserir() nunca corta no middle dela.
+  // Control does not become a character. An accentuated sequence comes with more of one
+  // byte and enters in full (or not at all) - insert() never cuts in its middle.
   char limpo[16];
   size_t n = 0;
   for (const char* ch = text; ch && *ch && n < sizeof(limpo) - 1; ++ch) {

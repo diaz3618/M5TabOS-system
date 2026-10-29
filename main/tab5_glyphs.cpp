@@ -5,216 +5,281 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
-static const char *TAG = "glifos";
+static const char *TAG = "glyphs";
 
-// ---------------------------------------------------------------------------
-// O CACHE
-// ---------------------------------------------------------------------------
-// Tabela of espalhamento (enderecamento open) + uma arena so para as
-// imagens, as duas in PSRAM e criadas no first uso. Encheu (arena ou 3/4
-// of tabela): recomeca of zero. Simples of proposito - o conjunto of letras
-// em uso e pequeno (poucas fontes, poucas combinacoes of color), e recomecar
-// custa so redesenhar cada letra uma vez.
+// -------------------------------------------------------------------------------
+// THE CACHE
+// -------------------------------------------------------------------------------
+// Hash table (open addressing) + a dedicated arena for the images,
+// both stored in PSRAM and initialized on first use. When full (either the
+// arena or 3/4 of the table): reset everything and start over. Intentionally
+// simple - the set of characters in use is small (few fonts, few color
+// combinations), and resetting only costs rendering each character once again.
 //
-// UMA TAREFA SO: so a interface desenha text (ver tab5_ui.cpp - as fontes ja
-// tem essa regra). Nenhuma trava aqui.
-static const uint32_t TAB_N       = 4096;          // potencia of 2
-// 512 KB encheu in primeira measurement (561 letras, ~900 B cada): a interface usa
-// mais combinacoes of fonte e color of que parecia. 1 MB cabe ~1.100.
+// SINGLE TASK ONLY: only the UI renders text (see tab5_ui.cpp - the fonts
+// already follow this rule). No locking here.
+static const uint32_t TAB_N = 4096; // power of 2
+// 512 KB filled up in the first measurement (561 characters, ~900 B each): the interface uses
+// more combinations of font and color than expected. 1MB fits ~1,100.
 static const uint32_t ARENA_BYTES = 1024 * 1024;
-static const int      RASCUNHO_L  = 160;           // maior letra que entra
-static const int      RASCUNHO_A  = 160;
+static const int SCRATCH_W = 160; // largest letter that enters
+static const int SCRATCH_H = 160;
 
-typedef struct {
-  const void* fonte;
-  uint32_t    frente, fundo;   // rgb888, como o TextStyle traz
-  uint32_t    ofs;             // onde a imagem comeca in arena
-  uint16_t    code;
-  uint16_t    l, a;            // tamanho of bloco
-  uint16_t    alt_line;       // metrics->height when foi guardada
-  int16_t     esq;             // start of bloco em relacao on x of letra
-  int16_t     dir;             // end of fundo (filled_x = x + dir)
-  uint16_t    avanco;          // quanto o cursor anda
-  bool        usada;
-} entrada_t;
+typedef struct
+{
+  const void *font;
+  uint32_t fg, bg; // rgb888, as provided by TextStyle
+  uint32_t ofs;    // where the image begins in the arena
+  uint16_t code;
+  uint16_t w, h;     // block dimensions
+  uint16_t line_h;   // metrics->height when cached
+  int16_t left;      // start of block relative to the character's x position
+  int16_t right;     // end of background (filled_x = x + right)
+  uint16_t advance;  // how to make the cursor advance
+  bool used;
+} entry_t;
 
-static entrada_t* s_tab   = nullptr;
-static uint8_t*   s_arena = nullptr;
-static uint32_t   s_uso   = 0;
-static uint32_t   s_n     = 0;
-static bool       s_sem_memoria = false;
+static entry_t *s_table = nullptr;
+static uint8_t *s_arena = nullptr;
+static uint32_t s_used = 0;
+static uint32_t s_n = 0;
+static bool s_out_of_memory = false;
 static glifos_estat_t s_est = {};
 
-static lgfx::LGFX_Sprite* s_rascunho = nullptr;
+static lgfx::LGFX_Sprite *s_scratch = nullptr;
 
 static bool prepare(void)
 {
-  if (s_tab) { return true; }
-  if (s_sem_memoria) { return false; }
-  s_tab   = (entrada_t*)heap_caps_calloc(TAB_N, sizeof(entrada_t), MALLOC_CAP_SPIRAM);
-  s_arena = (uint8_t*)heap_caps_malloc(ARENA_BYTES, MALLOC_CAP_SPIRAM);
-  s_rascunho = new lgfx::LGFX_Sprite();
-  if (s_rascunho) {
-    // O MESMO formato das paginas of panel: a imagem guardada vai para a
-    // screen sem conversao none.
-    s_rascunho->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
-    s_rascunho->setPsram(true);
+  if (s_table)
+  {
+    return true;
   }
-  if (!s_tab || !s_arena || !s_rascunho || !s_rascunho->createSprite(RASCUNHO_L, RASCUNHO_A)) {
-    ESP_LOGE(TAG, "sem PSRAM para o cache de glifos - texto pelo caminho original");
-    heap_caps_free(s_tab);   s_tab = nullptr;
-    heap_caps_free(s_arena); s_arena = nullptr;
-    delete s_rascunho;       s_rascunho = nullptr;
-    s_sem_memoria = true;
+  if (s_out_of_memory)
+  {
     return false;
   }
-  ESP_LOGI(TAG, "cache de glifos no ar (%u KB de imagens)", (unsigned)(ARENA_BYTES / 1024));
+  s_table = (entry_t *)heap_caps_calloc(TAB_N, sizeof(entry_t), MALLOC_CAP_SPIRAM);
+  s_arena = (uint8_t *)heap_caps_malloc(ARENA_BYTES, MALLOC_CAP_SPIRAM);
+  s_scratch = new lgfx::LGFX_Sprite();
+  if (s_scratch)
+  {
+    // SAME format as the panel's pages: the saved image goes to the
+    // screen without any conversion.
+    s_scratch->setColorDepth(lgfx::color_depth_t::rgb565_nonswapped);
+    s_scratch->setPsram(true);
+  }
+  if (!s_table || !s_arena || !s_scratch || !s_scratch->createSprite(SCRATCH_W, SCRATCH_H))
+  {
+    ESP_LOGE(TAG, "no PSRAM for the glyph cache - falling back to the original text path");
+    heap_caps_free(s_table);
+    s_table = nullptr;
+    heap_caps_free(s_arena);
+    s_arena = nullptr;
+    delete s_scratch;
+    s_scratch = nullptr;
+    s_out_of_memory = true;
+    return false;
+  }
+  ESP_LOGI(TAG, "glyph cache online (%u KB of images)", (unsigned)(ARENA_BYTES / 1024));
   return true;
 }
 
-static void recomecar(void)
+static void restart(void)
 {
-  memset(s_tab, 0, TAB_N * sizeof(entrada_t));
-  s_uso = 0;
+  memset(s_table, 0, TAB_N * sizeof(entry_t));
+  s_used = 0;
   s_n = 0;
   ++s_est.limpezas;
 }
 
-static inline uint32_t espalhar(const void* fonte, uint16_t c, uint32_t frente, uint32_t fundo)
+static inline uint32_t hash(const void *font, uint16_t c, uint32_t fg, uint32_t bg)
 {
-  uint32_t h = (uint32_t)(uintptr_t)fonte * 2654435761u;
+  uint32_t h = (uint32_t)(uintptr_t)font * 2654435761u;
   h ^= (uint32_t)c * 0x9E3779B1u;
-  h ^= frente * 0x85EBCA6Bu;
-  h ^= fundo  * 0xC2B2AE35u;
+  h ^= fg * 0x85EBCA6Bu;
+  h ^= bg * 0xC2B2AE35u;
   h ^= h >> 15;
   return h & (TAB_N - 1);
 }
 
-static entrada_t* procurar(const void* fonte, uint16_t c, uint32_t frente, uint32_t fundo, bool* nova)
+static entry_t *find(const void *font, uint16_t c, uint32_t fg, uint32_t bg, bool *is_new)
 {
-  uint32_t i = espalhar(fonte, c, frente, fundo);
-  for (uint32_t k = 0; k < TAB_N; ++k, i = (i + 1) & (TAB_N - 1)) {
-    entrada_t* e = &s_tab[i];
-    if (!e->usada) { *nova = true; return e; }
-    if (e->fonte == fonte && e->code == c && e->frente == frente && e->fundo == fundo) {
-      *nova = false;
+  uint32_t i = hash(font, c, fg, bg);
+  for (uint32_t k = 0; k < TAB_N; ++k, i = (i + 1) & (TAB_N - 1))
+  {
+    entry_t *e = &s_table[i];
+    if (!e->used)
+    {
+      *is_new = true;
+      return e;
+    }
+    if (e->font == font && e->code == c && e->fg == fg && e->bg == bg)
+    {
+      *is_new = false;
       return e;
     }
   }
   return nullptr;
 }
 
-void tab5_glifos_estat(glifos_estat_t* out)
+void tab5_glifos_estat(glifos_estat_t *out)
 {
-  if (!out) { return; }
+  if (!out)
+  {
+    return;
+  }
   *out = s_est;
   out->entries = s_n;
-  out->bytes = s_uso;
+  out->bytes = s_used;
 }
 
-// ---------------------------------------------------------------------------
-// O DESENHO
-// ---------------------------------------------------------------------------
-size_t FonteRapida::drawChar(lgfx::LGFXBase* gfx, int32_t x, int32_t y, uint16_t c,
-                             const lgfx::TextStyle* style, lgfx::FontMetrics* metrics,
-                             int32_t& filled_x) const
+// -------------------------------------------------------------------------------
+// THE DESIGN
+// -------------------------------------------------------------------------------
+size_t FastFont::drawChar(lgfx::LGFXBase *gfx, int32_t x, int32_t y, uint16_t c,
+                             const lgfx::TextStyle *style, lgfx::FontMetrics *metrics,
+                             int32_t &filled_x) const
 {
-  // O que nao of para reproduzir exatamente segue o caminho original.
-  // Destino of 16 bits: a imagem guardada e RGB565 - num canvas of 24 bits
-  // ela chegaria com menos precisao of color of que o original desenharia.
-  const bool com_fundo = style->back_rgb888 != style->fore_rgb888;
-  const bool of_16_bits = ((int)gfx->getColorDepth() & 0xFF) == 16;
+  // What cannot be reproduced exactly follows the original path.
+  // 16-bit destination: the saved image is RGB565 - on a 24-bit canvas
+  // it would arrive with less color precision than the original would draw.
+  const bool has_background = style->back_rgb888 != style->fore_rgb888;
+  const bool is_16bit = ((int)gfx->getColorDepth() & 0xFF) == 16;
   uint16_t g = 0;
-  // O MOTIVO of cada recusa e contado: e o que diz qual regra vale mudar.
-  uint32_t* reason = nullptr;
-  if      (c == 0x20)                                          { reason = &s_est.rec_espaco; }
-  else if (!com_fundo)                                         { reason = &s_est.rec_sem_fundo; }
-  else if (!of_16_bits || gfx->hasPalette())                   { reason = &s_est.rec_destino; }
-  else if (style->size_x != 1.0f || style->size_y != 1.0f)     { reason = &s_est.rec_escala; }
-  else if (!getUnicodeIndex(c, &g) || !prepare())             { reason = &s_est.rec_outro; }
-  if (reason) {
+  // The REASON for each refusal is tracked: it says which rule is worth changing.
+  uint32_t *reason = nullptr;
+  if (c == 0x20)
+  {
+    reason = &s_est.rec_espaco;
+  }
+  else if (!has_background)
+  {
+    reason = &s_est.rec_sem_fundo;
+  }
+  else if (!is_16bit || gfx->hasPalette())
+  {
+    reason = &s_est.rec_destino;
+  }
+  else if (style->size_x != 1.0f || style->size_y != 1.0f)
+  {
+    reason = &s_est.rec_escala;
+  }
+  else if (!getUnicodeIndex(c, &g) || !prepare())
+  {
+    reason = &s_est.rec_outro;
+  }
+  if (reason)
+  {
     ++s_est.recusas;
     ++*reason;
     return VLWfont::drawChar(gfx, x, y, c, style, metrics, filled_x);
   }
 
-  bool nova = false;
-  bool guardou = false;
-  entrada_t* e = procurar(this, c, style->fore_rgb888, style->back_rgb888, &nova);
-  if (e && !nova && e->alt_line != (uint16_t)metrics->height) { e = nullptr; }   // outra metrica: nao arrisca
+  bool is_new = false;
+  bool stored = false;
+  entry_t *e = find(this, c, style->fore_rgb888, style->back_rgb888, &is_new);
+  if (e && !is_new && e->line_h != (uint16_t)metrics->height)
+  {
+    e = nullptr;
+  } // another metric: no risk
 
-  if (e && nova) {
-    // FALTA: mede a letra pelo cabecalho of arquivo (o mesmo que o
-    // VLWfont::drawChar le), calcula o bloco que ele escreveria, e desenha a
-    // letra UMA vez num rascunho com o proprio M5GFX.
-    uint32_t cab[6] = { 0 };
+  if (e && is_new)
+  {
+    // MISSING: measures the letter from the file header (the same as
+    // VLWfont::drawChar reads), computes the block it would write, and draws the
+    // letter ONCE onto a scratch canvas with M5GFX itself.
+    uint32_t hdr[6] = {0};
     _fontData->preRead();
     _fontData->seek(28 + g * 28);
-    _fontData->read((uint8_t*)cab, 24);
+    _fontData->read((uint8_t *)hdr, 24);
     _fontData->postRead();
-    const int32_t h      = (int32_t)__builtin_bswap32(cab[0]);
-    const int32_t w      = (int32_t)__builtin_bswap32(cab[1]);
-    const int32_t avanco = (int32_t)__builtin_bswap32(cab[2]);
-    const int32_t dY     = (int16_t)__builtin_bswap32(cab[3]);
-    const int32_t xoff   = (int8_t)__builtin_bswap32(cab[4]);
-    const int32_t yoff   = (int32_t)maxAscent - dY;
+    const int32_t h = (int32_t)__builtin_bswap32(hdr[0]);
+    const int32_t w = (int32_t)__builtin_bswap32(hdr[1]);
+    const int32_t advance = (int32_t)__builtin_bswap32(hdr[2]);
+    const int32_t dY = (int16_t)__builtin_bswap32(hdr[3]);
+    const int32_t xoff = (int8_t)__builtin_bswap32(hdr[4]);
+    const int32_t yoff = (int32_t)maxAscent - dY;
 
-    // O bloco: of left of tinta (ou of x, se ela nao recua) ate o maior
-    // entre o end of tinta e o avanco; of line of top ate a maior entre a
-    // height of line e o end of tinta. TODO pixel nele e escrito pelo
-    // original (fundo ou letra) - por isso a imagem o substitui por inteiro.
-    const int32_t esq = xoff < 0 ? xoff : 0;
-    const int32_t dir = (w + xoff) > avanco ? (w + xoff) : avanco;
-    const int32_t l   = dir - esq;
-    const int32_t a   = (yoff + h) > metrics->height ? (yoff + h) : metrics->height;
-    const uint32_t bytes = (uint32_t)l * a * 2;
+    // The block: from the left edge of the foreground pixels (or from x, if they
+    // do not extend leftward) to the greater of the foreground's right edge and
+    // the advance width; from the top row to the greater of the line height and
+    // the bottom edge of the foreground pixels. EVERY pixel within this block is
+    // written by the original renderer (background or character) - which is why
+    // the cached image can replace it entirely.
+    const int32_t left = xoff < 0 ? xoff : 0;
+    const int32_t right = (w + xoff) > advance ? (w + xoff) : advance;
+    const int32_t bw = right - left;
+    const int32_t bh = (yoff + h) > metrics->height ? (yoff + h) : metrics->height;
+    const uint32_t bytes = (uint32_t)bw * bh * 2;
 
-    // w == 0 (letra sem tinta que nao e espaco): o original nao pinta as
-    // lines of letra, e o bloco teria buraco. Fica com o original.
-    if (w <= 0 || h < 0 || l <= 0 || a <= 0 || yoff < 0 || l > RASCUNHO_L || a > RASCUNHO_A) {
+    // w == 0 (character with no visible pixels that is not a space): the original
+    // renderer does not draw the character's rows, and the cached block would
+    // contain a gap. Fall back to the original rendering path.
+    if (w <= 0 || h < 0 || bw <= 0 || bh <= 0 || yoff < 0 || bw > SCRATCH_W || bh > SCRATCH_H)
+    {
       e = nullptr;
-    } else {
-      if (s_uso + bytes > ARENA_BYTES || s_n >= TAB_N * 3 / 4) {
-        recomecar();
-        bool n2 = false;
-        e = procurar(this, c, style->fore_rgb888, style->back_rgb888, &n2);
+    }
+    else
+    {
+      if (s_used + bytes > ARENA_BYTES || s_n >= TAB_N * 3 / 4)
+      {
+        restart();
+        bool is_new2 = false;
+        e = find(this, c, style->fore_rgb888, style->back_rgb888, &is_new2);
       }
-      // No rascunho: x = -esq poe o bloco in coluna 0; y = -y_offset poe a
-      // line of top in line 0 (o drawChar soma o y_offset). filled_x no
-      // minimum = o fundo comeca no start of bloco, como numa letra released.
+      // On the scratch canvas: x = -left places the block at column 0; y = -y_offset
+      // places the top row at row 0 (drawChar adds y_offset). Set filled_x to the
+      // minimum so the background starts at the beginning of the block, as it does
+      // for an isolated character.
       int32_t f = INT32_MIN;
-      s_rascunho->setClipRect(0, 0, l, a);
-      VLWfont::drawChar(s_rascunho, -esq, -metrics->y_offset, c, style, metrics, f);
-      const uint16_t* org = (const uint16_t*)s_rascunho->getBuffer();
-      uint8_t* dst = s_arena + s_uso;
-      for (int32_t r = 0; r < a; ++r) {
-        memcpy(dst + (size_t)r * l * 2, org + (size_t)r * RASCUNHO_L, (size_t)l * 2);
+      s_scratch->setClipRect(0, 0, bw, bh);
+      VLWfont::drawChar(s_scratch, -left, -metrics->y_offset, c, style, metrics, f);
+      const uint16_t *src = (const uint16_t *)s_scratch->getBuffer();
+      uint8_t *dst = s_arena + s_used;
+      for (int32_t row = 0; row < bh; ++row)
+      {
+        memcpy(dst + (size_t)row * bw * 2, src + (size_t)row * SCRATCH_W, (size_t)bw * 2);
       }
-      *e = { };
-      e->fonte = this; e->code = c;
-      e->frente = style->fore_rgb888; e->fundo = style->back_rgb888;
-      e->ofs = s_uso; e->l = (uint16_t)l; e->a = (uint16_t)a;
-      e->alt_line = (uint16_t)metrics->height;
-      e->esq = (int16_t)esq; e->dir = (int16_t)dir; e->avanco = (uint16_t)avanco;
-      e->usada = true;
-      s_uso += bytes;
+      *e = {};
+      e->font = this;
+      e->code = c;
+      e->fg = style->fore_rgb888;
+      e->bg = style->back_rgb888;
+      e->ofs = s_used;
+      e->w = (uint16_t)bw;
+      e->h = (uint16_t)bh;
+      e->line_h = (uint16_t)metrics->height;
+      e->left = (int16_t)left;
+      e->right = (int16_t)right;
+      e->advance = (uint16_t)advance;
+      e->used = true;
+      s_used += bytes;
       ++s_n;
-      guardou = true;
+      stored = true;
     }
   }
 
-  // A LETRA DE ANTES INVADE ESTA (o fundo dela passou of x desta): o
-  // original nao repinta o fundo ali, so a tinta. A imagem pintaria por top
-  // - entao este caso stays com o original.
-  if (!e || filled_x > x + e->esq) {
+  // THE PREVIOUS CHARACTER OVERLAPS THIS ONE (its background extended past
+  // this character's x position): the original renderer does not repaint the
+  // background there, only the foreground pixels. The cached image would paint
+  // over it - so this case continues using the original rendering path.
+  if (!e || filled_x > x + e->left)
+  {
     ++s_est.recusas;
     ++*(e ? &s_est.rec_invade : &s_est.rec_outro);
     return VLWfont::drawChar(gfx, x, y, c, style, metrics, filled_x);
   }
 
-  if (guardou) { ++s_est.faltas; } else { ++s_est.acertos; }
-  gfx->pushImage(x + e->esq, y + metrics->y_offset, e->l, e->a,
-                 (const lgfx::rgb565_t*)(s_arena + e->ofs));
-  filled_x = x + e->dir;
-  return e->avanco;
+  if (stored)
+  {
+    ++s_est.faltas;
+  }
+  else
+  {
+    ++s_est.acertos;
+  }
+  gfx->pushImage(x + e->left, y + metrics->y_offset, e->w, e->h,
+                 (const lgfx::rgb565_t *)(s_arena + e->ofs));
+  filled_x = x + e->right;
+  return e->advance;
 }

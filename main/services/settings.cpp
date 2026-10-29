@@ -24,7 +24,7 @@ static bool    s_ready = false;
 
 // Degrees times 1,000,000 (microdegrees), stored as an integer. This fits in an
 // NVS i32 without a blob and gives about 11 cm of precision at the equator,
-// more than enough for an address. The factory value 0,0 in the Gulf of Guinea
+// more than enough for an address. The factory value 0.0 in the Gulf of Guinea
 // is a safe "not configured" sentinel without a separate NVS flag.
 static int32_t s_home_lat_ue6 = 0;
 static int32_t s_home_lon_ue6 = 0;
@@ -41,7 +41,7 @@ static bool     s_mesh_internet = true;
 static bool     s_mesh_public_network = false;
 static bool     s_bluetooth = false;
 static uint8_t  s_wallpaper    = SETTINGS_WALLPAPER_RANDOM;
-static bool     s_lock_screen = false;   // Lock screen after waking; disabled by default.
+static bool     s_lock_screen = false;   // Lock screen after waking up; disabled by default.
 static bool     s_flash_drive = false;   // Auto-open on computer connection; disabled by default.
 // Gyroscope scale in parts per million (1,000,000 = 1.0), per axis. Store it
 // as an NVS i32, like the home coordinates, without a blob.
@@ -60,10 +60,10 @@ static void write_u8(const char* key, uint8_t value)
   nvs_close(h);
 }
 
-// DEFERRED WRITES for values changed by dragging (brightness and volume). The
+// DEFERRED WRITES for values ​​changed by dragging (brightness and volume). The
 // Settings slider produces a new value every frame. Each value used to cause
 // an nvs_commit in the UI task, writing flash with the cache disabled, pausing
-// both cores for several milliseconds, making the drag stutter, and storing
+// both colors for several milliseconds, making the drag stutter, and storing
 // dozens of unwanted intermediate values. The hardware now changes
 // immediately while NVS receives only the final value, one second after the
 // last movement, from the esp_timer task.
@@ -116,7 +116,7 @@ void settings_init(void)
     if (nvs_get_u8(h, "grove",  &v) == ESP_OK) { s_grove = (v != 0); }
     if (nvs_get_u8(h, "tela_s", &v) == ESP_OK) {
       // Clamp on read as well as write: an old or corrupt persisted value must
-      // not create a display that never turns off.
+      // does not create a display that never turns off.
       s_screen_timeout_s = (v < SETTINGS_SCREEN_TIMEOUT_MIN_S) ? SETTINGS_SCREEN_TIMEOUT_MIN_S
                : (v > SETTINGS_SCREEN_TIMEOUT_MAX_S) ? SETTINGS_SCREEN_TIMEOUT_MAX_S : v;
     }
@@ -460,7 +460,7 @@ void settings_set_apps_order(const char* names)
   ESP_LOGI(TAG, "ordem dos apps: %s", (names && names[0]) ? names : "(padrao)");
 }
 
-// HIDDEN APPS: see settings.h. Read from NVS with the order; the shell owns
+// HIDDEN APPS: see settings.h. Read from NVS with the order; the shell itself
 // and applies the active list.
 void settings_apps_hidden(char* out, size_t n)
 {

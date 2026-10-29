@@ -2,14 +2,14 @@
 
 #include <string.h>
 
-// ---------------------------------------------------------------------------
-// O registro in flash
-// ---------------------------------------------------------------------------
-//   [header 36 B][app][file][header of file][data][0xFF ate multiplo of 4]
+// -------------------------------------------------------------------------------
+// The in flash registry
+// -------------------------------------------------------------------------------
+// [header 36 B][app][file][header of file][data][0xFF to multiple of 4]
 //
-// O CRC cobre o header ate 'crc' (exclusive) e o resto of registro, menos o
-// enchimento. 'aplicado' stays of fora: e o unico byte regravado depois.
-#define RESERVA_MAGIA 0x31565352u   // "RSV1" em little endian
+// CRC covers the header up to 'crc' (exclusive) and the rest of the record, minus the
+// filling. 'applied' stays out: it is the only byte rewritten afterwards.
+#define RESERVA_MAGIA 0x31565352u   // "RSV1" in little endian
 
 typedef struct {
   uint32_t magia;
@@ -19,13 +19,13 @@ typedef struct {
   uint32_t base_size, base_data;
   uint8_t  base_existia, livre2[3];
   uint32_t crc;
-  uint8_t  aplicado;      // 0xFF = pending, 0x00 = ja esta no cartao
+  uint8_t  applied;      // 0xFF = pending, 0x00 = already on the card
   uint8_t  livre3[3];
 } reserva_cab_t;
 static_assert(sizeof(reserva_cab_t) == 36, "o formato na flash nao pode mudar sem mudar a magia");
 
 #define CRC_ATE    ((uint32_t)offsetof(reserva_cab_t, crc))
-#define POS_APLIC  ((uint32_t)offsetof(reserva_cab_t, aplicado))
+#define POS_APLIC  ((uint32_t)offsetof(reserva_cab_t, applied))
 
 static uint32_t crc32_mais(uint32_t crc, const void* data, size_t n)
 {
@@ -53,18 +53,18 @@ static bool everything_ff(const void* b, size_t n)
   return true;
 }
 
-// Cabecalho com cara of registro e cabendo no storage a partir of 'pos'.
+// Header that looks like a registry and fits into the storage from 'pos'.
 static bool cab_plausivel(const journal_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   if (c->magia != RESERVA_MAGIA) { return false; }
   if (c->type != JOURNAL_APPEND && c->type != JOURNAL_REPLACE) { return false; }
   if (c->n_app == 0 || c->n_arq == 0) { return false; }
-  if (c->aplicado != 0xFF && c->aplicado != 0x00) { return false; }
+  if (c->applied != 0xFF && c->applied != 0x00) { return false; }
   const uint64_t size = (uint64_t)sizeof(reserva_cab_t) + body(c);
   return (uint64_t)pos + size <= r->storage.size;
 }
 
-// CRC of body lendo a flash em blocos (sem precisar of registro inteiro in RAM).
+// CRC of body reading flash in blocks (without needing the entire register in RAM).
 static bool crc_confere(const journal_t* r, uint32_t pos, const reserva_cab_t* c)
 {
   uint32_t crc = crc32_mais(0, c, CRC_ATE);
@@ -89,13 +89,13 @@ static bool erase_everything(journal_t* r)
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Varredura
-// ---------------------------------------------------------------------------
-// Para cada position: header todo 0xFF = end of diario; registro inteiro e
-// com CRC certo = vale; qualquer outra coisa = lixo of uma gravacao
-// interrompida, e a busca segue no next setor (onde a gravacao seguinte
-// recomecou). Termina com 'end' sempre numa area apagada.
+// -------------------------------------------------------------------------------
+// Scan
+// -------------------------------------------------------------------------------
+// For each position: header todo 0xFF = end of diary; entire record and
+// with right CRC = worth; anything else = rubbish of a recording
+// interrupted, and the search continues in the next sector (where the next recording
+// started again). It always ends with 'end' in an unlit area.
 static bool scan(journal_t* r, uint32_t* valid_entries, uint32_t* pending, uint32_t* end, bool* dirty)
 {
   *valid_entries = 0; *pending = 0; *dirty = false;
@@ -106,7 +106,7 @@ static bool scan(journal_t* r, uint32_t* valid_entries, uint32_t* pending, uint3
     if (everything_ff(&c, sizeof(c))) { break; }
     if (cab_plausivel(r, pos, &c) && crc_confere(r, pos, &c)) {
       ++*valid_entries;
-      if (c.aplicado == 0xFF) { ++*pending; }
+      if (c.applied == 0xFF) { ++*pending; }
       pos += arredonda4((uint32_t)sizeof(reserva_cab_t) + body(&c));
       continue;
     }
@@ -122,16 +122,16 @@ bool journal_open(journal_t* r, const journal_storage_t* storage)
   memset(r, 0, sizeof(*r));
   r->storage = *storage;
   if (!scan(r, &r->valid_entries, &r->pending, &r->end, &r->dirty)) { return false; }
-  // Nada a aplicar mas algo escrito (everything ja aplicado antes of one reinicio,
-  // ou so lixo): apaga ja - o diario vazio e o state normal.
+  // Nothing to apply but something written (everything already applied before of one restart,
+  // or just trash): delete it now - the diary is empty and the state is normal.
   if (r->pending == 0 && r->end > 0 && !erase_everything(r)) { return false; }
   r->ready = true;
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Gravar
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// Save
+// -------------------------------------------------------------------------------
 bool journal_write(journal_t* r, const journal_entry_t* reg)
 {
   if (!r->ready || !reg || !reg->app || !reg->file) { return false; }
@@ -140,19 +140,19 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   if (reg->type != JOURNAL_APPEND && reg->type != JOURNAL_REPLACE) { return false; }
 
   reserva_cab_t c;
-  memset(&c, 0xFF, sizeof(c));   // os campos livres ficam como a flash apagada
+  memset(&c, 0xFF, sizeof(c));   // the free fields are like a flash turned off
   c.magia = RESERVA_MAGIA;
   c.type = reg->type; c.flags = reg->flags;
   c.n_app = (uint8_t)n_app; c.n_arq = (uint8_t)n_arq;
   c.n_cab = reg->header ? reg->header_size : 0;
   c.livre1 = 0xFFFF;
   c.data_size = reg->data ? reg->data_size : 0;
-  c.base_size = reg->base_tamanho; c.base_data = reg->base_data;
+  c.base_size = reg->base_size; c.base_data = reg->base_data;
   c.base_existia = reg->base_existia ? 1 : 0;
-  c.aplicado = 0xFF;
+  c.applied = 0xFF;
 
   const uint32_t size = arredonda4((uint32_t)sizeof(c) + body(&c));
-  if ((uint64_t)r->end + size > r->storage.size) { return false; }   // cheio
+  if ((uint64_t)r->end + size > r->storage.size) { return false; }   // full
 
   uint32_t crc = crc32_mais(0, &c, CRC_ATE);
   crc = crc32_mais(crc, reg->app, n_app);
@@ -161,8 +161,8 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   if (c.data_size) { crc = crc32_mais(crc, reg->data, c.data_size); }
   c.crc = crc;
 
-  // Em sequencia: uma queda em qualquer point deixa one registro que failure o
-  // CRC, e a varredura pula para o next setor.
+  // In sequence: a drop at any point leaves one record that fails or
+  // CRC, and the scan skips to the next sector.
   uint32_t p = r->end;
   bool ok = r->storage.write(r->storage.ctx, p, &c, sizeof(c));
   p += sizeof(c);
@@ -171,9 +171,9 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   if (ok && c.n_cab)   { ok = r->storage.write(r->storage.ctx, p, reg->header, c.n_cab); p += c.n_cab; }
   if (ok && c.data_size) { ok = r->storage.write(r->storage.ctx, p, reg->data, c.data_size); }
   if (!ok) {
-    // O que chegou a ser gravado nao iteration a 0xFF: o next registro
-    // comeca no first setor ainda apagado, como depois of uma queda (one
-    // registro grande pode ter sujado mais of one).
+    // What was recorded does not iterate to 0xFF: the next record
+    // starts in the first sector still unlit, as after a fall (one
+    // large record may have messed up more than one).
     r->dirty = true;
     uint32_t q = prox_setor(r->end);
     while (q + sizeof(reserva_cab_t) <= r->storage.size) {
@@ -190,9 +190,9 @@ bool journal_write(journal_t* r, const journal_entry_t* reg)
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Aplicar
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// Apply
+// -------------------------------------------------------------------------------
 int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
 {
   if (!r->ready) { return -1; }
@@ -203,16 +203,16 @@ int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
     if (!r->storage.read(r->storage.ctx, pos, &c, sizeof(c))) { return -1; }
     if (!cab_plausivel(r, pos, &c) || !crc_confere(r, pos, &c)) { pos = prox_setor(pos); continue; }
     const uint32_t size = arredonda4((uint32_t)sizeof(c) + body(&c));
-    if (c.aplicado != 0xFF) { pos += size; continue; }
+    if (c.applied != 0xFF) { pos += size; continue; }
 
-    // O registro inteiro in memoria, com NUL depois of cada text:
-    //   [app][0][file][0][header][data]
-    // Os nomes ficam no MESMO bloco, nao in stack: who aplica pode ser
-    // qualquer tarefa que le o cartao (tab5_sd_open aplica antes of open),
-    // e a press_start ate o FAT ja e funda - 512 B a menos nela.
+    // The entire record in memoria, with NUL after each text:
+    // [app][0][file][0][header][data]
+    // The names are in the SAME block, not in stack: who applies can be
+    // any task that reads the card (tab5_sd_open applies before open),
+    // and the press_start until the FAT is already found - 512 B less in it.
     const uint32_t n = body(&c);
     uint8_t* b = (uint8_t*)r->storage.allocate((size_t)n + 2);
-    if (!b) { return aplicados; }   // sem memoria now: tenta depois, in mesma order
+    if (!b) { return aplicados; }   // no memory now: try later, in same order
     const uint32_t ini = pos + (uint32_t)sizeof(c);
     char* app = (char*)b;
     char* arq = app + c.n_app + 1;
@@ -234,7 +234,7 @@ int journal_apply(journal_t* r, journal_apply_fn fn, void* ctx)
     reg.data       = resto + c.n_cab;
     reg.data_size     = c.data_size;
     reg.base_existia = c.base_existia == 1;
-    reg.base_tamanho = c.base_size;
+    reg.base_size = c.base_size;
     reg.base_data    = c.base_data;
     const bool ok = fn(&reg, ctx);
     r->storage.release(b);

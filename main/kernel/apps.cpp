@@ -1,9 +1,9 @@
-// A TABELA DE APLICATIVOS.
+// THE APPLICATION TABLE.
 //
-// Ninguem edita este arquivo. A lista vem of apps_lista.inc, que o
-// main/CMakeLists.txt gera a cada build a partir das pastas main/app_<name>/:
-// cada uma vira uma line APP(APP_<NOME>). Criar one app e create a pasta e
-// set nela o 'extern const app_t APP_<NOME>'; tirar e erase a pasta.
+// Nobody edits this file. The list comes from apps_lista.inc, which
+// main/CMakeLists.txt generates each build from the main/app_<name>/ folders:
+// each becomes a line APP(APP_<NAME>). Create one app and create the folder and
+// set 'extern const app_t APP_<NAME>' in it; remove and erase the folder.
 
 #include "app.h"
 

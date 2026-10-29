@@ -12,34 +12,34 @@ static const char* TAG = "imu";
 
 static tab5_imu_data_t s_cache = { };
 
-// Lazy-create, nunca destruida - mesmo molde of services/notification.cpp e
-// tab5_gps.cpp: o first uso sempre vem antes of qualquer disputa of
-// verdade (o boot chama tab5_imu_measure() antes of qualquer app poder read).
+// Lazy-create, never destroyed - same template of services/notification.cpp and
+// tab5_gps.cpp: the first use always comes before any dispute
+// true (boot calls tab5_imu_measure() before any app can read).
 static SemaphoreHandle_t s_trava = nullptr;
 
 static inline void lock(void)
 {
-  tab5_mutex_lock(&s_trava);   // criado sem corrida in primeira vez
+  tab5_mutex_lock(&s_trava);   // created without race in first time
 }
 static inline void destravar(void) { if (s_trava) { xSemaphoreGive(s_trava); } }
 
-// A IMU QUE NAO SUBIU NO BOOT. O M5.begin() inicia o BMI270 uma vez so, e
-// esse start carrega one firmware of 8 KB no chip pelo I2C; of vez em when
-// ele failure (o chip ainda saindo of reset, uma transacao perdida) e a IMU
-// ficava fora a sessao inteira - o app mostrava "IMU nao disponivel neste
-// boot" ate reiniciar. Aqui o sistema tenta of novo, algumas vezes,
-// espacado: cada tentativa ocupa o barramento por uns 200 ms.
+// THE IMU THAT DIDN'T BOOT. M5.begin() starts the BMI270 once, and
+// this start loads one firmware of 8 KB onto the chip via I2C; from time to time
+// it fails (the chip still coming out of reset, a lost transaction) and the IMU
+// was off the entire session - the app showed "IMU not available in this
+// boot" until it restarts. Here the system tries again, sometimes,
+// spaced: each attempt occupies the bus for about 200 ms.
 #define IMU_TENTATIVAS   5
-#define IMU_ESPERA_MS 3000
+#define IMU_RETRY_INTERVAL_MS 3000
 
-static bool raise_of_novo(void)
+static bool retry_imu_start(void)
 {
   static int      s_tentativas = 0;
   static uint32_t s_next_ms = 0;
   if (!tab5_power_imu_requested() || s_tentativas >= IMU_TENTATIVAS) { return false; }
   const uint32_t now = tab5_now_ms();
   if ((int32_t)(now - s_next_ms) < 0) { return false; }
-  s_next_ms = now + IMU_ESPERA_MS;
+  s_next_ms = now + IMU_RETRY_INTERVAL_MS;
   ++s_tentativas;
   const bool ok = M5.Imu.begin(&M5.In_I2C, M5.getBoard());
   if (ok) { ESP_LOGI(TAG, "IMU subiu na tentativa %d depois do boot", s_tentativas); }
@@ -49,7 +49,7 @@ static bool raise_of_novo(void)
 
 void tab5_imu_measure(void)
 {
-  if (!M5.Imu.isEnabled() && !raise_of_novo()) { return; }
+  if (!M5.Imu.isEnabled() && !retry_imu_start()) { return; }
 
   M5.Imu.update();
   tab5_imu_data_t d = { };

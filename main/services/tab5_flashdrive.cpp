@@ -37,32 +37,32 @@ static volatile bool      s_suspenso = false;
 static esp_pm_lock_handle_t s_pm = nullptr;
 
 // DIAGNOSTICO POR ETAPA - onde o computador parou (ver tab5_pendrive_usb_t):
-// reconheceu o aparelho? perguntou o que ele e? o tamanho? leu?
+// recognized the device? asked what he is? the size? read?
 static volatile uint32_t s_n_config = 0;      // SET_CONFIGURATION (tud_mount_cb)
 static volatile uint32_t s_n_inquiry = 0;     // INQUIRY
 static volatile uint32_t s_n_capacidade = 0;  // READ CAPACITY / READ FORMAT CAPACITIES
-static volatile uint32_t s_n_leituras = 0;    // pedacos of READ10 lidos of cartao (ate 4 KB cada)
-static volatile uint8_t  s_op_recusado = 0;   // ultimo comando SCSI nao suportado (0 = nenhum)
-static volatile uint32_t s_leitura_max_us = 0;// leitura of cartao mais lenta
+static volatile uint32_t s_n_leituras = 0;    // pieces of READ10 read from card (up to 4 KB each)
+static volatile uint8_t  s_op_recusado = 0;   // last SCSI command not supported (0 = none)
+static volatile uint32_t s_leitura_max_us = 0;// card reading slower
 static uint32_t          s_ops_logados[8];    // commands recusados (bit por code)
 static volatile uint32_t s_n_tur = 0;         // TEST UNIT READY
 static volatile uint32_t s_n_sense = 0;       // REQUEST SENSE (o computador quer saber of one erro)
-static volatile uint32_t s_n_respostas = 0;   // commands (fora leitura/escrita) com o status entregue
-static volatile uint8_t  s_op_respondido = 0; // o ultimo deles
-static volatile uint32_t s_n_soltou = 0;      // desconfigurou (reset of barramento, cabo)
+static volatile uint32_t s_n_respostas = 0;   // commands (not read/write) with status delivered
+static volatile uint8_t  s_op_respondido = 0; // the last of them
+static volatile uint32_t s_n_soltou = 0;      // unconfigured (reset of bus, cable)
 static uint32_t          s_ops_respondidos[8];// commands ja respondidos (bit por code)
 static volatile uint32_t s_n_leituras_ok = 0; // commands READ10 com data e status entregues
 // ONDE PAROU, when para: os tres estados que one comando of leitura atravessa.
 static volatile uint32_t s_n_cmd_leitura = 0; // commands READ10 recebidos
-static volatile bool     s_lendo = false;     // one READ10 comecou e o status ainda nao exited
-static volatile bool     s_no_cartao = false; // dentro of sdmmc_read/write_sectors now
-static volatile bool     s_gravando = false;  // ...e e uma escrita (para o log dizer qual)
-static volatile uint32_t s_escrita_max_us = 0;// escrita of cartao mais lenta
+static volatile bool     s_lendo = false;     // one READ10 started and the status is not yet exited
+static volatile bool     s_no_cartao = false; // inside of sdmmc_read/write_sectors now
+static volatile bool     s_gravando = false;  // ...and and a writing (for the log to say which one)
+static volatile uint32_t s_escrita_max_us = 0;// slower card writing
 static volatile uint32_t s_n_escritas_lentas = 0; // escritas of mais of 100 ms
 static volatile uint32_t s_cmd_setor = 0;     // first setor of READ10 em progress
-static volatile uint32_t s_ultimo_setor = 0;  // ultimo pedaco request on cartao
-static volatile int64_t  s_evento_us = 0;     // ultimo sinal of vida of computador ou of cartao
-static volatile uint32_t s_erro_setor = 0;    // a ultima falha of cartao (para o log)
+static volatile uint32_t s_ultimo_setor = 0;  // last piece request on card
+static volatile int64_t  s_evento_us = 0;     // last sign of life of computer or card
+static volatile uint32_t s_erro_setor = 0;    // the last card failure (to the log)
 static volatile int      s_erro_cod = 0;
 static volatile uint64_t  s_lidos = 0, s_gravados = 0;
 static volatile uint32_t  s_erros = 0;
@@ -74,10 +74,10 @@ static volatile int64_t   s_ultimo_io_us = 0, s_ultima_escrita_us = 0;
 // LP_SYS.usb_ctrl.sw_usb_phy_sel (hal/usb_wrap_ll.h):
 //   falso - JTAG no PHY 0 (o USB-C), OTG no PHY 1 (o default of chip)
 //   verdadeiro - OTG no PHY 0, JTAG no PHY 1
-// O JTAG NAO e disabled nem reiniciado: o driver of console continua
+// JTAG is NOT disabled or restarted: the console driver continues
 // instalado, com as interrupcoes como estavam, e so deixa of ver o
-// computador (para ele e one cabo puxado - o log que nao exit e descartado,
-// como com o aparelho in battery). Por isso o console iteration sozinho.
+// computer (for him and one cable pulled - the log that does not exit is discarded,
+// as with the device in battery). Hence the console iteration alone.
 static void phy_para_o_otg(void)
 {
   usb_serial_jtag_ll_phy_enable_pad(false);   // released os resistores of JTAG no PHY 0
@@ -85,7 +85,7 @@ static void phy_para_o_otg(void)
 }
 
 // O pad of OTG ja tem que estar disabled (antes of usb_del_phy, que corta
-// o clock of USB_WRAP - registrador of periferico sem clock nao se escreve).
+// the clock of USB_WRAP - clockless peripheral register is not written).
 static void phy_para_o_console(void)
 {
   usb_serial_jtag_ll_phy_select(0);           // JTAG -> PHY 0 of novo
@@ -117,7 +117,7 @@ static bool pad_conferir(void)
 // Descritores
 // ---------------------------------------------------------------------------
 // VID of Espressif com o PID que o esp_tinyusb usa para "so MSC" (0x4000 com
-// o bit of MSC) - e NAO o 0x1001 of JTAG: o computador guarda driver por
+// the bit of MSC) - and NOT the 0x1001 of JTAG: the computer saves driver for
 // VID:PID, e o mesmo par para duas funcoes diferentes confunde o Windows.
 static const tusb_desc_device_t DESC_APARELHO = {
   .bLength            = sizeof(tusb_desc_device_t),
@@ -146,7 +146,7 @@ static const uint8_t DESC_CONFIG[] = {
 
 // O NUMERO DE SERIE segue a especificacao of armazenamento em massa (Bulk-Only
 // Transport, 4.1.1): pelo menos 12 digitos hexadecimais. O macOS e o mais
-// exigente com isso. Sai of MAC of proprio aparelho: unico e sempre o mesmo,
+// demanding about it. Leave MAC of your own device: unique and always the same,
 // entao o computador reconhece o Tab5 of uma vez para a outra.
 static char s_serie[13] = "000000000000";
 static const char* const TEXTOS[] = { "", "M5Stack", "M5tabOS SD card", s_serie };
@@ -172,20 +172,20 @@ extern "C" const uint16_t* tud_descriptor_string_cb(uint8_t indice, uint16_t)
 }
 
 // ---------------------------------------------------------------------------
-// MSC: o cartao em setores
+// MSC: the card in sectors
 // ---------------------------------------------------------------------------
 // Tudo aqui roda in tarefa "pendrive" (tud_task), uma chamada por vez - o
-// cartao cru so tem esse user enquanto esta emprestado.
+// raw card only has this user while it is on loan.
 static uint32_t setor_size(void) { return s_cartao ? (uint32_t)s_cartao->csd.sector_size : 512; }
 
 // O QUE O DISCO E, e o tamanho of resposta. O TinyUSB responde o INQUIRY com
 // 36 bytes; se o computador pediu mais (ha sistemas que pedem 255), ela manda
-// os 36 e TRAVA o canal of data (STALL) - o computador precisa destrava-lo
+// os 36 and LOCKS the data channel (STALL) - the computer needs to unlock it
 // (CLEAR_FEATURE) para so entao read o status. E o first comando of disco a
 // passar por esse caminho, e o log parava exatamente nele: o computador
 // perguntava e nunca chegava on tamanho. A especificacao of transporte (BOT
-// 6.7, caso 5) deixa a outra saida: completar com zeros ate o tamanho request.
-// O comprimento verdadeiro vai no proprio cabecalho (additional_length), entao
+// 6.7, case 5) leaves the other output: complete with zeros up to the request size.
+// The true length goes in the header itself (additional_length), so
 // os zeros sao so enchimento. Pedido of 36, resposta of 36 - nada muda.
 #define RESPOSTA_CHEIA 255
 static void inquiry_count(void) { s_n_inquiry = s_n_inquiry + 1; }
@@ -207,7 +207,7 @@ extern "C" uint32_t tud_msc_inquiry2_cb(uint8_t, scsi_inquiry_resp_t* r, uint32_
   return n;   // o TinyUSB corta no que o computador pediu
 }
 
-// A versao antiga: so e chamada se a of top nao existir in biblioteca.
+// The old version: is only called if the of top does not exist in the library.
 extern "C" void tud_msc_inquiry_cb(uint8_t, uint8_t vendor[8], uint8_t produto[16], uint8_t rev[4])
 {
   inquiry_count();
@@ -226,12 +226,12 @@ extern "C" int32_t tud_msc_request_sense_cb(uint8_t, void* buf, uint16_t bufsize
 }
 
 // O STATUS DE UM COMANDO CHEGOU AO COMPUTADOR (o TinyUSB so chama isto when
-// a resposta inteira exited). E o que separa "o computador nao perguntou" of
-// "perguntou e a resposta nao chegou".
+// entire answer exited). And what separates "the computer didn't ask" from
+// "asked and the answer didn't come".
 //
-// NENHUM LOG AQUI DENTRO, nem nos outros retornos of TinyUSB: o ESP_LOG desce
-// ate o console (USB-Serial-JTAG, sem computador durante o pendrive - ate
-// 50 ms of espera), pelas travas of stdout e pela stack of tarefa of USB, no
+// NO LOG IN HERE, nor in other TinyUSB returns: ESP_LOG goes down
+// to the console (USB-Serial-JTAG, without computer during the pendrive - until
+// 50 ms of wait), by the locks of stdout and by the stack of task of USB, in
 // middle of uma transferencia. Os retornos so contam; quem escreve no log e a
 // tarefa of sessao, que olha os contadores (ver registrar_eventos).
 extern "C" void tud_msc_scsi_complete_cb(uint8_t, const uint8_t cmd[16])
@@ -272,7 +272,7 @@ extern "C" void tud_msc_capacity_cb(uint8_t, uint32_t* n_blocos, uint16_t* bloco
 extern "C" bool tud_msc_start_stop_cb(uint8_t, uint8_t, bool start, bool ejetar)
 {
   // "Ejetar" no Finder/Explorer/Linux chega aqui como STOP + eject - o sinal
-  // of que o computador terminou e nao tem mais nada em cache para o disco.
+  // of the computer has finished and has nothing left cached to disk.
   if (ejetar) {
     s_ejetado = !start;
   }
@@ -357,7 +357,7 @@ extern "C" int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset
 extern "C" int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t cmd[16], void* buf, uint16_t size)
 {
   switch (cmd[0]) {
-    case 0x35:   // SYNCHRONIZE CACHE (10): nao ha cache of lado of ca
+    case 0x35:   // SYNCHRONIZE CACHE (10): no cache of side of ca
       return 0;
     case 0x5A: { // MODE SENSE (10). O macOS pergunta por ele (o TinyUSB so traz
                  // o of 6 bytes) para saber se o disco aceita escrita. Cabecalho
@@ -370,7 +370,7 @@ extern "C" int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t cmd[16], void* buf
     }
     default: {
       // Recusado: e registrado (uma vez por comando) - e o first suspeito
-      // when one sistema nao monta o disco.
+      // when one system does not mount the disk.
       const uint8_t op = cmd[0];
       s_op_recusado = op;
       s_ops_logados[op >> 5] |= 1u << (op & 31);
@@ -380,8 +380,8 @@ extern "C" int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t cmd[16], void* buf
   }
 }
 
-// "Mount" no TinyUSB e o computador CONFIGURAR o aparelho (enumeracao feita) -
-// ainda nao e o disco open: isso vem depois, com INQUIRY, tamanho e leituras.
+// "Mount" on TinyUSB and the computer CONFIGURE the device (enumeration done) -
+// is not yet the open disk: that comes later, with INQUIRY, size and readings.
 extern "C" void tud_mount_cb(void)
 {
   s_suspenso = false;
@@ -390,13 +390,13 @@ extern "C" void tud_mount_cb(void)
   s_evento_us = esp_timer_get_time();
 }
 
-// NAO e ejecao. Desconfigurar tambem acontece num reset of recuperacao of
-// computador no middle of uma copia - return o cartao ai seria tirar o disco
+// NOT ejection. Unconfiguring also happens in a reset of recovery of
+// computer in the middle of a copy - return the card then it would be removing the disk
 // of bottom dele. Sem montagem, a screen so deixa of request confirmacao para exit.
 extern "C" void tud_umount_cb(void)
 {
   s_n_soltou = s_n_soltou + 1;
-  s_lendo = false;   // reset of barramento: o comando em progress morreu com ele
+  s_lendo = false;   // reset of bus: the command in progress died with it
 }
 extern "C" void tud_suspend_cb(bool)  { s_suspenso = true; }
 extern "C" void tud_resume_cb(void)   { s_suspenso = false; }
@@ -404,17 +404,17 @@ extern "C" void tud_resume_cb(void)   { s_suspenso = false; }
 // ---------------------------------------------------------------------------
 // A tarefa e o ciclo of vida
 // ---------------------------------------------------------------------------
-// O TINYUSB NASCE E MORRE DENTRO DA PROPRIA TAREFA, fixa num nucleo. O
-// tusb_init aloca a interrupcao of USB no nucleo of quem o chama; a
-// biblioteca protege o estado das transferencias com uma trava que, no mesmo
-// nucleo, desliga as interrupcoes - mas o tratamento of interrupcao (write
-// e read a FIFO, terminar transferencias) nao pega essa trava. Com a
-// interrupcao num nucleo e a tarefa migrando para o outro, os dois mexem no
-// mesmo endpoint on mesmo time, e a transferencia trava sem erro nenhum -
-// a cada vez num ponto diferente. Antes o tusb_init rodava in tarefa of
-// sessao (sem nucleo fixo) e esta tarefa tambem nao tinha nucleo. E o que o
-// esp_tinyusb of Espressif faz (tinyusb_task.c): init in tarefa, tarefa fixa.
-// Nucleo 1, o mesmo que o esp_tinyusb usa por default (o 0 stays com o WiFi).
+// TINYUSB IS BORN AND DIES WITHIN ITS OWN TASK, fixed in a nucleus. O
+// tusb_init allocates the USB interrupt on the caller's core; to
+// library protects the state of transfers with a lock that, in the same
+// core, turns off interrupts - but the handling of interrupt (write
+// and read the FIFO, finish transfers) does not take this lock. With the
+// interruption in one nucleus and the task migrating to the other, both change the
+// same endpoint on the same time, and the transfer hangs without any error -
+// each time at a different point. Before tusb_init ran in task of
+// session (no fixed core) and this task also had no core. And what does the
+// esp_tinyusb of Espressif does (tinyusb_task.c): init in task, fixed task.
+// Core 1, the same as esp_tinyusb uses by default (0 stays with WiFi).
 #define PENDRIVE_NUCLEO 1
 static SemaphoreHandle_t s_iniciou = nullptr;
 static volatile bool     s_init_ok = false;
@@ -428,9 +428,9 @@ static void vTaskPendrive(void*)
   xSemaphoreGive(s_iniciou);
   if (s_init_ok) {
     while (!s_stop) {
-      tud_task_ext(20, false);   // acorda a cada 20 ms para ver o request of stop
+      tud_task_ext(20, false);   // wakes up every 20 ms to see the request of stop
     }
-    tusb_deinit(0);              // no mesmo nucleo em que a interrupcao nasceu
+    tusb_deinit(0);              // in the same nucleus where the interruption was born
   }
   tab5_owner_forget(xTaskGetCurrentTaskHandle());
   xSemaphoreGive(s_parou);
@@ -438,18 +438,18 @@ static void vTaskPendrive(void*)
 }
 
 // O controlador tem DMA? (GHWCFG2.OtgArch = 2). Sem ele o TinyUSB cai no modo
-// escravo - so para o log dizer qual dos dois esta em uso.
+// slave - just for the log to tell which of the two is in use.
 static const char* usb_modo(void)
 {
   const uint32_t ghwcfg2 = *(volatile const uint32_t*)(0x50040000UL + 0x48);
   return ((ghwcfg2 >> 3) & 3) == 2 ? "DMA" : "escravo";
 }
 
-// CLOCK NO MAXIMO enquanto o computador estiver falando: com o clock
-// variavel, cada pausa entre pacotes derruba a CPU para o piso e o next
-// request of computador espera ela raise. Com o barramento PARADO (cabo puxado
-// sem ejetar, computador dormindo) a trava exit - ver o laco of sessao: ai o
-// Tab5 esta in battery e nao ha request nenhum para atender depressa.
+// CLOCK AT MAXIMUM while the computer is talking: with the clock
+// variable, each pause between packets drops the CPU to the floor and the next
+// request of computer waits for her to raise. With the bus STOPPED (cable pulled
+// without ejecting, computer sleeping) the exit lock - see the session loop: then the
+// Tab5 is on battery and there is no request to respond quickly.
 static bool s_clock_max = false;
 static void clock_maximum(bool sim)
 {
@@ -505,11 +505,11 @@ static bool usb_enable(sdmmc_card_t* cartao)
     return false;
   }
 
-  // PRIORIDADE ALTA, acima of interface: on montar, o computador le a tabela
+  // HIGH PRIORITY, above interface: on mount, the computer reads the table
   // FAT inteira of uma vez, e o macOS desiste (erro of E/S, o disco nem
-  // aparece) se ela demorar. Uma iteration of drawing of screen in frente of cada
+  // appears) if she takes too long. An iteration of drawing of screen in front of each
   // request era atraso puro. A tarefa quase sempre dorme esperando o USB.
-  // A stack e a of proprio TinyUSB mais a press_start ate o driver of cartao.
+  // The stack is the TinyUSB itself plus the press_start until the card driver.
   xSemaphoreTake(s_iniciou, 0);   // sem sobra of uma vez anterior
   xTaskCreatePinnedToCore(vTaskPendrive, "pendrive", 4096, nullptr, configMAX_PRIORITIES - 2, &s_tarefa, PENDRIVE_NUCLEO);
   if (!s_tarefa) {
@@ -545,15 +545,15 @@ static void usb_disable(void)
   vTaskDelay(pdMS_TO_TICKS(30));
   s_stop = true;
   // A tarefa termina o comando em progress (no maximum uma leitura/escrita of
-  // 4 KB), desliga o TinyUSB e exit; so depois disso o cartao para of ser
+  // 4 KB), turn off TinyUSB and exit; only after that the card will be
   // touched pelo USB.
   //
   // ESPERA SEM PRAZO. Seguir depois of one prazo seria release o PHY debaixo
   // of TinyUSB ainda running e, logo depois (tab5_sd_return), liberar o
-  // cartao cru que a tarefa pode estar usando no middle of one
+  // raw card that the task may be using in the middle of one
   // sdmmc_read/write_sectors - memoria liberada em uso e o FAT of Tab5
-  // montando por top of uma escrita of computador. Cada comando of cartao
-  // tem o proprio timeout no driver: a tarefa sempre iteration.
+  // assembling on top of a computer writing. Each command of card
+  // has its own timeout in the driver: the task always iteration.
   while (xSemaphoreTake(s_parou, pdMS_TO_TICKS(2000)) != pdTRUE) {
   ESP_LOGW(TAG, "the USB task has not stopped yet (%s) - waiting",
              s_no_cartao ? (s_gravando ? "escrita no cartao" : "leitura no cartao") : "USB");
@@ -606,7 +606,7 @@ void tab5_pendrive_usb(tab5_pendrive_usb_t* e)
 
 bool tab5_pendrive_pc_presente(void)
 {
-  // Com o pendrive enabled o JTAG nao ve nada - quem responde e o OTG.
+  // With the pendrive enabled, JTAG doesn't see anything - OTG is the one who responds.
   if (s_enabled) { return tud_connected() && !s_suspenso; }
   return usb_serial_jtag_is_connected();
 }
@@ -619,12 +619,12 @@ static volatile tab5_pendrive_reason_t s_reason = PENDRIVE_OK;
 static volatile bool s_request_return = false;
 static volatile bool s_devolvido_por_ejecao = false;
 // A ultima sessao terminou com o disco MONTADO no computador, sem ejecao: o
-// FAT of cartao became marcado como "nao desmontado". Na next vez o macOS
-// (e o Windows) verifica o cartao inteiro antes of mostrar o disco - pelo USB
-// full speed, num cartao grande, isso demora, e nada aparece ate acabar.
+// FAT of card became marked as "not disassembled". Next time macOS
+// (and Windows) checks the entire card before showing the disk - over USB
+// full speed, on a large card, this takes time, and nothing appears until it's over.
 static volatile bool s_exited_sem_ejetar = false;
 static volatile bool s_oferta = false;     // computador enabled, esperando a pessoa decidir
-static volatile bool s_resultado_aviso = false;   // conflito/pendencia ainda nao visto em Ajustes > USB
+static volatile bool s_resultado_aviso = false;   // conflict/pending not yet seen in Settings > USB
 static int           s_notif = -1;
 static portMUX_TYPE  s_mux_sessao = portMUX_INITIALIZER_UNLOCKED;
 
@@ -633,7 +633,7 @@ static void notify(int count, notification_level_t level, const char* txt)
   if (s_notif >= 0) { notification_publicar(s_notif, count, level, txt); }
 }
 
-// Termina a sessao com o reason dado (o pendrive nao chegou a enable).
+// Ends the session with the given reason (the pendrive did not reach enable).
 static void recusou(tab5_pendrive_reason_t m)
 {
   s_reason = m;
@@ -641,10 +641,10 @@ static void recusou(tab5_pendrive_reason_t m)
   notify(0, NOTIF_INFO, nullptr);
 }
 
-// O LOG DA SESSAO: cada passo of computador uma vez (reconheceu, perguntou o
-// que e, o tamanho, leu, cada comando respondido ou recusado, erro of cartao,
-// ejecao) e one summary when algo muda - a cada 3 s ate a primeira leitura
-// entregue, a cada 10 s depois. "leit 12/11" = 12 commands of leitura
+// THE SESSION LOG: each computer step once (acknowledged, asked the
+// which is, the size, read, each command responded or refused, error of card,
+// ejection) and one summary when something changes - every 3 s until the first reading
+// delivered, every 10 s thereafter. "leit 12/11" = 12 commands of reading
 // recebidos, 11 com os data e o status entregues. E, when everything para por
 // mais of 3 s, ONDE parou (ver tab5_pendrive_espera_t).
 typedef struct {
@@ -688,7 +688,7 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
   }
   if (u->n_soltou > d->soltou) { ESP_LOGI(TAG, "computer released the disk"); d->soltou = u->n_soltou; }
   if (u->suspenso != d->suspenso) {
-    // Sem SOF of computador por 3 ms: cabo fora, computador dormindo - ou o
+    // No SOF of computer for 3 ms: cable out, computer sleeping - or the
     // computador deixou of ver o Tab5 (ver pad_conferir).
     ESP_LOGI(TAG, "barramento %s", u->suspenso ? "parado (suspenso)" : "de volta");
     d->suspenso = u->suspenso;
@@ -717,8 +717,8 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
              (unsigned long)(s_escrita_max_us / 1000), (unsigned long)s_n_escritas_lentas);
   }
 
-  // PAROU: nada of computador nem of cartao ha mais of 3 s, depois of o
-  // computador ter reconhecido o aparelho. Uma line por parada.
+  // STOPPED: nothing on the computer or card for more than 3 s, after the
+  // computer has recognized the device. One line per stop.
   if (u->n_config && u->parado_ms >= 3000) {
     if (!d->stop_contada) {
       d->stop_contada = true;
@@ -737,7 +737,7 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
         default: {
           // O Tab5 estava OUVINDO? O endpoint of saida (por onde chega o
           // next comando) tem que estar habilitado (EPENA) e sem STALL.
-          // Desarmado ou travado = o computador mandou e o Tab5 nao recebeu.
+          // Disarmed or locked = the computer sent it and the Tab5 did not receive it.
           const uint32_t doepctl1 = *(volatile const uint32_t*)(0x50040000UL + 0xB20);
           const uint32_t diepctl1 = *(volatile const uint32_t*)(0x50040000UL + 0x920);
           ESP_LOGW(TAG, "PARADO ha %lu s: nada novo do COMPUTADOR - tudo entregue (%lu/%lu leituras, "
@@ -760,16 +760,16 @@ static void registrar_eventos(passos_t* d, const tab5_pendrive_usb_t* u)
 }
 
 // Suspenso por mais que isto = ninguem of outro lado (ver o laco abaixo). O
-// barramento suspende sozinho depois of 3 ms sem SOF; one computador que so
+// bus suspends alone after 3 ms without SOF; one computer that only
 // pisca (troca of energia of porta) iteration bem antes disto.
 #define BARRAMENTO_PARADO_US 2000000
-// Ligado e nenhum computador configurou o aparelho ate aqui: nao ha ninguem.
+// Connected and no computer has configured the device until now: no one.
 #define ESPERA_PC_US         10000000
 
 static void vTaskSessao(void*)
 {
-  // 1. O cartao. Quem EXIGE o cartao (Arquivos, Camera) nao pode estar open:
-  //    o sistema nao tira o cartao of bottom dele (app_t.exige_sd).
+  // 1. The card. Anyone who REQUIRES the card (Files, Camera) cannot be open:
+  // the system does not remove his bottom card (app_t.exige_sd).
   if (system_app_requires_sd()) { recusou(PENDRIVE_RECUSA_APP); vTaskDelete(nullptr); return; }
   switch (tab5_sd_lend(3000)) {
     case SD_LENT:             break;
@@ -779,7 +779,7 @@ static void vTaskSessao(void*)
   }
   // 2. O USB. Antes, o alto-falante exit dos pins que o ESP-IDF confunde com
   //    os of OTG (ver pad_conferir) - disabled now, ANTES of USB raise, e
-  //    mudo ate o end. Falhou: o cartao iteration in hora, nada changed para ninguem.
+  // change to the end. Failed: the card iteration in time, nothing changed for anyone.
   if (!system_sound_yield_pins(3000)) {
     ESP_LOGW(TAG, "a interface nao calou o alto-falante em 3 s - seguindo (a sentinela do pad cobre)");
   }
@@ -793,14 +793,14 @@ static void vTaskSessao(void*)
   s_fase = PENDRIVE_ATIVO;
   notify(1, NOTIF_INFO, "Card connected to computer");
 
-  // 3. Enquanto o computador estiver com o cartao. Sai when ele ejeta (nada
+  // 3. While the computer has the card. It comes out when it ejects (nothing
   //    mais em cache of lado of la) ou when a pessoa manda return (a screen
   //    pede confirmacao antes, se ele ainda estiver montado).
   tab5_sd_summary_t r0;
   tab5_sd_summary(&r0);
   bool avisou_cheio = false;
-  // O CAMINHO ATE O DISCO APARECER, no log (que vai on diario e chega on
-  // cartao in iteration) - escrito AQUI, nunca nos retornos of USB.
+  // THE PATH UNTIL THE DISK APPEARS, in the log (which goes to the diary and arrives at
+  // card in iteration) - written HERE, never returns of USB.
   passos_t d = { };
   int64_t suspenso_since_us = 0;
   bool    economia = false;
@@ -814,8 +814,8 @@ static void vTaskSessao(void*)
     tab5_pendrive_usb_t u;
     tab5_pendrive_usb(&u);
     registrar_eventos(&d, &u);
-    // O DIARIO ENCHENDO: passou of 90%, ou ja perdeu gravacao - a pessoa
-    // precisa saber para return o cartao antes of perder mais.
+    // THE DIARY IS FILLING UP: it's over 90%, or you've already lost the recording - the person
+    // needs to know how to return the card before losing more.
     tab5_sd_summary_t rr;
     tab5_sd_summary(&rr);
     const bool cheio = rr.lost > r0.lost
@@ -825,17 +825,17 @@ static void vTaskSessao(void*)
       if (cheio) { notify(1, NOTIF_ATENCAO, "USB-drive storage full"); }
       else       { notify(1, NOTIF_INFO, "Card connected to computer"); }
     }
-    // BARRAMENTO PARADO ha mais of BARRAMENTO_PARADO_US: cabo puxado sem
+    // BUS STOPPED there is more than BARRRAMENTO_PARADO_US: cable pulled without
     // ejetar, ou computador dormindo. O TinyUSB continua "montado" (suspender
-    // nao desconfigura, e sem sensor of VBUS o cabo fora e so isso) - sem
+    // does not disconfigure, and without VBUS sensor the cable is out and that's it) - without
     // esta regra a screen ficava acesa e a CPU no clock maximum PARA SEMPRE, in
-    // battery, esperando one computador que nao esta mais la. A sessao segue
-    // (o cache of computador pode ter algo of cartao: so a ejecao ou a pessoa
-    // o devolvem); so o que gasta energia exit, e iteration when o barramento
+    // battery, waiting for a computer that is no longer there. The session continues
+    // (the computer's cache may have something of card: just the ejection or the person
+    // return it); only what uses energy exit, and iteration when the bus
     // voltar.
     // O mesmo para o pendrive enabled SEM computador (pela screen, sem cabo):
-    // depois of ESPERA_PC_US sem o computador configurar o aparelho, o clock
-    // exit. A enumeracao nao precisa dele; when o computador configura, o
+    // after ESPERA_PC_US without the computer configuring the device, the clock
+    // exit. The enumeration does not need it; when the computer configures, the
     // clock sobe nesta iteration (200 ms), antes of leitura grossa of FAT.
     const int64_t now = esp_timer_get_time();
     if (!u.suspenso)             { suspenso_since_us = 0; }
@@ -851,7 +851,7 @@ static void vTaskSessao(void*)
     }
     clock_maximum(!economia);
     // Disco montado: screen acesa - o sleep baixaria o clock no middle of copia,
-    // e a pessoa precisa ver o aviso of que o cartao esta fora.
+    // and the person needs to see the warning that the card is out.
     system_manter_acordado(SISTEMA_ACORDADO_PENDRIVE, u.montado && !u.ejetado && !parado);
     if (u.ejetado || s_request_return) {
       s_devolvido_por_ejecao = u.ejetado;
@@ -860,9 +860,9 @@ static void vTaskSessao(void*)
     }
   }
 
-  // 4. Devolver: o USB exit PRIMEIRO (o computador para of touch no cartao) e
-  //    so entao o cartao iteration on Tab5. O diario e aplicado aqui mesmo (a
-  //    barreira of gravacao espera terminar) para o resultado ser o of now.
+  // 4. Return: the USB exit FIRST (the computer stops touching the card) and
+  // only then the card iteration on Tab5. The diary is applied right here (the
+  // barrier of recording waits to finish) for the result to be of now.
   s_fase = PENDRIVE_DEVOLVENDO;
   notify(1, NOTIF_INFO, "Returning the card...");
   usb_disable();
@@ -876,7 +876,7 @@ static void vTaskSessao(void*)
   if (r.conflicts) {
     char t[NOTIF_RESUMO];
     snprintf(t, sizeof(t), "%u arquivo(s) em .tab5", (unsigned)r.conflicts);
-    notify((int)r.conflicts, NOTIF_ATENCAO, t);   // stays ate a pessoa ver em Ajustes > USB
+    notify((int)r.conflicts, NOTIF_ATENCAO, t);   // stays until the person sees it in Settings > USB
     s_resultado_aviso = true;
   } else if (r.in_journal) {
     notify((int)r.in_journal, NOTIF_ATENCAO, "Writes waiting for card");   // fits in NOTIF_RESUMO
@@ -909,7 +909,7 @@ bool tab5_pendrive_start(void)
   s_resultado_aviso = false;
   if (system_app_requires_sd()) { recusou(PENDRIVE_RECUSA_APP); return false; }
   notify(1, NOTIF_INFO, "Preparing the USB drive...");
-  // Pilha of tarefa "cartao": emprestar fotografa o cartao (varre as pastas)
+  // Stack of task "card": borrow photos of card (scans folders)
   // e o f_mount desce fundo. So existe enquanto durar a sessao.
   if (xTaskCreatePinnedToCore(vTaskSessao, "pendrive_sessao", 6144, nullptr, 3, nullptr, tskNO_AFFINITY) != pdPASS) {
     recusou(PENDRIVE_RECUSA_USB);
@@ -918,9 +918,9 @@ bool tab5_pendrive_start(void)
   return true;
 }
 
-// Vale tambem PREPARANDO: o request stays guardado e a sessao devolve assim que
+// It is also worth PREPARING: the request stays saved and the session returns as soon as
 // o USB raise (ou nem chega a usar, se recusar antes) - descartar calado
-// deixava o cartao no computador depois of a pessoa ter request of iteration.
+// left the card on the computer after the person had requested iteration.
 void tab5_pendrive_return(void)
 {
   const tab5_pendrive_fase_t f = s_fase;
@@ -947,21 +947,21 @@ void tab5_pendrive_resultado_visto(void)
 }
 
 // ---------------------------------------------------------------------------
-// A VIGIA: computador enabled no cabo
+// THE WATCH: computer enabled on cable
 // ---------------------------------------------------------------------------
-// A cada 250 ms (esp_timer). Na BORDA "sem computador -> com computador", com
-// o ajuste enabled: in screen inicial, desbloqueado, o pendrive liga sozinho; com
+// Every 250 ms (esp_timer). On the EDGE "without computer -> with computer", with
+// the setting enabled: in initial screen, unlocked, the pendrive turns on by itself; with
 // one app open ou a screen bloqueada, so avisa (o aviso abre Ajustes > USB).
-// Uma CARENCIA, em que a borda nao conta:
+// A LACK, in which the edge does not count:
 //   - no boot (5 s): o computador ja enabled e quem acabou of gravar o
 //     firmware - o console dele reaparece logo depois of reinicio, e roubar o
 //     cabo tiraria o monitor serial;
 //   - depois of one pendrive (4 s): o console iteration on USB-C e o computador
 //     "reaparece" sem o cabo ter saido.
-// Antes a regra era "so depois of 3 s com o cabo fora" (olhando uma vez por
-// segundo): tirar e recolocar o cabo mais rapido que isso nao fazia nada - e
-// o jeito natural of montar of novo depois of ejetar.
-// Com o pendrive enabled o JTAG nao ve nada: a vigia nao olha.
+// Before the rule was "only after 3 s with the cable out" (looking once a
+// second): removing and replacing the cable faster than that did nothing - and
+// the natural way to mount again after ejecting.
+// With the pendrive enabled, JTAG doesn't see anything: the watchman doesn't look.
 #define VIGIA_US          250000
 #define VIGIA_LENTA_US    1000000   // ajuste disabled (ver o end of vigiar)
 #define CARENCIA_BOOT_US  5000000
@@ -984,7 +984,7 @@ static void vigiar(void*)
   const bool pc = tab5_pendrive_pc_presente();
   if (!s_viu) { s_viu = true; s_antes = pc; s_carencia_ate_us = now + CARENCIA_BOOT_US; return; }
 
-  if (s_oferta && !settings_flash_drive()) {   // o ajuste exited: a oferta tambem
+  if (s_oferta && !settings_flash_drive()) {   // the setting exited: the offer also
     s_oferta = false;
     notify(0, NOTIF_INFO, nullptr);
   }
@@ -1002,13 +1002,13 @@ static void vigiar(void*)
     }
   } else {
     if (!s_ausente_since_us) { s_ausente_since_us = now; }
-    // A oferta so cai com o cabo fora of verdade, nao num soluco of barramento.
+    // The offer only falls with the cable out of truth, not in a bus solution.
     if (s_oferta && now - s_ausente_since_us >= 1000000) { s_oferta = false; notify(0, NOTIF_INFO, nullptr); }
   }
   s_antes = pc;
 
-  // O RITMO SEGUE O AJUSTE. Com "enable sozinho" disabled (o of fabrica) a
-  // borda nao liga nada - a vigia so acompanha o cabo para nao confundir one
+  // THE RHYTHM FOLLOWS THE SETTING. With "enable alone" disabled (of factory)
+  // edge doesn't turn on anything - the port only follows the cable so as not to confuse one
   // computador que JA estava enabled com one que acabou of chegar when o
   // ajuste for enabled. Para isso 1 s basta; 250 ms so when a borda vale.
   const uint64_t periodo = (settings_flash_drive() || s_oferta) ? VIGIA_US : VIGIA_LENTA_US;

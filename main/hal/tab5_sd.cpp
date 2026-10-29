@@ -33,8 +33,8 @@ static const int SD_D3  = 42;
 
 // Canal of LDO interno que alimenta a IO of SDMMC.
 //
-// O P4 declara SOC_SDMMC_IO_POWER_EXTERNAL: a alimentacao of IO of cartao NAO
-// vem of one trilho fixo, ela exit of one LDO of dentro of chip que precisa ser
+// P4 declares SOC_SDMMC_IO_POWER_EXTERNAL: power of IO of card NOT
+// comes from one fixed rail, it exits from one LDO of chip that needs to be
 // on antes. O channel 4 (LDO_VO4) e o que as placas of referencia of P4 usam;
 // o M5GFX ja usa o channel 3 para o PHY of DSI, o que reforca que o 4 esta free_space
 // para isto. Se a montagem falhar com erro of timeout, este numero e o first
@@ -47,13 +47,13 @@ static sd_pwr_ctrl_handle_t s_ldo = nullptr;
 static int                 s_refs = 0;
 
 // A contagem of referencia e mexida por tarefas diferentes: a interface (on
-// open e close app) e o registro of energia (a cada descarga). Sem trava, dois
+// open and close app) and the energy record (with each discharge). No lock, two
 // mount() simultaneos poderiam mount duas vezes, ou one unmount() puxar o
 // tapete of who esta gravando. Mutex criado sob demanda, in primeira chamada.
 static SemaphoreHandle_t   s_mutex = nullptr;
 
-// O mutex NAO pode ser criado sob demanda dentro of trava(): duas tarefas
-// chegando juntas in primeira vez criariam dois mutexes diferentes e cada uma
+// The mutex CANNOT be created on demand within of trava(): two tasks
+// arriving together the first time would create two different mutexes and each
 // travaria o seu - protecao none, e ainda vaza one. Criado uma vez em
 // tab5_sd_init(), antes of existir concorrencia.
 static void trava(void)
@@ -65,43 +65,43 @@ static void destrava(void)
   if (s_mutex) { xSemaphoreGive(s_mutex); }
 }
 // ---------------------------------------------------------------------------
-// O ESTADO DO CARTAO SAO QUATRO COISAS, NAO DUAS
+// THE CONDITION OF THE CARD IS FOUR THINGS, NOT TWO
 // ---------------------------------------------------------------------------
-// A description dizia "sem cartao" toda vez que o cartao era DESMONTADO - que e
+// The description said "no card" every time the card was DISASSEMBLED - which is
 // o state normal when nenhum app o esta usando, ja que a montagem e sob
 // demanda e contada por referencia. O comando `servicos` entao anunciava "sem
-// cartao" com o cartao encaixado e funcionando.
+// card" with the card inserted and working.
 //
-// Misturar "nao esta mounted now" com "nao existe" e o mesmo erro of WiFi
-// dizendo "failed" when o coprocessador estava mudo: duas causas diferentes,
+// Mixing "not mounted now" with "does not exist" and the same WiFi error
+// saying "failed" when the coprocessor was silent: two different causes,
 // uma message so, e o user mandado investigar o lugar errado.
 //
-//   nao verificado      - ninguem tentou mount ainda neste boot
+// not verified - no one has tried mounting yet on this boot
 //   SD 14.5GB           - mounted now
-//   SD 14.5GB (free_space)   - ja montou, esta desmontado, o cartao continua la
+// SD 14.5GB (free_space) - already assembled, disassembled, the card is still there
 //   ausente ou ilegivel - a latest tentativa of mount failed
 static char s_ident[32]      = "";      // identidade, when ja a conhecemos
 static bool s_ja_montou      = false;   // alguma montagem deu certo neste boot
-// O NOME DO CARTAO (rotulo of volume FAT), value_read a cada montagem of verdade:
+// THE CARD NAME (FAT volume label), value_read at each mount of truth:
 // renomeado no computador durante o pendrive, a iteration remonta e le of novo.
-// Fica valendo com o cartao desmontado. Vazio = sem name.
+// It is valid with the card dismantled. Empty = no name.
 static char s_rotulo[36]     = "";
 static void arrumar_sistema(void);
 static bool s_anunciou = false;   // a primeira montagem of boot ja foi para o log
 
-// DESMONTAGEM ADIADA. Quando o ultimo user devolve o cartao,
+// DISASSEMBLY POSTPONED. When the last user returns the card,
 // ele stays mounted mais SD_OCIOSO_MS: o log, o monitor, o registro of energia
-// e a track gravam em momentos proximos, e cada montagem liga o regulador e
-// reinicializa o cartao. Com a folga, gravacoes vizinhas dividem UMA montagem;
+// and the track record at close moments, and each montage turns on the regulator and
+// resets the card. With the time off, neighboring recordings share ONE montage;
 // sem ninguem request of novo, desmonta e o regulador desliga. E o mesmo default
-// of "timeout of ociosidade" of high-falante (ARCHITECTURE.md, 1.1).
+// of "timeout of idle" of speaker (docs/ARCHITECTURE.md, 1.1).
 static const uint64_t   SD_OCIOSO_US = 10ULL * 1000 * 1000;
 static esp_timer_handle_t s_ocioso = nullptr;
 static void desmontar_of_verdade(void);
 
-// Quando o cartao montou/desmontou DE VERDADE pela latest vez (us of uptime).
-// Diagnostico: o monitor cruza com o frame atrasado of panel (o cartao e
-// alimentado por one LDO of proprio P4, vizinho of LDO of DSI).
+// When the card REALLY mounted/unmounted for the last time (us of uptime).
+// Diagnosis: the monitor crosses the delayed frame of panel (the card and
+// powered by one LDO of own P4, neighbor of LDO of DSI).
 static volatile int64_t s_montou_us = 0, s_desmontou_us = 0;
 void tab5_sd_last_transitions(int64_t* montou_us, int64_t* desmontou_us)
 {
@@ -110,13 +110,13 @@ void tab5_sd_last_transitions(int64_t* montou_us, int64_t* desmontou_us)
 }
 static void on_ocioso(void*);
 static bool s_ultima_falhou  = false;   // a latest tentativa failed
-// SEM CARTAO, ESPERA CRESCENTE. Cada tentativa num slot vazio leva ~1 s of
-// timeout com a trava presa, e todo mundo que grava (log, WiFi, notificacoes)
+// NO CARD, LONGER WAIT. Each attempt at an empty slot takes ~1 s of
+// timeout with the lock stuck, and everyone who records (log, WiFi, notifications)
 // pede montagem: sem freio eram 5 lines of erro por segundo e one segundo of
-// queue para cada one. Depois of uma failure, a next tentativa of verdade so
-// exit depois of SD_ESPERA_MIN_MS, dobrando a cada nova failure ate SD_ESPERA_MAX_MS;
-// entre uma e outra, mount devolve failure in hora. Cartao inserido com o
-// aparelho on e achado em ate SD_ESPERA_MAX_MS.
+// queue for each one. After a failure, the next attempt is true only
+// exit after SD_ESPERA_MIN_MS, doubling with each new failure until SD_ESPERA_MAX_MS;
+// between one and the other, mount returns failure in time. Card inserted with
+// device on and found in up to SD_ESPERA_MAX_MS.
 #define SD_ESPERA_MIN_MS  2000
 #define SD_ESPERA_MAX_MS 10000
 static int64_t  s_next_us = 0;
@@ -126,9 +126,9 @@ static char s_desc[64]       = "nao verificado";
 static void gravador_start(void);
 
 // EMPRESTADO AO COMPUTADOR (mode pendrive, ver tab5_sd_lend no .hpp).
-// Enquanto valer, o cartao e of computador: mount() recusa in hora, como
-// se nao houvesse cartao, e o gravador segura o que chegar. s_cru e o mesmo
-// cartao, inicializado SEM sistema of arquivos - so setores.
+// While it is valid, the card is of computer: mount() refuses immediately, as
+// if there was no card, and the recorder holds whatever arrives. s_cru is the same
+// card, initialized WITHOUT file system - just sectors.
 static volatile bool s_emprestado = false;
 static sdmmc_card_t* s_cru = nullptr;
 static tab5_sd_summary_t s_summary = { };   // o diario deste lending (tab5_sd_summary)
@@ -137,7 +137,7 @@ void tab5_sd_init(void)
 {
   if (!s_mutex) { s_mutex = xSemaphoreCreateMutex(); }
   // O diario ANTES of gravador: o que became of one pendrive interrompido por
-  // one reinicio tem que estar visivel when a primeira gravacao chegar.
+  // the restart must be visible when the first recording arrives.
   tab5_journal_init();
   gravador_start();
   if (!s_ocioso) {
@@ -147,19 +147,19 @@ void tab5_sd_init(void)
     esp_timer_create(&a, &s_ocioso);
   }
 
-  // CALADO PARA SEMPRE, e nao so numa window - o aviso inundava o console.
+  // QUIET FOREVER, and not just in a window - the warning flooded the console.
   // sd_pwr_ctrl_new_on_chip_ldo()
   // (chamada em montar_de_verdade() logo abaixo) sempre cria o controlador of
-  // LDO com tensao 0 antes of programar a tensao real, e o driver of IDF avisa
-  // isso em WARN toda vez - benigno (o cartao monta e le normal, a tensao real
-  // e configurada logo em seguida), mas o cartao era mounted/desmontado a cada
-  // ~15s PARA SEMPRE (era o proprio log se realimentando - corrigido em
-  // ver montar_de_verdade e a desmontagem adiada) - e nao so numa window
-  // rara como o "ledc" durante o wake (tab5_power.cpp), entao nao ha
+  // LDO with voltage 0 before programming the real voltage, and the IDF driver warns
+  // this on WARN every time - benign (card mounts and reads normal, actual voltage
+  // and configured immediately afterwards), but the card was mounted/unmounted every
+  // ~15s FOREVER (it was the log itself feeding back - corrected in
+  // see mount_de_verdade and deferred dismount) - and not just in a window
+  // rare as the "ledc" during wake (tab5_power.cpp), so there is no
   // "depois" para restaurar o level: e a mesma logica of "eh_sdio"/"sdmmc_io"
   // em tab5_wifi_init(), silenciados uma vez no boot.
   esp_log_level_set("ldo", ESP_LOG_ERROR);
-  // As camadas of bottom repetem, a cada tentativa, o erro que a nossa ja of
+  // The bottom layers repeat, with each attempt, the error that ours already made.
   // (e so in mudanca of state - ver montar_de_verdade).
   esp_log_level_set("sdmmc_common", ESP_LOG_NONE);
   esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_NONE);
@@ -182,9 +182,9 @@ static void read_rotulo(void)
     snprintf(s_rotulo, sizeof(s_rotulo), "%s", r);
     return;
   }
-  // O setor of boot of volume: o 0 of cartao, ou o start of 1a particao
-  // (cartao com tabela of particoes - o normal, formatado no computador).
-  // Lido raw e nao pelo f_getfree, que num cartao grande pode scan a FAT.
+  // The boot sector of volume: the 0 of card, or the start of 1st partition
+  // (card with table of partitions - the normal one, formatted on the computer).
+  // Read raw and not through f_getfree, which on a large card can scan FAT.
   uint8_t* setor = (uint8_t*)heap_caps_malloc(512, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
   if (!setor) { return; }
   bool ok = sdmmc_read_sectors(s_card, setor, 0, 1) == ESP_OK && setor[510] == 0x55 && setor[511] == 0xAA;
@@ -213,20 +213,20 @@ const char* tab5_sd_description(void)
   return s_desc;
 }
 
-// Host SDMMC e slot of cartao, com o LDO (s_ldo) ja on amarrado no host.
+// SDMMC host and card slot, with the LDO (s_ldo) already tied to the host.
 // Usado pela montagem normal e pelo acesso raw of pendrive - os dois TEM que
-// falar com o cartao of mesmo jeito (slot 0, ver o aviso abaixo).
+// talk to the card in the same way (slot 0, see the warning below).
 static void configurar_host(sdmmc_host_t* host, sdmmc_slot_config_t* slot)
 {
   *host = SDMMC_HOST_DEFAULT();
 
-  // SLOT 0, E ISTO NAO E DETALHE.
+  // SLOT 0, AND THIS IS NOT A DETAIL.
   //
   // O SDMMC_HOST_DEFAULT() vem com .slot = SDMMC_HOST_SLOT_1
   // (sdmmc_default_configs.h:31), e o esp_hosted usa o SLOT 1 para falar com o
   // ESP32-C6 of WiFi (CONFIG_ESP_HOSTED_HOST_SDIO_SLOT=1). Com os dois no mesmo
-  // slot, mount o cartao reprograma os pins of slot e ARRANCA O C6 DO
-  // BARRAMENTO. Foi exatamente o que aconteceu:
+  // slot, mount the card, reprogram the slot pins and RIP THE C6 FROM
+  // BUS. That's exactly what happened:
   //
   //   wifi: C6 no ar, firmware 1.4.1            <- link com o C6 of pe
   //   sdmmc_periph: SDMMC host already initialized, skipping initflow
@@ -235,7 +235,7 @@ static void configurar_host(sdmmc_host_t* host, sdmmc_slot_config_t* slot)
   //
   // O P4 tem dois slots (SOC_SDMMC_NUM_SLOTS=2) e roteia por GPIO matrix
   // (SOC_SDMMC_USE_GPIO_MATRIX=1), entao qualquer pino serve em qualquer slot.
-  // Mudamos o NOSSO lado e nao o of esp_hosted, para nao mexer no preset of
+  // We changed OUR side and not the of esp_hosted, so as not to change the preset of
   // placa que a Espressif mantem.
   host->slot = SDMMC_HOST_SLOT_0;
   host->pwr_ctrl_handle = s_ldo;
@@ -255,7 +255,7 @@ static void configurar_host(sdmmc_host_t* host, sdmmc_slot_config_t* slot)
 
 static bool montar_of_verdade(void)
 {
-  // 1. Liga o LDO que alimenta a IO of cartao.
+  // 1. Turn on the LDO that feeds the IO of card.
   sd_pwr_ctrl_ldo_config_t ldo_cfg = { };
   ldo_cfg.ldo_chan_id = SD_LDO_CANAL;
   esp_err_t err = sd_pwr_ctrl_new_on_chip_ldo(&ldo_cfg, &s_ldo);
@@ -270,7 +270,7 @@ static bool montar_of_verdade(void)
   configurar_host(&host, &slot);
 
   esp_vfs_fat_sdmmc_mount_config_t mnt = { };
-  // NUNCA formatar sozinho. Um cartao que nao monta pode estar apenas com o
+  // NEVER format it yourself. A card that does not mount may only be with the
   // sistema of arquivos errado, e formatar destruiria o que o user tem la.
   // Se one dia precisar formatar, que seja one botao explicito num app.
   mnt.format_if_mount_failed = false;
@@ -280,7 +280,7 @@ static bool montar_of_verdade(void)
   tab5_mark("sd: montando", 0);
   err = esp_vfs_fat_sdmmc_mount(TAB5_SD_ROOT, &host, &slot, &mnt, &s_card);
   if (err != ESP_OK) {
-    // So a PRIMEIRA failure of uma sequencia vai on log; as repeticoes of
+    // Only the FIRST failure of a sequence goes on log; the repetitions of
     // mesmo state sao depuracao.
     if (!s_ultima_falhou) {
       if (err == ESP_FAIL) {
@@ -308,13 +308,13 @@ static bool montar_of_verdade(void)
 
   read_rotulo();
 
-  // Garante a root dos aplicativos. mkdir devolvendo EEXIST nao e erro.
+  // Guarantees rooting of applications. mkdir returning EEXIST is not an error.
   mkdir(TAB5_SD_APPS, 0777);
 
-  // MONTAR NAO E NOTICIA. Estas lines iam para o log, o log e
-  // gravado NO CARTAO, e write requires mount: cada descarga of log gerava as
-  // duas lines que obrigavam a next descarga - o cartao montava e
-  // desmontava a cada 15s para sempre, gravando que tinha gravado. So a
+  // RIDING IS NOT NEWS. These lines went to the log, the log and
+  // written ON THE CARD, and write requires mount: each flush of log generated the
+  // two lines that forced the next discharge - the card mounted and
+  // dismounted every 15s forever, recording what it had recorded. I'm the
   // primeira montagem of boot stays visivel; o resto e depuracao.
   if (!s_anunciou) {
     ESP_LOGI(TAG, "mounted em %s: %s, name '%s'", TAB5_SD_ROOT, s_ident, s_rotulo);
@@ -326,10 +326,10 @@ static bool montar_of_verdade(void)
   return true;
 }
 
-// A PASTA SISTEMA EM SUBPASTAS. Os logs of dia e os arquivos of
-// energia iam todos soltos em apps/Sistema e afogavam o resto (wifi.txt,
-// firmware of C6). Agora cada one tem a sua: TAB5_SD_LOGS e TAB5_SD_POWER.
-// O que ja estava no cartao of jeito antigo e movido UMA vez por boot, in
+// THE SYSTEM FOLDER IN SUB FOLDERS. The logs of day and the files of
+// energy was all loose in apps/System and drowned the rest (wifi.txt,
+// firmware of C6). Now each one has their own: TAB5_SD_LOGS and TAB5_SD_POWER.
+// What was already on the card the old way is moved ONCE per boot, in
 // primeira montagem - com nada a move, custa so listar a folder.
 static bool tem_prefixo(const char* s, const char* p) { return strncasecmp(s, p, strlen(p)) == 0; }
 
@@ -385,11 +385,11 @@ bool tab5_sd_mount(void)
   trava();
   bool ok;
   if (s_emprestado) {
-    // O computador esta com o cartao: recusa calado, sem a espera crescente
-    // of "sem cartao" - ele iteration inteiro when o pendrive acabar.
+    // The computer has the card: silently refuses, without the increasing wait
+    // of "without card" - the entire iteration when the pendrive runs out.
     ok = false;
   } else if (s_card) {
-    // Ja mounted - talvez so esperando o prazo of ociosidade: cancela o prazo
+    // Ja mounted - maybe just waiting for the deadline of idleness: cancels the deadline
     // e conta. E aqui que a montagem e reaproveitada.
     if (s_refs == 0 && s_ocioso) { esp_timer_stop(s_ocioso); }
     s_refs++;
@@ -401,7 +401,7 @@ bool tab5_sd_mount(void)
     s_espera_ms = 0;
     ok = true;
   } else {
-    ok = false;                               // failed: NAO incrementa
+    ok = false;                               // failed: DOES NOT increment
     s_espera_ms = s_espera_ms ? s_espera_ms * 2 : SD_ESPERA_MIN_MS;
     if (s_espera_ms > SD_ESPERA_MAX_MS) { s_espera_ms = SD_ESPERA_MAX_MS; }
     s_next_us = esp_timer_get_time() + (int64_t)s_espera_ms * 1000;
@@ -410,22 +410,22 @@ bool tab5_sd_mount(void)
   return ok;
 }
 
-// Chamada com a trava presa.
+// Call with lock stuck.
 static void desmontar_of_verdade(void)
 {
   tab5_mark("sd: desmontando", 0);
   esp_vfs_fat_sdcard_unmount(TAB5_SD_ROOT, s_card);
   s_card = nullptr;
   if (s_ldo) { sd_pwr_ctrl_del_on_chip_ldo(s_ldo); s_ldo = nullptr; }
-  // A identidade NAO e apagada: o cartao continua encaixado, so nao esta
-  // mounted. Apagar aqui era o que fazia o `servicos` anunciar "sem cartao"
-  // com o cartao no lugar.
+  // The identity is NOT erased: the card is still inserted, it is just not
+  // mounted. Deleting here was what made `servicos` announce "no card"
+  // with the card in place.
   ESP_LOGD(TAG, "desmontado");
   s_desmontou_us = esp_timer_get_time();
 }
 
-// O prazo of ociosidade venceu (tarefa of esp_timer). Se ninguem pegou o
-// cartao of iteration nesse storage time, now desmonta.
+// Deadline of idleness has expired (task of esp_timer). If no one took the
+// card of iteration in this storage time, now disassemble.
 static void on_ocioso(void*)
 {
   trava();
@@ -440,7 +440,7 @@ void tab5_sd_unmount(void)
     destrava();
     return;
   }
-  // O ultimo devolveu: nao desmonta ja - arma o prazo (ou o reinicia).
+  // The last one returned: don't disassemble it yet - set the deadline (or restart it).
   if (s_ocioso) {
     esp_timer_stop(s_ocioso);
     esp_timer_start_once(s_ocioso, SD_OCIOSO_US);
@@ -455,13 +455,13 @@ void tab5_sd_unmount(void)
 // ===========================================================================
 static void tarefa_cartao_wake(void);
 static void gravacao_lock(bool lock);
-static void esvaziar_buffer(void);   // com a trava of gravacao presa
+static void esvaziar_buffer(void);   // with the recording lock stuck
 static void aplicar_diario(void);    // idem
 
 // ---------------------------------------------------------------------------
-// A FOTO DO CARTAO NO EMPRESTIMO
+// THE PHOTO OF THE CARD IN THE LOAN
 // ---------------------------------------------------------------------------
-// Tamanho e data of cada file of apps/ no instante em que o cartao exit. Um
+// Size and date of each file of apps/ at the moment the card exits. One
 // file SUBSTITUIDO durante o pendrive leva a foto dele junto para o diario
 // (a foto em si stays so in RAM: o registro e que precisa sobreviver a one
 // reinicio). Na iteration, file diferente of foto = o computador mexeu nele.
@@ -497,7 +497,7 @@ static void fotografar_pasta(const char* folder, int level)
   closedir(d);
 }
 
-// Com o cartao mounted e a trava presa.
+// With the card mounted and the lock attached.
 static void fotografar(void)
 {
   if (!s_foto) { s_foto = (foto_t*)heap_caps_malloc(FOTO_MAX * sizeof(foto_t), MALLOC_CAP_SPIRAM); }
@@ -513,10 +513,10 @@ static const foto_t* foto_of(const char* caminho)
   return nullptr;
 }
 
-// A FOTO SO SERVE ENQUANTO O CARTAO ESTA FORA: cada registro SUBSTITUIR of
+// THE PHOTO ONLY WORKS WHILE THE CARD IS OUT: each record REPLACE of
 // diario ja leva a sua base junto. Solta no end of lending (ou when ele
-// desiste) - 48 KB of PSRAM que ficavam presos ate o reinicio. Com a trava
-// of gravacao presa: e com ela que o replace le a foto.
+// gives up) - 48 KB of PSRAM that was stuck until restart. With the lock
+// of stuck recording: and with it the replace reads the photo.
 static void foto_release(void)
 {
   heap_caps_free(s_foto);
@@ -536,8 +536,8 @@ static void cru_release(void)
   if (s_ldo) { sd_pwr_ctrl_del_on_chip_ldo(s_ldo); s_ldo = nullptr; }
 }
 
-// O cartao sem sistema of arquivos: LDO, host, slot e a inicializacao of
-// cartao - o que o esp_vfs_fat_sdmmc_mount faz antes of f_mount. Com a trava.
+// The card without file system: LDO, host, slot and initialization of
+// card - what esp_vfs_fat_sdmmc_mount does before f_mount. With the lock.
 static bool cru_prepare(void)
 {
   sd_pwr_ctrl_ldo_config_t ldo_cfg = { };
@@ -577,11 +577,11 @@ tab5_sd_lending_t tab5_sd_lend(uint32_t espera_ms)
   if (total == 0) { return SD_LENDING_NO_JOURNAL; }
   s_summary = { };   // o summary e deste lending
 
-  // 1. Com a trava of gravacao presa of comeco on end deste step, nada e
+  // 1. With the recording lock stuck at the beginning of this step, nothing is done.
   //    gravado no storage dele:
-  //    - o que ja foi entregue (e one diario antigo) vai para o cartao AGORA,
+  // - what has already been delivered (and an old diary) goes to the card NOW,
   //      enquanto ele ainda e of Tab5;
-  //    - a FOTO of cartao (size e data of cada file) e tirada - e com
+  // - the PHOTO of card (size and date of each file) is taken - and with
   //      ela que a iteration reconhece o que o computador changed;
   //    - mount() passa a recusar, e as portas passam a write no diario.
   gravacao_lock(true);
@@ -594,9 +594,9 @@ tab5_sd_lending_t tab5_sd_lend(uint32_t espera_ms)
   destrava();
   gravacao_lock(false);
 
-  // 2. Espera who JA estava com o cartao return_card. Os servicos seguram por
+  // 2. Wait who JA had the return_card. The services hold for
   //    milissegundos (open, write, close); who passar of prazo esta
-  //    usando of verdade, e lend now seria tirar o cartao of bottom dele.
+  // using of truth, and lend now would take away his bottom card.
   const int64_t limit = esp_timer_get_time() + (int64_t)espera_ms * 1000;
   for (;;) {
     trava();
@@ -609,19 +609,19 @@ tab5_sd_lending_t tab5_sd_lend(uint32_t espera_ms)
       trava();
       s_emprestado = false;
       foto_release();
-      // A montagem of foto nao tem owner: iteration on prazo of ociosidade.
+      // The photo montage has no owner: iteration on term of idleness.
       if (s_refs == 0 && s_card && s_ocioso) { esp_timer_start_once(s_ocioso, SD_OCIOSO_US); }
       destrava();
       gravacao_lock(false);
-      tarefa_cartao_wake();   // o que caiu no diario in espera vai para o cartao
+      tarefa_cartao_wake();   // what fell into the diary in waiting goes to the card
       return SD_LENDING_IN_USE;
     }
     vTaskDelay(pdMS_TO_TICKS(50));
   }
 
-  // 3. Desmonta of verdade - a montagem ociosa tambem: o FAT of Tab5 nao
+  // 3. Really dismounts - the idle mount too: the FAT of Tab5 does not
   //    pode ter NADA em cache when o computador comecar a write. Entao
-  //    o cartao raw.
+  // the raw card.
   gravacao_lock(true);
   trava();
   if (s_ocioso) { esp_timer_stop(s_ocioso); }
@@ -640,7 +640,7 @@ sdmmc_card_t* tab5_sd_raw(void) { return s_emprestado ? s_cru : nullptr; }
 
 void tab5_sd_return(void)
 {
-  // A trava of gravacao ANTES of of cartao (a order of todas as portas): o
+  // The lock of recording BEFORE of card (the order of all ports): o
   // replace le a foto com ela presa, e a foto exit daqui junto com o
   // lending.
   gravacao_lock(true);
@@ -648,7 +648,7 @@ void tab5_sd_return(void)
   if (!s_emprestado) { destrava(); gravacao_lock(false); return; }
   cru_release();
   s_emprestado = false;
-  // A next montagem e normal: nada of espera of "sem cartao" herdada.
+  // The next assembly is normal: nothing expected of "without card" inherited.
   s_ultima_falhou = false;
   s_espera_ms = 0;
   foto_release();
@@ -661,7 +661,7 @@ void tab5_sd_return(void)
 bool tab5_sd_lent(void) { return s_emprestado; }
 
 // Nome of app -> name of folder seguro em FAT. Troca o que pode dar problema por
-// '_' em vez of recusar: e melhor write em "Mapa_Azimutal" of que nao write.
+// '_' instead of refusing: it is better to write in "Azimuth_Map" than not write.
 static void name_seguro(const char* source, char* target, size_t size)
 {
   size_t j = 0;
@@ -679,8 +679,8 @@ bool tab5_sd_folder(const char* app, char* out, size_t out_size)
 {
   if (!s_card || !app || !out) { return false; }
 
-  // SUBPASTAS: "Sistema/logs" vira apps/Sistema/logs. Cada trecho
-  // entre barras passa pelo nome_seguro e cada level e criado se faltar.
+  // SUB FOLDERS: "System/logs" becomes apps/System/logs. Each section
+  // between slashes goes through the safe_name and each level is created if missing.
   size_t n = (size_t)snprintf(out, out_size, "%s", TAB5_SD_APPS);
   const char* p = app;
   while (*p) {
@@ -711,14 +711,14 @@ static FILE* open_cru(const char* app, const char* file, const char* mode);
 
 FILE* tab5_sd_open(const char* app, const char* file, const char* mode)
 {
-  // Ler (ou write por fora das portas) tem que ver everything o que ja foi
+  // To read (or write outside the doors) you have to see everything that has already been
   // entregue: o pending of gravador e o diario of one pendrive.
   tab5_sd_flush_pending();
   return open_cru(app, file, mode);
 }
 
 // TROCA INTERROMPIDA. Substituir one file no FAT e: grava "<name>.tmp"
-// inteiro (e fsync), apaga o antigo, renomeia o .tmp - o FAT nao troca por
+// entire (and fsync), deletes the old one, renames the .tmp - FAT does not exchange for
 // top. Uma queda of energia entre erase e renomear deixa o file SUMIDO e
 // o content novo, inteiro, no .tmp. Quem for read encontra isso e complete a
 // troca. (Um .tmp com o file ainda la e uma troca que nem comecou a erase:
@@ -745,16 +745,16 @@ static FILE* open_cru(const char* app, const char* file, const char* mode)
   FILE* f = fopen(caminho, mode);
   if (!f)
   {
-    // NEM TODA FALHA E ERRO, e o service e who tem que saber a diferenca.
+    // NOT ALL FAILURE IS AN ERROR, and the service and whoever has to know the difference.
     //
-    // Abrir para LEITURA one file que ainda nao existe e resultado legitimo e
-    // previsivel - acontece toda vez que one app le algo pela primeira vez (o
+    // Opening for READING a file that does not yet exist is a legitimate result and
+    // predictable - happens every time an app reads something for the first time (the
     // history of uma conversa nova of Meshtastic, por exemplo). Registrar
     // isso como ERRO enche o log of alarme falso, e log que grita a toa ensina
     // a ignorar log.
     //
     // Ja failure on ABRIR PARA ESCRITA, ou qualquer outro errno in leitura
-    // (permissao, cartao corrompido, caminho invalido), e problema of verdade e
+    // (permission, corrupt card, invalid path), and the problem of truth and
     // continua em ERRO.
     const bool so_leitura = (mode[0] == 'r');
     if (so_leitura && errno == ENOENT) {
@@ -770,7 +770,7 @@ static FILE* open_cru(const char* app, const char* file, const char* mode)
 bool tab5_sd_space(uint64_t* total, uint64_t* free_space)
 {
   if (!s_card) { return false; }
-  // O newlib of ESP nao tem statvfs; o IDF expoe isto pelo proprio VFS of FAT.
+  // The newlib of ESP does not have statvfs; the IDF exposes this through the VFS of FAT itself.
   return esp_vfs_fat_info(TAB5_SD_ROOT, total, free_space) == ESP_OK;
 }
 
@@ -780,8 +780,8 @@ bool tab5_sd_space(uint64_t* total, uint64_t* free_space)
 #include "freertos/task.h"
 #include "tab5_owners.hpp"
 
-#define ANEXO_BUF      (16 * 1024)   // cada one dos dois buffers, in PSRAM
-#define ANEXO_PRAZO_MS 5000          // o que nao e urgent espera no maximum isto
+#define ANEXO_BUF      (16 * 1024)   // each of the two buffers, in PSRAM
+#define ANEXO_PRAZO_MS 5000          // what is not urgent waits at maximum this
 #define ANEXO_APP      32
 #define ANEXO_ARQ      40
 
@@ -793,14 +793,14 @@ typedef struct {
   // seguem n_cab bytes of header e n_txt of text
 } anexo_t;
 
-// DOIS buffers: who entrega escreve no active; a gravacao troca e grava o
-// outro SEM a trava - entregar nunca espera o cartao.
+// TWO buffers: who delivers writes to active; the recording switches and records the
+// other WITHOUT the lock - never waits for the card to be delivered.
 static uint8_t*          s_buf[2]   = { nullptr, nullptr };
 static int               s_active    = 0;
 static size_t            s_usado    = 0;
 static int64_t           s_since_us = 0;      // when chegou o mais antigo pending
 static SemaphoreHandle_t s_anexo    = nullptr; // o buffer active
-static SemaphoreHandle_t s_gravando = nullptr; // uma gravacao por vez
+static SemaphoreHandle_t s_gravando = nullptr; // one recording at a time
 static TaskHandle_t      s_tarefa   = nullptr;
 static volatile uint32_t s_gravadas = 0, s_perdidas = 0;
 
@@ -813,7 +813,7 @@ bool tab5_sd_enqueue_append(const char* app, const char* file, const char* text,
   const size_t size = sizeof(anexo_t) + nc + nt;
   if (size > ANEXO_BUF / 2) { s_perdidas = s_perdidas + 1; return false; }
 
-  xSemaphoreTake(s_anexo, portMAX_DELAY);   // so memcpy aqui dentro
+  xSemaphoreTake(s_anexo, portMAX_DELAY);   // just memcpy in here
   const bool cabe = (s_usado + size <= ANEXO_BUF);
   if (cabe) {
     anexo_t* a = (anexo_t*)(s_buf[s_active] + s_usado);
@@ -835,16 +835,16 @@ bool tab5_sd_enqueue_append(const char* app, const char* file, const char* text,
 }
 
 // ---------------------------------------------------------------------------
-// O DESTINO DE CADA GRAVACAO
+// THE DESTINATION OF EACH RECORDING
 // ---------------------------------------------------------------------------
-// Cartao, ou o diario in flash (hal/tab5_journal) - decidido SEMPRE com a
-// trava of gravacao presa, a mesma of lending e of aplicacao of diario.
+// Card, or the in flash diary (hal/tab5_journal) - ALWAYS decided with the
+// lock of recording stuck, the same of lending and of application of diary.
 // Enquanto o diario tiver algo pending, TUDO vai para ele, mesmo com o
-// cartao ja of iteration: write direto no cartao passaria in frente of que
+// card already of iteration: write direct to card would pass in front of that
 // aconteceu antes e esta esperando.
 static bool para_o_diario(void) { return s_emprestado || tab5_journal_pending(); }
 
-static volatile uint32_t s_diario_perdidas = 0;   // nao couberam no diario
+static volatile uint32_t s_diario_perdidas = 0;   // did not fit in the diary
 
 static bool diario_acrescentar(const char* app, const char* arq,
                                const void* cab, size_t n_cab, const void* data, size_t n)
@@ -859,7 +859,7 @@ static bool diario_acrescentar(const char* app, const char* arq,
   return false;
 }
 
-// O caminho no cartao of app/file, SEM create folder (para a foto e o hash).
+// The path in the card of app/file, WITHOUT create folder (for the photo and the hash).
 static void caminho_of(const char* app, const char* arq, char* out, size_t size)
 {
   size_t n = (size_t)snprintf(out, size, "%s", TAB5_SD_APPS);
@@ -879,7 +879,7 @@ static void caminho_of(const char* app, const char* arq, char* out, size_t size)
   if (n < size) { snprintf(out + n, size - n, "/%s", arq); }
 }
 
-// Grava one buffer ja trocado: cada file open UMA vez, as lines dele in
+// Writes one buffer already changed: each file opens ONCE, its lines in
 // order of chegada. Chamado com s_gravando presa.
 static void gravar_buffer(uint8_t* b, size_t n)
 {
@@ -953,10 +953,10 @@ static void gravar_everything(void)
 }
 
 // ---------------------------------------------------------------------------
-// APLICAR O DIARIO NO CARTAO
+// APPLY THE DIARY ON THE CARD
 // ---------------------------------------------------------------------------
-// Arquivos que ESTA aplicacao ja escreveu: changed por causa dela, nao of
-// computador - one segundo SUBSTITUIR of mesmo file nao e conflito.
+// Files that THIS application has already written: changed because of it, not of
+// computer - one second REPLACE of same file is not conflict.
 #define TOCADOS_MAX 64
 static uint32_t s_tocados[TOCADOS_MAX];
 static int      s_n_tocados = 0;
@@ -967,10 +967,10 @@ static bool touched(uint32_t h)
 }
 static void touch(uint32_t h) { if (!touched(h) && s_n_tocados < TOCADOS_MAX) { s_tocados[s_n_tocados++] = h; } }
 
-// Substitui o file inteiro no cartao, sem nunca deixar storage file: grava
+// Replaces the entire file on the card, without ever leaving storage file: writes
 // "<name>.tmp", e so entao troca pelo antigo. SIGILOSO zera o antigo antes of
 // erase - no FAT erase so brand os setores como livres, e o content antigo
-// ficaria legivel por qualquer programa of recuperacao. Cartao mounted.
+// would be readable by any recovery program. Card mounted.
 static bool substituir_no_cartao(const char* caminho, const void* data, size_t n, uint8_t flags)
 {
   char tmp[200];
@@ -997,7 +997,7 @@ static bool substituir_no_cartao(const char* caminho, const void* data, size_t n
       fclose(velho);
     }
   }
-  unlink(caminho);                          // o FAT nao troca por top: tira o antigo...
+  unlink(caminho);                          // FAT doesn't change for a top: remove the old one...
   if (rename(tmp, caminho) != 0) {          // ...e poe o novo no lugar
     ESP_LOGE(TAG, "nao consegui trocar %s pelo novo", caminho);
     return false;
@@ -1005,7 +1005,7 @@ static bool substituir_no_cartao(const char* caminho, const void* data, size_t n
   return true;
 }
 
-// Um registro of diario no cartao (mounted). true = ja esta la of forma
+// A journal entry on the card (mounted). true = already there in form
 // duravel (o diario so brand como aplicado depois disso).
 static bool aplicar_one(const journal_entry_t* r, void*)
 {
@@ -1013,7 +1013,7 @@ static bool aplicar_one(const journal_entry_t* r, void*)
   if (!tab5_sd_folder(r->app, folder, sizeof(folder))) { return false; }
   char caminho[160];
   if (snprintf(caminho, sizeof(caminho), "%s/%s", folder, r->file) >= (int)sizeof(caminho)) {
-    s_summary.discarded++;   // name que nao cabe nunca vai caber: nao trava o resto
+    s_summary.discarded++;   // name that doesn't fit will never fit: it doesn't lock the rest
     return true;
   }
   const uint32_t h = hash_text(caminho);
@@ -1021,7 +1021,7 @@ static bool aplicar_one(const journal_entry_t* r, void*)
   if (r->type == JOURNAL_APPEND) {
     FILE* f = fopen(caminho, "a");
     if (!f) { return false; }
-    // Nao aplicado = nada escrito: se falhar no storage (cartao cheio), o que
+    // Not applied = nothing written: if storage fails (card full), which
     // entrou e cortado of iteration - senao a nova tentativa repetiria o trecho.
     const long antes = ftell(f);
     bool ok = antes >= 0;
@@ -1036,15 +1036,15 @@ static bool aplicar_one(const journal_entry_t* r, void*)
     return true;
   }
 
-  // SUBSTITUIR. O computador mexeu no file enquanto o cartao estava com
-  // ele (nao bate com a foto)? Entao o dele stays, e o of Tab5 vai on lado
+  // REPLACE. The computer messed with the file while the card was in
+  // does it (not match the photo)? So his stays, and the one of Tab5 goes next
   // como "<name>.tab5" - nada se perde em silencio, e who decide e a pessoa.
   completar_troca(caminho);
   struct stat st;
   const bool existe = stat(caminho, &st) == 0;
   const bool igual = touched(h)
                   || (existe == r->base_existia
-                      && (!existe || ((uint32_t)st.st_size == r->base_tamanho
+                      && (!existe || ((uint32_t)st.st_size == r->base_size
                                       && (uint32_t)st.st_mtime == r->base_data)));
   if (igual) {
     if (!substituir_no_cartao(caminho, r->data, r->data_size, r->flags)) { return false; }
@@ -1060,11 +1060,11 @@ static bool aplicar_one(const journal_entry_t* r, void*)
   return true;
 }
 
-// Com s_gravando presa e o cartao of Tab5.
+// With s_recording prey and the card of Tab5.
 static void aplicar_diario(void)
 {
   if (s_emprestado || !tab5_journal_pending()) { return; }
-  if (!tab5_sd_mount()) { return; }   // sem cartao: stays para a next iteration
+  if (!tab5_sd_mount()) { return; }   // without card: stays for the next iteration
   s_n_tocados = 0;
   const int n = tab5_journal_apply(aplicar_one, nullptr);
   tab5_sd_unmount();
@@ -1079,7 +1079,7 @@ static void aplicar_diario(void)
 void tab5_sd_flush_pending(void)
 {
   if (!s_anexo || !s_gravando) { return; }
-  // BARREIRA: espera a gravacao QUE JA ESTA EM ANDAMENTO (a tarefa "cartao"
+  // BARRIER: waits for recording THAT IS ALREADY IN PROGRESS (the "card" task
   // troca o buffer ANTES of write no file - sem wait, who chamava
   // aqui nesse intervalo lia sem a line que estava sendo escrita), grava o
   // pending e aplica o diario of one pendrive, nessa order: who le em
@@ -1125,7 +1125,7 @@ bool tab5_sd_replace(const char* app, const char* file, const void* data, size_t
     r.app = app; r.file = file;
     r.data = data; r.data_size = (uint32_t)n;
     r.base_existia = f != nullptr;
-    r.base_tamanho = f ? f->size : 0;
+    r.base_size = f ? f->size : 0;
     r.base_data    = f ? f->data : 0;
     ok = tab5_journal_write(&r);
     if (!ok) { s_diario_perdidas = s_diario_perdidas + 1; }
@@ -1157,9 +1157,9 @@ void tab5_sd_append_status(uint32_t* pending, uint32_t* written, uint32_t* lost)
   if (lost)  { *lost  = s_perdidas; }
 }
 
-// 8, e nao 4: com o diario e as networks of no of Mesh, ja sao CINCO who pega
+// 8, not 4: with the diary and the networks of no of Mesh, there are already FIVE who catch
 // piggyback (log, registro, mesh, mesh_diario, mesh_wifi_no). Com 4, o quinto a
-// se registrar ficava sem - "caronas esgotadas" no boot, e o que ele so faz
+// registering was without - "rides sold out" at boot, and what it only does
 // in piggyback (write a lista of networks of no, por exemplo) nunca acontecia.
 #define CARONAS_MAX 8
 static tab5_sd_piggyback_t s_caronas[CARONAS_MAX] = { };
@@ -1183,10 +1183,10 @@ static void vTaskCartao(void*)
     const bool venceu = ha && (esp_timer_get_time() - s_since_us) >= (int64_t)ANEXO_PRAZO_MS * 1000;
     xSemaphoreGive(s_anexo);
     if (ha && (request || venceu)) { gravar_everything(); }
-    // O diario of one pendrive vai para o cartao assim que ele estiver of
-    // iteration (ou depois of one reinicio, when o cartao aparecer).
-    // Falhou sem avancar nada (cartao cheio, sem cartao): espera antes of
-    // next tentativa, em vez of bater no cartao a cada segundo.
+    // The diary of one pendrive goes to the card as soon as it is off
+    // iteration (or after one restart, when the card appears).
+    // Failed without advancing anything (card full, no card): wait before
+    // next attempt, instead of hitting the card every second.
     static int64_t next_us = 0;
     if (tab5_journal_pending() && !s_emprestado && (request || esp_timer_get_time() >= next_us)) {
       xSemaphoreTake(s_gravando, portMAX_DELAY);
@@ -1198,7 +1198,7 @@ static void vTaskCartao(void*)
       next_us = (andou || !tab5_journal_pending()) ? 0 : esp_timer_get_time() + 30LL * 1000 * 1000;
     }
     // As caronas gravam pelas portas (append/replace): seguem
-    // valendo com o cartao lent - o target e decidido la dentro.
+    // valid with the slow card - the target is decided inside.
     for (int i = 0; i < CARONAS_MAX && s_caronas[i]; ++i) { s_caronas[i](); }
   }
 }
@@ -1227,8 +1227,8 @@ static void gravador_start(void)
     ESP_LOGE(TAG, "gravador sem memoria - appends desligados");
     return;
   }
-  // 6 KB: a tarefa MONTA o cartao, e o f_mount desce fundo in stack.
+  // 6 KB: the task MOUNT the card, and f_mount goes deep into the stack.
   xTaskCreatePinnedToCore(vTaskCartao, "cartao", 6144, nullptr, 2, &s_tarefa, tskNO_AFFINITY);
   tab5_owner_register(s_tarefa, OWNER_SERVICE, "Cartao");
-  s_anexo = anexo;   // por ultimo: tab5_sd_enqueue_append so aceita com everything ready
+  s_anexo = anexo;   // lastly: tab5_sd_enqueue_append is only accepted with everything ready
 }

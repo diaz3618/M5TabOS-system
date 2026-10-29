@@ -1,129 +1,129 @@
-// COMPOSITOR - a base of screen of sistema (COMPOSITOR.md).
+// COMPOSITOR - the basis of screen of system (docs/COMPOSITOR.md).
 //
-// MODO DIRETO (o "direct mode" of LVGL com duas paginas). Todo drawing cai
-// DIRETO in pagina of tras of panel - nao existe mais uma terceira imagem
-// no middle. O objeto of drawing (kernel/virtual_screen) anota cada rectangle
-// touched (comp_invalidar), e o frame tem tres tempos:
+// DIRECT MODE (the "direct mode" of LVGL with two pages). Every drawing falls
+// DIRECT on page behind of panel - there is no longer a third image
+// in middle. The object of drawing (kernel/virtual_screen) annotates each rectangle
+// touched (comp_invalidar), and the frame has three times:
 //
-//   1. ABRIR (preguicoso, no first drawing of iteration - comp_abrir):
-//      espera a troca of frame anterior terminar (so entao a pagina of tras
-//      esta livre). As areas que o frame anterior desenhou ficam PENDENTES:
-//      cada uma vem of frente so when algo for write ou read nela
-//      (comp_preparar), e o resto on apresentar. A que uma copia of DMA
-//      sobrescreve inteira (rolagem) nunca e copiada.
-//   2. DESENHAR in pagina of tras, como sempre.
-//   3. APRESENTAR (comp_apresentar, uma vez por iteration): devolve on cache as
-//      lines desenhadas e pede a troca. NAO espera - quem espera e o
-//      next ABRIR.
+// 1. OPEN (lazy, no first drawing of iteration - comp_abrir):
+// waits for the previous frame exchange to finish (only then the back page
+// is free). The areas that the previous frame drew are PENDING:
+// each one comes from the front so when something is written or read in it
+// (comp_preparar), and the rest on present. What is a copy of DMA
+// entire overwrite (scroll) is never copied.
+// 2. DRAW on the back page, as always.
+// 3. PRESENT (comp_present, once per iteration): returns on cache as
+// lines drawn and requests a change. DO NOT wait - who waits is the
+// next OPEN.
 //
-// Cada pixel mudado passa 3 vezes pela PSRAM (a CPU escreve; a sincronia le e
-// escreve uma vez), e nao 5 como com a screen virtual. E sem a screen virtual
-// sobram 1,84 MB of PSRAM.
+// Each changed pixel passes through PSRAM 3 times (the CPU writes; the synchronization reads and
+// writes once), and not 5 times like with the virtual screen. And without the virtual screen
+// 1.84 MB of PSRAM remains.
 //
-// Coordenadas fisicas (retrato). Chamar so of tarefa of interface.
+// Physical coordinates (portrait). Call so of task of interface.
 
 #pragma once
 
 #include <M5Unified.h>
 #include "tab5_frame.hpp"
 
-// Marca one rectangle como drawn neste frame.
+// Marks one rectangle as drawn in this frame.
 void comp_invalidar(const tab5_rect_t& r);
 
-// Pede a screen inteira no next frame. Pode ser chamada of QUALQUER tarefa
-// (o console usa): so arma one request que a interface atende on apresentar.
+// Requests the entire screen in the next frame. Can be called from ANY task
+// (the console uses it): only sets one request that the interface responds to when presenting.
 void comp_invalidar_tudo(void);
 
-// Abre o frame, se ainda nao estiver open, e devolve a pagina of tras
-// (onde draw). nullptr = sem panel (sleep, troca of clock).
+// Opens the frame, if it is not already open, and returns the page behind
+// (where draw). nullptr = no panel (sleep, change of clock).
 void* comp_abrir(void);
 
-// Antes of write OU LER 'r' in pagina of tras: traz of frente o que o
-// frame anterior changed ali e a of tras ainda nao tem (sincronia preguicosa).
-// O rastreador chama isto sozinho; ninguem mais precisa.
+// Before writing OR READing 'r' in front page: brings what the
+// previous frame changed there and the one behind still doesn't have it (lazy sync).
+// The tracker calls this itself; no one needs it anymore.
 void comp_preparar(const tab5_rect_t& r);
 
-// O mesmo, para quem vai write 'r' INTEIRO e opaco (fillRect, copia of
-// DMA): o que estava pending dentro of 'r' e descartado sem copiar - ia ser
-// sobrescrito. So o que stays fora of 'r' continua pending.
+// The same, for those who will write 'r' WHOLE and opaque (fillRect, copy of
+// DMA): what was pending inside 'r' and discarded without copying - would be
+// superscript. Only what stays outside of 'r' remains pending.
 void comp_cobrir(const tab5_rect_t& r);
 
-// O rectangle 'src' ja foi drawn NESTE frame? (A rolagem so copia of
-// pagina of frente o que a frente tem igual a of tras.)
+// Has the 'src' rectangle already been drawn IN THIS frame? (Scrolling only copies
+// page of front what the front has equal to the back.)
 bool comp_desenhado_neste_quadro(const tab5_rect_t& src);
 
-// Leva o rectangle 'r' of pagina of FRENTE, a partir of (ox, oy), para o
-// mesmo tamanho em 'r' in of tras, por DMA. Abre o frame. false = nao deu
-// (quem chamou faz pela CPU).
+// Takes the rectangle 'r' of page of FRONT, from (ox, oy), to the
+// same size in 'r' in back, by DMA. Open the frame. false = did not work
+// (whoever called does so via the CPU).
 bool comp_copiar_da_frente(const tab5_rect_t& r, int ox, int oy);
 
-// Leva o rectangle 'r' of uma imagem 720x1280 RGB565 (a surface of DMA
-// of one app - camera) para a pagina of tras, por DMA, e o marca.
+// Takes the rectangle 'r' of a 720x1280 RGB565 image (a surface of DMA
+// of one app - camera) to the back page, by DMA, and marks it.
 bool comp_copiar_imagem(const void* imagem, const tab5_rect_t& r);
 
-// Apresenta o frame, se houver algo drawn (false = nada a fazer, ou sem
-// panel - nesse caso o frame e descartado).
+// Displays the frame, if there is something drawn (false = nothing to do, or without
+// panel - in this case the frame is discarded).
 bool comp_apresentar(void);
 
-// Ha algo drawn esperando apresentar?
+// Is there something drawn waiting to present?
 bool comp_tem_sujeira(void);
 
-// Espera a troca requested pelo ultimo frame acontecer of fato. Para quem
-// precisa of frame NA TELA antes of follow (acender a luz on wake).
+// Waits for the requested exchange for the last frame to actually happen. For whom
+// needs to frame ON THE SCREEN before following (turning on the wake light).
 void comp_esperar_troca(void);
 
-// O PAINEL E NOVO (boot, sleep, troca of clock): as duas paginas
-// nasceram sem nada nosso, e nao ha of onde synchronize. Devolve true UMA vez
-// por panel novo - o core responde com one redraw complete. Chamar so com
-// o panel no ar (fora of sleep).
+// THE PANEL IS NEW (boot, sleep, change of clock): both pages
+// were born with nothing of ours, and there is no where to synchronize. Returns true ONCE
+// by new panel - the core responds with one redraw complete. Call only with
+// the panel in the air (out of sleep).
 bool comp_painel_novo(void);
 
-// Conta quantas vezes a lista of areas foi consumida. Quem guarda "ja
-// invalidei isto" usa para saber que a lista e nova.
+// Counts how many times the list of areas has been consumed. Who keeps "ja
+// invalidated this" uses to know that the list is new.
 uint32_t comp_rodada(void);
 
-// Diagnostico: uptime (us) of ultimo frame montado e quantos pixels ele levou.
+// Diagnosis: uptime (us) of last mounted frame and how many pixels it took.
 void comp_ultimo_quadro(int64_t* when_us, uint32_t* px);
 
-// ---------------------------------------------------------------------------
-// MEDIDA - o custo of cada frame, para comparar antes e depois of mexer.
-// ---------------------------------------------------------------------------
-// Tudo ACUMULADO since o boot e nunca zerado: o console e o monitor leem on
-// mesmo time, e cada one guarda a sua foto e faz a diferenca. Assim nenhum
-// leitor apaga a window of outro.
+// -------------------------------------------------------------------------------
+// MEASUREMENT - the cost of each frame, to compare before and after fiddling.
+// -------------------------------------------------------------------------------
+// Everything ACCUMULATED since boot and never reset: the console and monitor read on
+// same team, and each one keeps their photo and makes a difference. So none
+// reader erases the window of another.
 //
-// Histograma of custo of VOLTA que gerou frame (of wake of interface ate
-// a troca requested), em PERIODOS DO PAINEL: coube em 1 varredura, em 2, em 3,
-// ou mais. E o numero que decide a fluidez - a iteration que passa of 1 periodo
-// deixa o frame anterior in screen mais uma varredura.
+// Histogram of cost of VOLTA that generated frame (of wake of interface until
+// the requested change), in PANEL PERIODS: fit in 1 sweep, in 2, in 3,
+// or more. It is the number that decides the fluidity - the iteration that passes 1 period
+// leaves the previous frame on screen plus one scan.
 #define COMP_FAIXAS 4
 
 typedef struct {
-  uint32_t frames;                 // quadros apresentados
-  uint32_t cheios;                // quadros que changed >= 90% of screen
-  uint32_t estouros;              // vezes que a lista of areas encheu
-  uint64_t px_frame;             // pixels desenhados (areas apresentadas)
-  uint64_t px_sinc;               // pixels of sincronia (frente -> tras)
-  uint64_t px_rolar_dma;          // pixels of rolagem copiados por DMA
-  uint64_t us_copia;              // time locked em copia por DMA (todas)
-  uint64_t us_espera;             // time esperando a troca of frame anterior
-  uint64_t us_drawing;            // CPU desenhando (informado pelo core, sem as copias)
-  uint32_t n_drawing;             // passes of drawing medidas
-  uint64_t us_drawing_complete;   // ...so as passes COMPLETAS (open app, home)
+  uint32_t frames;                 // tables presented
+  uint32_t cheios;                // frames that changed >= 90% of screen
+  uint32_t estouros;              // times the list of areas filled
+  uint64_t px_frame;             // drawn pixels (displayed areas)
+  uint64_t px_sinc;               // pixels of sync (front -> back)
+  uint64_t px_rolar_dma;          // pixels of scrolling copied by DMA
+  uint64_t us_copia;              // time locked in DMA copy (all)
+  uint64_t us_espera;             // time waiting for previous frame exchange
+  uint64_t us_drawing;            // CPU drawing (informed by the core, without copies)
+  uint32_t n_drawing;             // passes of drawing measurements
+  uint64_t us_drawing_complete;   // ...only COMPLETE passes (open app, home)
   uint32_t n_drawing_complete;
-  uint64_t us_iteration;              // voltas inteiras que geraram frame
-  uint32_t voltas[COMP_FAIXAS];   // histograma of custo dessas voltas, em periodos
-  uint64_t px_rolados;            // rolagem total (hal/tab5_screen: DMA ou CPU)
+  uint64_t us_iteration;              // entire turns that generated frame
+  uint32_t voltas[COMP_FAIXAS];   // histogram of cost of these turns, in periods
+  uint64_t px_rolados;            // full scrolling (hal/tab5_screen: DMA or CPU)
   uint64_t us_rolar;
 } comp_estat_t;
 
 void comp_estat(comp_estat_t* out);
 
-// O core mede a pass of drawing entre comp_marcar_desenho() e
-// comp_contar_desenho(us); o time que o proprio compositor gastou nesse middle
-// (open, synchronize, copiar) e descontado - "drawing" e so a CPU pintando.
+// The core measures the pass of drawing between comp_marcar_desenho() and
+// comp_contar_desenho(us); the time that the composer himself spent on this medium
+// (open, synchronize, copy) and discounted - "drawing" and just the CPU painting.
 void comp_marcar_desenho(void);
-// 'complete' = a pass redesenhou a screen inteira (open/close app).
-// Devolve o time of CPU of pass (us, sem o time of compositor).
+// 'complete' = the pass redraws the entire screen (open/close app).
+// Returns the time of CPU of pass (us, without the time of composer).
 uint32_t comp_contar_desenho(uint32_t us, bool complete);
 void comp_contar_volta(uint32_t us);

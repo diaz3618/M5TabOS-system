@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds and flashes M5tabOS onto the Tab5, then opens the serial monitor.
-# Usage:  ./flash.sh          (Ctrl+] exits the monitor)
+# Usage: ./flash.sh (Ctrl+] exits the monitor)
 cd "$(dirname "$0")" || exit 1
 source ./environment.sh
 

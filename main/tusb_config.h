@@ -26,7 +26,7 @@ extern "C" {
 // CONTROLLER DMA, as Espressif's esp_tinyusb uses by default (the most
 // tested mode on the P4). Previously, it was in slave mode (the CPU copying
 // from the FIFO, one 64-byte packet per interrupt): 64 interrupts per 4 KB
-// block, and the less commonly used library path on this chip. Slave mode
+// block, and the least commonly used library path on this chip. Slave mode
 // remains enabled as a fallback: TinyUSB only uses DMA if the controller
 // supports it (GHWCFG2).
 #define CFG_TUD_DWC2_SLAVE_ENABLE   1
@@ -60,7 +60,7 @@ extern "C" {
 #define CFG_TUD_USBTMC              0
 
 // How many sectors the MSC requests from the card at once: 8 sectors. Multiple of 512 on
-// purpose - each read/write call falls on whole sectors.
+// purpose - each read/write call falls on entire sectors.
 #define CFG_TUD_MSC_EP_BUFSIZE      4096
 
 #ifdef __cplusplus

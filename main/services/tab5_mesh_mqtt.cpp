@@ -35,7 +35,7 @@ typedef struct {
 
 typedef struct {
   canal_t canais[MAX_CANAIS];
-  int32_t regiao;        // Config.LoRaConfig.RegionCode; 0 = nao sabe
+  int32_t regiao;        // Config.LoRaConfig.RegionCode; 0 = don't know
   char    srv[64], usr[32], pwd[32], raiz[48];
 } cfg_t;
 
@@ -65,7 +65,7 @@ static void lock_cfg(void)
 }
 static void destravar_cfg(void) { xSemaphoreGive(s_trava_cfg); }
 
-// Com a trava tomada.
+// With the lock taken.
 static void garantir_cfg(void)
 {
   if (s_cfg_lido) { return; }
@@ -91,7 +91,7 @@ static void garantir_cfg(void)
   }
 }
 
-// Com a trava tomada.
+// With the lock taken.
 static void gravar_cfg(void)
 {
   nvs_handle_t h;
@@ -161,7 +161,7 @@ static void raiz_efetiva(char* out, size_t size)
 // CRIPTOGRAFIA DO CANAL - AES-CTR, a mesma of firmware (CryptoEngine.cpp)
 // ---------------------------------------------------------------------------
 // psk of 1 byte e one INDICE: 0 = sem cifra, 1 = a chave default, N = a default
-// com o ultimo byte somado of N-1. 16 ou 32 bytes = AES-128/256 com ela.
+// with the last byte added to N-1. 16 or 32 bytes = AES-128/256 with it.
 static const uint8_t CHAVE_PADRAO[16] = {
   0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01,
 };
@@ -178,7 +178,7 @@ static size_t chave_of_canal(const canal_t& c, uint8_t chave[32])
   return 0;
 }
 
-// O "channel" of one pacote cifrado nao e o indice, e este hash: XOR dos bytes
+// The "channel" of an encrypted packet is not the index, and this hash: XOR of the bytes
 // of name com o XOR dos bytes of chave.
 static uint8_t hash_of_canal(const canal_t& c)
 {
@@ -189,7 +189,7 @@ static uint8_t hash_of_canal(const canal_t& c)
   return h;
 }
 
-// Nonce: id of pacote (64 bits, LE) + no of origem (32 bits, LE) + zeros. O
+// Nonce: id of package (64 bits, LE) + no of origin (32 bits, LE) + zeros. O
 // contador of CTR anda nos ultimos bytes - igual para cifrar e decifrar.
 static bool cifrar(const canal_t& c, uint32_t id, uint32_t of, const uint8_t* in, size_t n, uint8_t* out)
 {
@@ -240,11 +240,11 @@ static int s_prox_pend = 0;
 
 // Duas tarefas entregam (a of cliente MQTT e a of servico, respondendo on
 // want_config): o frame of montagem e unico e estatico (600 bytes in stack
-// of servico pesariam), entao passa por uma trava.
+// of service would weigh), then passes through a lock.
 static SemaphoreHandle_t s_trava_ent = nullptr;
 static SemaphoreHandle_t s_trava_env = nullptr;   // ver mesh_mqtt_enviar
-// FILA CHEIA: one aviso a cada 10 s, com o total e QUAL fila - one por pacote
-// inundava o log numa rajada, e "queue cheia" sozinho nao dizia of que rede.
+// QUEUE FULL: one warning every 10 s, with total and WHICH queue - one per packet
+// flooded the log in a burst, and "queue full" alone didn't say from which network.
 static QueueHandle_t s_rede_internet_fila_ref = nullptr;   // ver s_rede_internet_fila, mais abaixo
 static uint32_t s_perdidos[2] = { 0, 0 };        // 0 = no (internet/proxy), 1 = rede publica
 static void perdeu(QueueHandle_t fila)
@@ -260,7 +260,7 @@ static void perdeu(QueueHandle_t fila)
   }
 }
 
-// MONTAGEM SEM PILHA. As tarefas dos clientes MQTT tem stack justa (3,5 KB
+// BATTERY-FREE ASSEMBLY. MQTT client tasks have a fair stack (3.5 KB
 // no of internet, pico measured of 2,6 KB) e as duas chegam aqui: o frame e
 // montado DIRETO no frame estatico que vai para a fila, sob s_trava_ent -
 // nenhum buffer of 600 bytes in stack of ninguem.
@@ -288,7 +288,7 @@ static bool entregar_em(QueueHandle_t fila, const uint8_t* d, size_t n)
 }
 static bool entregar(const uint8_t* d, size_t n) { return entregar_em(s_fila, d, n); }
 
-// FromRadio{ field: body } para o servico, como o radio entregaria.
+// FromRadio{ field: body } for the service, as the radio would deliver.
 static bool entregar_from_radio(QueueHandle_t fila, int field, const pb_escritor_t* body)
 {
   if (!fila || !s_trava_ent) { return false; }
@@ -300,11 +300,11 @@ static bool entregar_from_radio(QueueHandle_t fila, int field, const pb_escritor
   return ok;
 }
 
-// UM PACOTE COMO O RADIO O ENTREGARIA, a partir of one Data ja montado:
+// A PACKAGE LIKE RADIO WOULD DELIVER IT, from one Data already assembled:
 // FromRadio{ 2: packet MeshPacket{ 1: from, 2: to, 4: decoded, 6: id,
 // 7: rx_time, 14: via_mqtt } }. 'da_internet' carimba a hora of chegada e o
 // via_mqtt (o que veio of servidor); a confirmacao of PUBACK vai sem os dois,
-// como a of radio.
+// as a of radio.
 static bool entregar_pacote(QueueHandle_t fila, uint32_t of, uint32_t para,
                             const pb_escritor_t* data, bool of_internet)
 {
@@ -353,9 +353,9 @@ static int canal_por_name(const char* name, size_t n)
   return -1;
 }
 
-// Relatorio of mapa (<raiz>/2/map/): vai sem cifra e traz name, papel, modelo e
-// position of no - o jeito of conhecer os nos que nao mandam NodeInfo pelo canal.
-// Vira one NodeInfo e uma Position, como se o radio os tivesse ouvido.
+// Report of map (<raiz>/2/map/): goes without cipher and brings name, role, model and
+// position of no - the way to get to know the nodes that don't send NodeInfo through the channel.
+// It becomes a NodeInfo and a Position, as if the radio had heard them.
 static void processar_mapa(const uint8_t* d, size_t n)
 {
   pb_leitor_t l = pb_leitor(d, n);
@@ -400,7 +400,7 @@ static void processar_mapa(const uint8_t* d, size_t n)
 
   // NodeInfo: Data{ 1: NODEINFO_APP, 2: User{ 1: id, 2: long_name,
   // 3: short_name, 5: hw_model, 7: role } }
-  static uint8_t user[128], data[160];   // so o cliente of no le mapa: estatico, fora of stack
+  static uint8_t user[128], data[160];   // only the client of no map: static, off of stack
   pb_escritor_t wu = pb_escritor(user, sizeof(user));
   pb_w_text(&wu, 1, id, sizeof(id));
   if (n_longo) { pb_w_bytes(&wu, 2, longo, n_longo); }
@@ -426,7 +426,7 @@ static void processar_mapa(const uint8_t* d, size_t n)
 }
 
 // ServiceEnvelope{1: packet, 2: channel_id, 3: gateway_id} -> FromRadio.
-// Anel of (origem ^ id) ja vistos, one por cliente (cada one so e mexido pela
+// Ring of (origin ^ id) already seen, one per client (each one is only moved by the
 // tarefa dele). O of internet e maior: ~40 pacotes novos por segundo la, e as
 // copias chegam on longo of alguns segundos.
 #define VISTOS_NO  128
@@ -460,9 +460,9 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   while (end_name < topico + n_top && *end_name != '/') { ++end_name; }
 
   // UM PAR DE BUFFERS POR CLIENTE. As tarefas of cliente of no e of cliente
-  // of internet chegam aqui AO MESMO TEMPO (cada uma com o seu pacote); com one
-  // par so, uma decifrava por top of pacote que a outra montava. Estatico,
-  // e nao stack: a of cliente of internet tem 3,5 KB.
+  // of internet arrive here AT THE SAME TIME (each with its own package); with one
+  // So, one deciphered the top of the package that the other put together. static,
+  // and not stack: the client of internet is 3.5 KB.
   static uint8_t s_claro[2][QUADRO_MAX], s_pkt[2][QUADRO_MAX];
   uint8_t* const claro = s_claro[internet ? 1 : 0];
   uint8_t* const pkt   = s_pkt[internet ? 1 : 0];
@@ -497,27 +497,27 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
     else if (c.num == 5 && c.type == 2) { cif = c.val; n_cif = c.n_val; }
     else if (c.num == 4 && c.type == 2) { dec = c.val; n_dec = c.n_val; }
   }
-  if (of == s_num && s_num) { return; }   // o nosso proprio send_state voltando pelo servidor
-  // O MESMO PACOTE DE VARIOS GATEWAYS: cada no com MQTT que o ouviu publica a
-  // sua copia. No servidor publico sao 3 of cada 4 mensagens (measured: 153/s,
-  // 75% repetidas) - e cada uma era decifrada, enfileirada e lida pelo
+  if (of == s_num && s_num) { return; }   // our own send_state coming back from the server
+  // SAME PACKAGE OF MULTIPLE GATEWAYS: each node with MQTT that listened to it publishes the
+  // your copy. On the public server there are 3 of every 4 messages (measured: 153/s,
+  // 75% repeated) - and each one was deciphered, lined up and read by the
   // servico a toa. Corta aqui, antes of AES, pelo par (origem, id).
   if (ja_visto(internet ? 1 : 0, of, id)) { return; }
   if (cif) {
     if (n_cif > QUADRO_MAX || !cifrar(canal, id, of, cif, n_cif, claro)) { return; }
-    // Chave errada (ou message direta com PKI) of lixo: one Data of verdade
-    // comeca pelo field 1 (portnum, varint).
+    // Wrong key (or direct message with PKI) of garbage: one Data of truth
+    // starts with field 1 (portnum, varint).
     if (n_cif == 0 || claro[0] != 0x08) { return; }
     dec = claro; n_dec = n_cif;
   }
   if (!dec) { return; }
   // DA INTERNET SO TEXTO (1) E APRESENTACAO (4, o name of quem fala). O resto -
-  // position, telemetria, traceroute - e a maior parte of LongFast of la, nao
-  // aparece em lugar nenhum daqui e enchia a fila. Data comeca pelo portnum
+  // position, telemetry, traceroute - and most of LongFast of there, no
+  // appears nowhere here and fills the queue. Date starts with portnum
   // (0x08 <varint>), e as duas portas cabem num byte.
   if (internet && n_dec >= 2 && dec[1] != 1 && dec[1] != 4) { return; }
 
-  // MeshPacket of novo, como o radio entregaria: o resto dos campos cru, o
+  // MeshPacket of new, as the radio would deliver: the rest of the raw fields, the
   // canal como INDICE, o Data decifrado, a hora of chegada e via_mqtt.
   pb_escritor_t w = pb_escritor(pkt, QUADRO_MAX);
   l = pb_leitor(mp, n_mp);
@@ -532,8 +532,8 @@ static void processar(const char* topico, int n_top, const uint8_t* d, size_t n,
   if (entregar_from_radio(fila, 2, &w) && internet) { ++s_rede_internet_recebidos; }   // FromRadio.packet
 }
 
-// O PUBACK of nosso send_state: one Routing com erro 0 para o id, como o radio
-// manda when one vizinho repete o pacote - aqui quer dizer "o servidor
+// The PUBACK of our send_state: one Routing with error 0 for the id, like radio
+// sends when one neighbor repeats the packet - here it means "the server
 // recebeu".
 static void confirm(uint32_t id, QueueHandle_t fila)
 {
@@ -557,7 +557,7 @@ static void assinar(void)
     esp_mqtt_client_subscribe(s_cli, topico, 0);
     ESP_LOGI(TAG, "assinando %s", topico);
     // Sub-raizes (msh/BR/SP/2/e/...): one level abaixo, onde os estados e
-    // cidades publicam. Nao tem cifra diferente: e o mesmo canal.
+    // cities publish. There is no different number: it is the same channel.
     snprintf(topico, sizeof(topico), "%s/+/2/e/%s/#", raiz, s_cfg.canais[i].name);
     esp_mqtt_client_subscribe(s_cli, topico, 0);
     snprintf(topico, sizeof(topico), "%s/+/+/2/e/%s/#", raiz, s_cfg.canais[i].name);   // meshdev/<pais>/<regiao>/2/e/...
@@ -573,10 +573,10 @@ static void assinar(void)
   destravar_cfg();
 }
 
-// AS ASSINATURAS DO PROXY: as mesmas of app of celular - cada canal com
+// PROXY SUBSCRIPTIONS: the same as the cell phone app - each channel with
 // downlink enabled no no, mais o topico PKI das mensagens diretas (o no
-// decifra; para o Tab5 sao bytes). Canal sem downlink nao e assinado: o no
-// descartaria o que viesse dele, e o trafego entraria a toa.
+// decrypts; for Tab5 they are bytes). Channel without downlink is not signed: o no
+// would discard whatever came from it, and traffic would come in at random.
 static void assinar_proxy(const char* raiz, bool desfazer)
 {
   char topico[96];
@@ -644,7 +644,7 @@ static void on_evento(void*, esp_event_base_t, int32_t id_ev, void* data)
       s_conectado = false;
       break;
     case MQTT_EVENT_DATA:
-      // Pacote em pedacos (maior que o buffer) nao e Meshtastic of verdade.
+      // Chunky packet (larger than buffer) is not true Meshtastic.
       if (ev->current_data_offset == 0 && ev->data_len == ev->total_data_len) {
         if (s_proxy) { proxy_lower(ev->topic, ev->topic_len, (const uint8_t*)ev->data, (size_t)ev->data_len, ev->retain); }
         else         { processar(ev->topic, ev->topic_len, (const uint8_t*)ev->data, (size_t)ev->data_len, s_fila, false); }
@@ -675,8 +675,8 @@ void mesh_mqtt_set_no(uint32_t num, const char* curto, const char* longo)
 static bool start_cliente(bool proxy)
 {
   if (s_cli) { return s_proxy == proxy; }
-  // 16 quadros: a press_start of proxy chega em rajada (one servidor publico
-  // entrega o canal inteiro), e o enlace com o no esvazia a fila a cada iteration.
+  // 16 frames: the press_start of proxy arrives in burst (one public server
+  // delivers the entire channel), and the link with no empties the queue at each iteration.
   if (!s_fila) { s_fila = xQueueCreateWithCaps(32, sizeof(frame_t), MALLOC_CAP_SPIRAM); }
   tab5_mutex_create(&s_trava_ent);
   tab5_mutex_create(&s_trava_env);
@@ -687,7 +687,7 @@ static bool start_cliente(bool proxy)
   const bool tls = proxy && s_no_tls;
   lock_cfg();
   garantir_cfg();
-  // O SERVIDOR: no proxy e o of NO, exatamente - endereco vazio e o default of
+  // THE SERVER: no proxy and the of NO, exactly - empty address and the default of
   // firmware (mqtt.meshtastic.org, meshdev/large4cats). No modo internet,
   // vazio e o default oficial usado por este sistema.
   const char* default_server = proxy ? "mqtt.meshtastic.org" : SRV_PADRAO;
@@ -711,7 +711,7 @@ static bool start_cliente(bool proxy)
   c.credentials.client_id = cliente;
   c.buffer.size = 1024;
   // Pico measured of ~2,6 KB com 6 KB (pilhas-*.csv, horas conectado recebendo
-  // a malha). Os quadros e a decifragem usam buffers static, nao stack.
+  // the mesh). Frames and decryption use static buffers, not stack.
   c.task.stack_size = 4096;
   c.network.reconnect_timeout_ms = 15000;
   if (tls) { c.broker.verification.crt_bundle_attach = esp_crt_bundle_attach; }
@@ -744,7 +744,7 @@ void mesh_mqtt_stop(void)
   s_conectado = false;
   s_proxy = false;
   s_px_raiz[0] = 0;
-  if (s_fila) { xQueueReset(s_fila); }   // press_start of proxy para one no que nao vai mais receber
+  if (s_fila) { xQueueReset(s_fila); }   // press_start of proxy for one that will no longer receive
   snprintf(s_descr, sizeof(s_descr), "Internet: stopped");
   ESP_LOGI(TAG, "disconnected from the server");
 }
@@ -775,7 +775,7 @@ size_t mesh_mqtt_receber(uint8_t* buf, size_t max, uint32_t espera_ms)
   return n;
 }
 
-// O want_config of one radio: o que o dump dele traria of essencial - o nosso
+// The want_config of one radio: what its dump would bring of essential - our
 // numero, o nosso NodeInfo, os canais e o end of configuracao.
 static void responder_config(void)
 {
@@ -825,7 +825,7 @@ static void responder_config(void)
 }
 
 // Chamada of tarefa of servico (want_config, batimento) E of of interface
-// (o app enviando): os buffers of montagem sao estaticos, uma of cada vez.
+// (the app sending): assembly buffers are static, one at a time.
 static bool send_travado(const uint8_t* toradio, size_t n);
 static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox, int n_pend,
                           const canal_t& canal, const char* raiz, uint32_t para,
@@ -838,7 +838,7 @@ typedef struct {
   bool           quer_config;   // want_config_id: o servico pedindo o "dump"
   uint32_t       para, id;
   uint64_t       channel, saltos;
-  const uint8_t* data;          // Data ja serializado (nullptr = sem pacote)
+  const uint8_t* data;          // Data already serialized (nullptr = no package)
   size_t         n_data;
 } to_radio_t;
 
@@ -867,7 +867,7 @@ static void read_to_radio(const uint8_t* b, size_t n, to_radio_t* t)
 bool mesh_mqtt_send(const uint8_t* toradio, size_t n)
 {
   // NO PROXY O CLIENTE E DO NO: nada of Tab5 exit por ele como se fosse one
-  // radio (cifrar com a chave of canal e publicar em name of no daria a
+  // radio (encrypting with the key of canal and publishing in name of would not give the
   // mesma message duas vezes, when o no publicar a dele).
   if (!s_trava_env || s_proxy) { return false; }
   xSemaphoreTake(s_trava_env, portMAX_DELAY);
@@ -878,8 +878,8 @@ bool mesh_mqtt_send(const uint8_t* toradio, size_t n)
 
 static bool send_travado(const uint8_t* toradio, size_t n)
 {
-  // SEM CLIENTE NAO HA PARA QUEM RESPONDER. O servico continua pedindo a
-  // configuracao (a cada 2 min) mesmo com o Wi-Fi fora; a resposta ia para a
+  // WITHOUT A CUSTOMER THERE IS NO ONE TO RESPOND TO. The service continues asking you to
+  // configuration (every 2 min) even with Wi-Fi off; the answer went to
   // fila, que so e lida com o cliente of pe, e enchia ("queue cheia").
   if (!s_cli) { return false; }
   to_radio_t t;
@@ -888,10 +888,10 @@ static bool send_travado(const uint8_t* toradio, size_t n)
   if (!t.data) { return true; }                  // batimento e afins: nada a fazer aqui
   if (!mesh_mqtt_conectado() || s_num == 0) { return false; }
   if (t.channel >= MAX_CANAIS) { return false; }
-  // MENSAGEM DIRETA NAO SAI POR AQUI. Sem a chave publica (PKI) so daria para
+  // DIRECT MESSAGES DO NOT GO HERE. Without the public key (PKI) it would only be possible to
   // cifrar com a chave of CANAL, que todo assinante of topico tem: a conversa
   // particular apareceria para a malha inteira (e no bot of Telegram). Melhor
-  // recusar - o send_state falha in screen - of que vazar.
+  // refuse - the send_state fails in screen - of that leak.
   if (t.para != MESH_PB_DIFUSAO) {
     ESP_LOGW(TAG, "direct message rejected: Internet supports channel messages only (PKI unavailable)");
     return false;
@@ -914,7 +914,7 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
                           const uint8_t* dec, size_t n_dec, uint32_t id, uint64_t saltos)
 {
   // Data + bitfield OK_TO_MQTT (field 9, bit 0): sem ele os gateways que
-  // respeitam a privacidade nao descem a message para o radio.
+  // respect privacy and do not send the message to the radio.
   static uint8_t data[QUADRO_MAX], cif[QUADRO_MAX], pkt[QUADRO_MAX], env[QUADRO_MAX];
   pb_escritor_t wdata = pb_escritor(data, sizeof(data));
   pb_w_cru(&wdata, dec, n_dec);
@@ -948,8 +948,8 @@ static bool publicar_data(esp_mqtt_client_handle_t cli, pend_t* pend, int* prox,
 
   char topico[112];
   snprintf(topico, sizeof(topico), "%s/2/e/%s/%s", raiz, canal.name, gw);
-  // enqueue, e nao publish: o publish escreve no socket NA HORA e pode
-  // hold quem chamou (a tarefa of interface) ate o prazo of rede. O
+  // enqueue, not publish: publish writes to the socket AT THE TIME and can
+  // hold caller (interface task) until network deadline. O
   // enqueue so poe in fila of cliente, que manda in tarefa dele.
   const int msg = esp_mqtt_client_enqueue(cli, topico, (const char*)env, (int)n_env, 1, 0, true);
   if (msg < 0) { return false; }
@@ -998,7 +998,7 @@ bool mesh_mqtt_proxy_publicar(const char* topico, const uint8_t* d, size_t n, bo
       assinar_proxy_now();
     }
   }
-  // enqueue: nao segura a tarefa of servico esperando a rede (ver enviar_travado).
+  // enqueue: does not hold the service task waiting for the network (see send_stuck).
   const int msg = esp_mqtt_client_enqueue(s_cli, topico, (const char*)d, (int)n, 1, retido ? 1 : 0, true);
   if (msg < 0) { ++s_px_perdeu; return false; }
   ++s_px_subiu;
@@ -1028,8 +1028,8 @@ void mesh_mqtt_proxy_contadores(uint32_t* subiu, uint32_t* desceu, uint32_t* per
 static void assinar_internet(void)
 {
   // Os gateways desta raiz publicam por estado e cidade (msh/US/GA/2/e/...,
-  // msh/US/KS/Topeka/2/e/...): ate tres niveis abaixo of raiz. Sem os relatorios
-  // of mapa - la eles trariam o pais inteiro para a tabela of nos.
+  // msh/US/KS/Topeka/2/e/...): up to three levels below root. Without the reports
+  // of map - there they would bring the entire country to the table of nos.
   static const char* const NIVEL[] = { "", "/+", "/+/+", "/+/+/+" };
   char topico[96];
   for (size_t i = 0; i < sizeof(NIVEL) / sizeof(NIVEL[0]); ++i) {
@@ -1076,9 +1076,9 @@ bool mesh_mqtt_internet_start(void)
   c.credentials.client_id = cliente;
   // NO TAMANHO DO QUE PASSA: o envelope maior e ~400 bytes com o topico (o
   // MeshPacket tem teto of 256), e o que exit e so text nosso. Tudo isto e
-  // RAM interna (alocacoes < 4 KB nao vao para a PSRAM, e a stack of tarefa of
+  // Internal RAM (allocations < 4 KB do not go to PSRAM, and the task stack of
   // biblioteca e sempre interna). Maior que o buffer chega em pedacos e e
-  // descartado em ao_evento_internet - nao e Meshtastic.
+  // discarded in ao_evento_internet - it is not Meshtastic.
   c.buffer.size = 768;
   c.buffer.out_size = 512;
   c.task.stack_size = 3584;   // pico measured of ~2,6 KB no cliente igual a este
@@ -1126,7 +1126,7 @@ bool mesh_mqtt_internet_send(const uint8_t* toradio, size_t n)
   if (!s_trava_env || !mesh_mqtt_internet_conectado() || s_num == 0) { return false; }
   to_radio_t t;
   read_to_radio(toradio, n, &t);
-  // So canal: a direta precisaria of PKI (ver mesh_mqtt_enviar).
+  // Only channel: the direct one would need PKI (see mesh_mqtt_enviar).
   if (!t.data || t.para != MESH_PB_DIFUSAO) { return false; }
   xSemaphoreTake(s_trava_env, portMAX_DELAY);
   const bool ok = publicar_data(s_rede_internet_cli, s_rede_internet_pend, &s_rede_internet_prox_pend,

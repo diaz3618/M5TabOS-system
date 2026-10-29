@@ -1,10 +1,10 @@
 // Animacoes of screen of bloqueio. Contrato e regras no lockscreen_anim.hpp.
 //
-// Cada animacao tem tres funcoes (e uma quarta, opcional):
+// Each animation has three functions (and a fourth, optional):
 //   start()  - sorteia o estado inicial;
-//   passo(dt)  - move everything e registra com rec() a caixa que cada objeto
+// step(dt) - moves everything and registers with rec() the box that each object
 //                ocupava e a que vai ocupar (essas caixas serao apagadas);
-//   draw() - pinta todos os objetos, depois of apagada;
+// draw() - paints all objects, after erasing;
 //   fundo()    - (opcional) pinta o fundo fixo dela; sem isso, o fundo e one
 //                drawing abstrato sorteado.
 // O frame (bq_anim_quadro) liga as tres e guarda a lista of caixas para o
@@ -69,7 +69,7 @@ static uint16_t matiz(uint8_t h, int v)
 static const int MAX_RET = 160;
 static bq_ret_t s_ret[MAX_RET];
 static int      s_n_ret = 0;
-static bool     s_everything  = false;   // draw everything (nao so o que changed)
+static bool     s_everything  = false;   // draw everything (not just what changed)
 
 static inline int area_of(const bq_ret_t& r) { return r.w * r.h; }
 
@@ -81,7 +81,7 @@ static bq_ret_t envolver(const bq_ret_t& a, const bq_ret_t& b)
   return { (int16_t)x0, (int16_t)y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0) };
 }
 
-// Pixel NAO request que a juncao of a e b obriga a erase (negativo = elas se
+// Pixel DOES NOT request that the junction of a and b forces erase (negative = they are
 // sobrepoem: juntar exit of graca).
 static inline int desperdicio(const bq_ret_t& a, const bq_ret_t& b)
 {
@@ -128,7 +128,7 @@ static void rec(int x, int y, int w, int h)
     s_ret[bi] = envolver(s_ret[bi], s_ret[bj]);
     s_ret[bj] = r;
   }
-  // Uma caixa juntada apaga objeto que nao se mexeu: quem desenha so o que
+  // A box together erases an object that has not moved: whoever draws only what
   // changed (a cobrinha) precisa draw everything.
   s_everything = true;
 }
@@ -146,12 +146,12 @@ static void rec2(float x0, float y0, float x1, float y1, int r)
 // ---------------------------------------------------------------------------
 // Um drawing fixo atras of animacao: lines finas e escuras sobre preto. Ele
 // e pintado UMA vez por bloqueio numa imagem of tamanho of area (PSRAM,
-// ~1,6 MB, so enquanto locked) e o "erase" of cada caixa passa a ser
+// ~1.6 MB, only while locked) and the "erase" of each box becomes
 // copiar aquele pedaco of imagem em vez of paint preto - o mesmo tanto of
-// escrita of antes, entao o fundo nao custa nada por frame. Sem memoria,
+// written before, so the background costs nothing per frame. No memory,
 // stays o preto of sempre.
 static lgfx::LGFX_Sprite* s_fundo = nullptr;
-static bool s_fundo_falhou = false;   // neste bloqueio: nao tenta of novo a cada frame
+static bool s_fundo_falhou = false;   // in this block: does not try again every frame
 static bool s_fundo_paint = false;   // a imagem e nova: vai inteira para a screen
 
 static void background_release(void)
@@ -171,7 +171,7 @@ static void ponto_borda(int W, int H, float t, float* x, float* y)
   else                    { *x = 0;                  *y = (float)H - (d - 2 * W - H); }
 }
 
-// FIOS: "string art" - retas entre dois trilhos desenham curvas que nao
+// FIOS: "string art" - straight lines between two rails draw curves that do not
 // existem.
 static void background_fios(lgfx::LGFX_Sprite& s, int W, int H)
 {
@@ -243,7 +243,7 @@ static void background_teia(lgfx::LGFX_Sprite& s, int W, int H)
   for (int i = 0; i < n; ++i) { s.fillCircle(px[i], py[i], 2, matiz(h, 110)); }
 }
 
-// RAIOS: leque saindo of one ponto fora of screen, com aneis em iteration (moire).
+// RAYS: fan coming out of one point off screen, with rings in iteration (moire).
 static void background_raios(lgfx::LGFX_Sprite& s, int W, int H)
 {
   float fx, fy;
@@ -284,7 +284,7 @@ static void background_ceu(lgfx::LGFX_Sprite& s, int W, int H)
 }
 
 // Sobe a imagem inteira para a screen, em faixas (one pushSprite por faixa: a
-// mesma regra of nao despejar 1,6 MB of uma vez - ver tab5_screen_clear).
+// same rule of not dumping 1.6 MB at once - see tab5_screen_clear).
 static void background_paint_everything(lgfx::LovyanGFX& d)
 {
   const int FAIXA = 128;
@@ -304,7 +304,7 @@ static void erase(lgfx::LovyanGFX& d, const bq_ret_t& r)
     d.fillRect(r.x, r.y, r.w, r.h, TFT_BLACK);
     return;
   }
-  // Cobrir antes: a caixa inteira vai ser escrita, entao o compositor nao
+  // Cover first: the entire box will be written, so the composer will not
   // precisa trazer o frame anterior dela of outra pagina.
   virtual_screen_cover(r.x, r.y, r.w, r.h);
   d.setClipRect(r.x, r.y, r.w, r.h);
@@ -382,7 +382,7 @@ struct Lumes { Lume l[16]; };
 
 
 // ---------------------------------------------------------------------------
-// 8. PENDULOS - a "onda of pendulos": cada bola num ritmo one pouco diferente,
+// 8. PENDULOS - the "wave of pendulums": each ball in a slightly different rhythm,
 //    e os desenhos (serpente, duas fileiras, caos, fileira of novo) se repetem
 // ---------------------------------------------------------------------------
 namespace {
@@ -401,7 +401,7 @@ struct Neve  { Floco f[N_FLOCO]; float tv; };
 }
 
 // ---------------------------------------------------------------------------
-// 10. COMETAS - tres cometas com cauda, cada one numa curva of Lissajous
+// 10. COMETS - three comets with tails, each one in a Lissajous curve
 // ---------------------------------------------------------------------------
 namespace {
 static const int N_COMETA = 3;
@@ -420,7 +420,7 @@ struct Solar   { Planeta p[N_PLANETA]; float t, lua, lox, loy; int cx, cy; };
 }
 
 // ---------------------------------------------------------------------------
-// 12. LOGO - o "M5tabOS" quicando nas bordas e trocando of color a cada batida
+// 12. LOGO - the "M5tabOS" bouncing on the edges and changing color with each beat
 //     (homenagem on descanso of screen of DVD; acertar o canto e raro)
 // ---------------------------------------------------------------------------
 namespace {
@@ -521,8 +521,8 @@ static void fogos_start(void)
 {
   Fogos& s = U.fogos;
   memset(&s, 0, sizeof(s));
-  // Ja comeca com one foguete a middle caminho: sem isso a screen stays vazia por
-  // cerca of 1 s ate o first raise e explodir.
+  // It already starts with a rocket in the middle way: without this the screen remains empty for
+  // about 1 s until the first raise and explodes.
   Foguete& f = s.f[0];
   f.x = frand(s_ax + s_W * 0.25f, s_ax + s_W * 0.75f);
   f.y = f.oy = s_ay + s_H * 0.6f;
@@ -554,7 +554,7 @@ static int fogos_release(Fogos& s, float x, float y, uint8_t h, int n, float vmi
   return k;
 }
 
-// Explosao em camadas: nucleo + anel externo (+ estouros que estalam).
+// Explosion in layers: core + outer ring (+ bursts that crackle).
 static void fogos_explodir(Fogos& s, float x, float y)
 {
   const uint8_t h = (uint8_t)irand(256);
@@ -907,7 +907,7 @@ static void cobra_draw(lgfx::LovyanGFX& d)
   if (!s.passou && !s_everything) { return; }
   d.fillCircle(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + CEL / 2 + 1, 12, c565(255, 70, 70));
   d.fillRect(s.ox + s.fx * CEL + CEL / 2, s.oy + s.fy * CEL + 5, 3, 7, c565(120, 200, 80));
-  // Corpo: of cauda on pescoco, em listras; so os dois ultimos se nao for everything.
+  // Body: of tail on neck, in stripes; just the last two if not everything.
   const int ate = s_everything ? s.len : 2;
   for (int k = ate - 1; k >= 1; --k) {
     const int i = cobra_i(s, k);
@@ -975,7 +975,7 @@ static void lumes_draw(lgfx::LovyanGFX& d)
 // ===========================================================================
 // PENDULOS
 // ===========================================================================
-// Bola i faz (K + i) idas e vindas a cada CICLO segundos: no end of ciclo
+// Ball i makes (K + i) back and forth every CYCLE seconds: at the end of cycle
 // todas voltam juntas, e no middle passam pelas figuras.
 static const float PEND_CICLO = 60.0f;
 static const int   PEND_K     = 12;
@@ -1141,7 +1141,7 @@ static void cometas_draw(lgfx::LovyanGFX& d)
 {
   for (int i = 0; i < N_COMETA; ++i) {
     const Cometa& c = U.cometas.c[i];
-    for (int k = N_CAUDA - 1; k >= 0; --k) {   // a cabeca por ultimo, por top
+    for (int k = N_CAUDA - 1; k >= 0; --k) {   // the head last, by top
       const int x = (int)c.ox[k], y = (int)c.oy[k], r = cauda_raio(k);
       const uint16_t color = k == 0 ? c565(255, 250, 235)
                                   : matiz((uint8_t)(c.h + k * 3), 250 - k * 17);
@@ -1337,7 +1337,7 @@ static int  s_fundo_current = 0;
 static bool s_pronta = false;   // a sorteada ja foi iniciada
 
 // O dt vem of ritmo of frame of sistema (kernel/frame_pacing.hpp): o time entre as
-// varreduras em que dois quadros vao on ar. Limitado aqui: depois of uma
+// scans where two frames go live. Limited here: after a
 // pausa (despertar), a animacao continua of onde estava em vez of saltar.
 static float passo_dt(void)
 {
@@ -1359,7 +1359,7 @@ void bq_anim_sortear(void)
   s_fundo_current = fundo;
   s_pronta      = false;
   s_fundo_falhou = false;
-  background_release();   // drawing novo a cada bloqueio
+  background_release();   // new drawing with each block
   if (ANIMS[s_current].start != logo_start) { delete s_logo; s_logo = nullptr; }
 }
 
@@ -1413,15 +1413,15 @@ void bq_anim_frame(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
 
   ANIMS[s_current].passo(dt);
 
-  // ONDE O TEXTO PRECISA SER REPINTADO: para cada caixa of text, a caixa que
-  // cobre everything que a animacao mexeu dentro dela. Essa caixa INTEIRA entra in
+  // WHERE TEXT NEEDS TO BE REPAINTED: for each box of text, the box that
+  // covers everything that the animation moved inside it. This ENTIRE box goes in
   // lista of erase. O text e suavizado (borda translucida): pintado duas
-  // vezes no mesmo pixel ele engrossa a cada frame. Apagando a caixa toda
-  // antes, cada pixel recebe o text uma unica vez.
+  // times in the same pixel it thickens with each frame. Deleting the entire box
+  // before, each pixel receives the text once.
   //
   // Em passes: a juncao das caixas (rec) pode crescer uma delas por top of
-  // outro text. Cada pass refaz o clip of cada text com TUDO que vai ser
-  // apagado dentro dele, e o proprio clip entra in lista - ate stop of mudar.
+  // another text. Each pass recreates the clip of each text with EVERYTHING that will be
+  // is deleted inside it, and the clip itself goes into the list - until stop of changing.
   for (int j = 0; j < n_caixas; ++j) { clips[j] = { 0, 0, 0, 0 }; }
   for (int pass = 0; pass < 4; ++pass) {
     bool changed = false;
@@ -1461,14 +1461,14 @@ void bq_anim_frame(lgfx::LovyanGFX& d, const bq_ret_t* extras, int n_extras,
 // O MESMO DESENHO COMO PAPEL DE PAREDE (home). Declarada no .hpp. A imagem
 // so existe durante a chamada: pintada, copiada para a screen e devolvida - a
 // home so e desenhada inteira (open, switch of pagina, voltar of one app),
-// entao nao ha por que hold 1,6 MB o time todo. A mesma semente faz o
-// drawing exit igual toda vez.
+// so there is no reason to hold 1.6 MB for the entire team. The same seed does the
+// drawing exit the same every time.
 // O PAPEL DE PAREDE GUARDADO. Gerar o drawing procedural num sprite of
-// tamanho of area (~1,6 MB) a cada pass complete of home - todo close of
+// size of area (~1.6 MB) every pass complete of home - todo close of
 // app, todo despertar - era o mesmo work, com o mesmo resultado (mesma
 // semente), repetido in transicao mais pesada of sistema. Agora o sprite
 // pronto stays enquanto estilo/semente/area forem os mesmos; o kernel released
-// on open one app e no sleep, when a home nao esta in screen.
+// on open one app and no sleep, when a home is not on screen.
 static lgfx::LGFX_Sprite* s_parede = nullptr;
 static int      s_parede_estilo = -1;
 static uint32_t s_parede_semente = 0;
@@ -1495,7 +1495,7 @@ bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t s
     sp->setPsram(true);
     if (!sp->createSprite(a.width, a.height)) { delete sp; return false; }
     sp->fillScreen(TFT_BLACK);
-    // A semente e of papel of parede, nao of animacao: o gerador comum e
+    // The seed is of wallpaper, not of animation: the common generator is
     // emprestado e devolvido como estava.
     const uint32_t rng = s_rng;
     s_rng = semente ? semente : 2463534242u;
@@ -1506,8 +1506,8 @@ bool bq_fundo_parede(lgfx::LovyanGFX& d, const area_t& a, int estilo, uint32_t s
     s_parede_l = a.width; s_parede_a = a.height;
   }
 
-  // EM FAIXAS, como toda escrita grande (ver tab5_screen_clear): a imagem
-  // inteira of uma vez seca o FIFO of panel. E coberta: o compositor nao
+  // IN BANDS, like all large writing (see tab5_screen_clear): the image
+  // entire of once the FIFO of panel dries. And covered: the composer does not
   // precisa trazer of pagina of frente o que vai ser sobrescrito.
   const int FAIXA = 128;
   for (int y = 0; y < a.height; y += FAIXA) {

@@ -1,8 +1,8 @@
 // USB-drive mode: the Tab5 SD card appears on the computer as a USB disk.
 //
-// -------------------------------------------------------------------------
-// COMO, NO HARDWARE
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
+// HOW TO, ON HARDWARE
+// ------------------------------------------------------------------------
 // The Tab5 USB-C port uses P4 full-speed PHY 0, normally owned by
 // USB-Serial-JTAG (the console and flashing). P4 also has a second controller,
 // the full-speed OTG controller ("USB_WRAP"), and a selector that assigns the
@@ -13,12 +13,12 @@
 // (src/massStorage.cpp), which already runs on the Tab5.
 //
 // While USB-drive mode is active there is no console or cable flashing: the
-// computer sees a disk instead of the serial port. Logging resumes on the card
+// computer sees a disk instead of the serial port. Logging summaries on the card
 // as soon as it is returned (tab5_sd_enqueue_append queues incoming records).
 //
-// -------------------------------------------------------------------------
-// O CARTAO
-// -------------------------------------------------------------------------
+// ------------------------------------------------------------------------
+// THE CARD
+// ------------------------------------------------------------------------
 // There must never be two owners at once; see tab5_sd_emprestar(). The session
 // borrows the card BEFORE enabling USB and returns it only AFTER USB is off.
 //
@@ -33,9 +33,9 @@
 #include <stdint.h>
 #include "sd_protocol_types.h"
 
-// ---------------------------------------------------------------------------
-// A SESSAO (em segundo plano - o Tab5 segue usavel durante o pendrive)
-// ---------------------------------------------------------------------------
+// -------------------------------------------------------------------------------
+// THE SESSION (in the background - the Tab5 remains usable while on the pendrive)
+// -------------------------------------------------------------------------------
 // Start: the card is borrowed (tab5_sd_emprestar writes the pending state,
 // takes a snapshot, and redirects writes to the flash journal), then USB starts.
 // The status bar shows "Card connected to computer" for the duration; tapping it
@@ -48,16 +48,16 @@
 // applied; the result remains on screen and conflicts appear in the status bar.
 //
 // System rules, not app rules:
-//   - do not start while an app that requires the card is open (app_t.exige_sd),
-//     and do not open that app during the session (the kernel explains why);
-//   - while the disk is mounted, keep the screen awake
-//     (SISTEMA_ACORDADO_PENDRIVE);
-//   - during USB-drive mode the cable is neither console nor flashing, and CPU
-//     frequency stays at maximum while the computer is communicating;
-//   - if the bus is idle for more than 2 s (unplugged without ejecting or the
-//     computer sleeping), the session continues but the screen and CPU may
-//     enter low-power mode and wake automatically when the computer returns;
-//     with no computer connected, the CPU slows after 10 s.
+// - do not start while an app that requires the card is open (app_t.exige_sd),
+// and do not open that app during the session (the kernel explains why);
+// - while the disk is mounted, keep the screen awake
+// (SYSTEM_WAKE_PENDRIVE);
+// - during USB-drive mode the cable is neither console nor flashing, and CPU
+// frequency stays at maximum while the computer is communicating;
+// - if the bus is idle for more than 2 s (unplugged without ejecting or the
+// computer sleeping), the session continues but the screen and CPU may
+// enter low-power mode and wake automatically when the computer returns;
+// with no computer connected, the CPU slows down after 10 s.
 typedef enum {
   PENDRIVE_PARADO = 0,
   PENDRIVE_PREPARANDO,   // borrowing the card and starting USB
@@ -65,60 +65,60 @@ typedef enum {
   PENDRIVE_DEVOLVENDO,   // stopping USB, returning the card, applying the journal
 } tab5_pendrive_fase_t;
 
-// Por que a ultima tentativa nao ligou (PENDRIVE_OK = ligou ou nunca tentou).
+// Why didn't the last attempt turn on (PENDRIVE_OK = turned on or never tried).
 typedef enum {
   PENDRIVE_OK = 0,
-  PENDRIVE_RECUSA_APP,         // one app que requires o cartao esta open
-  PENDRIVE_RECUSA_EM_USO,      // one servico segurou o cartao alem of prazo
-  PENDRIVE_RECUSA_SEM_CARTAO,  // sem cartao, ou ele nao respondeu
-  PENDRIVE_RECUSA_SEM_DIARIO,  // falta a particao "reserva" (grave a tabela nova)
-  PENDRIVE_RECUSA_USB,         // o USB nao subiu (o cartao ja voltou)
+  PENDRIVE_RECUSA_APP,         // one app that requires the card is open
+  PENDRIVE_RECUSA_EM_USO,      // one service held the card beyond the deadline
+  PENDRIVE_RECUSA_SEM_CARTAO,  // no card, or he didn't respond
+  PENDRIVE_RECUSA_SEM_DIARIO,  // "reserve" partition is missing (write the new table)
+  PENDRIVE_RECUSA_USB,         // the USB did not come up (the card has already come back)
 } tab5_pendrive_reason_t;
 
-// Pede para enable. Nao bloqueia (a sessao tem tarefa propria). false = ja
-// havia uma sessao, ou recusado in hora (o reason stays no estado).
+// Asks to enable. Does not block (the session has its own task). false = ja
+// there was a session, or refused in hora (the reason stays in the state).
 bool tab5_pendrive_start(void);
 
-// Pede para return o cartao on Tab5. A CONFIRMACAO e of quem chama (a screen):
-// se o computador ainda estiver com o disco montado e nao ejetou, perguntar
-// antes. Nao bloqueia.
+// Asks to return the card on Tab5. CONFIRMATION is of the caller (a screen):
+// if the computer still has the disk mounted and has not ejected it, ask
+// before. Does not block.
 void tab5_pendrive_return(void);
 
-// Onde o pendrive esta esperando now (para dizer onde parou, when para).
+// Where the pendrive is waiting now (to say where it stopped, when it stops).
 typedef enum {
-  PENDRIVE_ESPERA_NADA = 0,     // o computador ainda nao fez nada
-  PENDRIVE_ESPERA_COMPUTADOR,   // everything respondido: e a vez of computador request
-  PENDRIVE_ESPERA_USB,          // uma leitura comecou e os data/status ainda nao sairam
-  PENDRIVE_ESPERA_CARTAO,       // dentro of uma leitura/escrita of cartao
+  PENDRIVE_ESPERA_NADA = 0,     // the computer hasn't done anything yet
+  PENDRIVE_ESPERA_COMPUTADOR,   // everything answered: and the turn of computer request
+  PENDRIVE_ESPERA_USB,          // a reading has started and the data/status has not yet come out
+  PENDRIVE_ESPERA_CARTAO,       // within a reading/writing of card
 } tab5_pendrive_espera_t;
 
-// O USB por dentro, para a screen.
+// The USB inside, for the screen.
 typedef struct {
-  bool     enabled;        // o USB esta como pendrive
-  bool     montado;       // o computador enumerou o disco
-  bool     suspenso;      // o barramento parou: cabo puxado ou computador dormindo
-  bool     ejetado;       // o computador ejetou (START STOP UNIT com "eject")
-  bool     active;         // houve leitura/escrita nos ultimos 2 s
-  uint64_t lidos;         // bytes lidos pelo computador since enable
-  uint64_t gravados;      // bytes gravados pelo computador since enable
-  uint32_t erros;         // leituras/escritas que o cartao recusou
-  uint32_t ms_sem_escrita;// since a ultima escrita (UINT32_MAX = none)
-  // DIAGNOSTICO - ate onde o computador chegou, in order em que ele faz:
-  uint32_t n_config;      // reconheceu o aparelho (configurou o USB)
-  uint32_t n_inquiry;     // perguntou o que ele e
-  uint32_t n_capacidade;  // perguntou o tamanho
-  uint32_t n_leituras;    // leu (a tabela FAT vem first)
-  uint8_t  op_recusado;   // ultimo comando SCSI recusado (0 = nenhum)
-  uint32_t leitura_max_ms;// leitura of cartao mais lenta
-  uint32_t n_tur;         // perguntou se o disco esta pronto (TEST UNIT READY)
-  uint32_t n_sense;       // perguntou qual foi o erro (REQUEST SENSE)
-  uint32_t n_respostas;   // commands com a resposta entregue (fora leitura/escrita)
-  uint8_t  op_respondido; // o ultimo deles
-  uint32_t n_soltou;      // desconfigurou: reset of barramento ou cabo
-  uint32_t n_leituras_ok; // commands of leitura com data e status entregues
-  uint32_t n_cmd_leitura; // commands of leitura recebidos
-  uint32_t ultimo_setor;  // ultimo pedaco request on cartao
-  uint32_t parado_ms;     // since o ultimo sinal of vida (computador ou cartao)
+  bool     enabled;        // the USB is like a pendrive
+  bool     montado;       // the computer enumerated the disk
+  bool     suspenso;      // bus stopped: cable pulled or computer asleep
+  bool     ejetado;       // the computer ejected (START STOP UNIT with "eject")
+  bool     active;         // there was reading/writing in the last 2 s
+  uint64_t lidos;         // bytes read by computer since enable
+  uint64_t gravados;      // bytes written by the computer since enable
+  uint32_t erros;         // readings/writes that the card refused
+  uint32_t ms_sem_escrita;// since last write (UINT32_MAX = none)
+  // DIAGNOSTIC - how far the computer has reached, in order in which it does:
+  uint32_t n_config;      // recognized the device (configured USB)
+  uint32_t n_inquiry;     // asked what he and
+  uint32_t n_capacidade;  // asked the size
+  uint32_t n_leituras;    // read (FAT table comes first)
+  uint8_t  op_recusado;   // last SCSI command refused (0 = none)
+  uint32_t leitura_max_ms;// card reading slower
+  uint32_t n_tur;         // asked if the disk is ready (TEST UNIT READY)
+  uint32_t n_sense;       // asked what the error was (REQUEST SENSE)
+  uint32_t n_respostas;   // commands with the response delivered (not read/write)
+  uint8_t  op_respondido; // the last of them
+  uint32_t n_soltou;      // unconfigured: reset of bus or cable
+  uint32_t n_leituras_ok; // commands of reading with date and status delivered
+  uint32_t n_cmd_leitura; // read commands received
+  uint32_t ultimo_setor;  // last piece request on card
+  uint32_t parado_ms;     // since the last sign of life (computer or card)
   tab5_pendrive_espera_t onde;
 } tab5_pendrive_usb_t;
 void tab5_pendrive_usb(tab5_pendrive_usb_t* u);
@@ -126,25 +126,25 @@ void tab5_pendrive_usb(tab5_pendrive_usb_t* u);
 typedef struct {
   tab5_pendrive_fase_t   fase;
   tab5_pendrive_reason_t reason;
-  bool                   por_ejecao;   // a ultima sessao terminou pela ejecao no computador
-  bool                   sem_ejetar;   // ...ou com o disco montado, sem ejecao: o computador
-                                       // vai verificar o cartao in next vez (demora)
-  bool                   oferta;       // computador enabled no cabo, esperando a pessoa decidir
+  bool                   por_ejecao;   // the last session ended by ejection on the computer
+  bool                   sem_ejetar;   // ...or with the disk mounted, without ejecting: the computer
+                                       // will check the card next time (it takes time)
+  bool                   oferta;       // computer enabled on the cable, waiting for the person to decide
   tab5_pendrive_usb_t    usb;
 } tab5_pendrive_estado_t;
 void tab5_pendrive_estado(tab5_pendrive_estado_t* e);
 
-// Algo para a pessoa ver em Ajustes > USB (sessao em andamento, computador
-// oferecido, conflito of ultima iteration) - Ajustes abre direto nessa pagina.
+// Something for the person to see in Settings > USB (session in progress, computer
+// offered, conflict of last iteration) - Adjustments opens directly to this page.
 bool tab5_pendrive_pede_atencao(void);
-// A pessoa viu o resultado: o aviso of barra exit.
+// The person saw the result: the warning of barra exit.
 void tab5_pendrive_resultado_visto(void);
 
-// Um computador esta of outro lado of cabo AGORA? Com o pendrive disabled
-// quem ve e o USB-Serial-JTAG (os quadros SOF que o computador manda a cada
-// 1 ms); carregador of parede nao manda SOF - nao conta.
+// Is a computer on the other side of the cable NOW? With the pendrive disabled
+// who sees it is the USB-Serial-JTAG (the SOF frames that the computer sends every
+// 1ms); Wall charger doesn't send SOF - it doesn't count.
 bool tab5_pendrive_pc_presente(void);
 
-// Boot, depois of sistema: registra o aviso e liga a vigia of cabo (que liga
-// o pendrive sozinho when o ajuste pede - settings_flash_drive()).
+// Boot, after system: logs the warning and turns on the cable monitor (which turns on
+// the pendrive alone when the setting prompts - settings_flash_drive()).
 void tab5_pendrive_servico_start(void);
